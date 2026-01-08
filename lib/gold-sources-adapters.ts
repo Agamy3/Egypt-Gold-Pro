@@ -757,9 +757,7 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
                 let parseCtx: any = undefined;
                 
                 try {
-                  if (false) {
-                    parsedPrices = parseLivePriceOfGold(jinaText, { methodTried, selectorHits, regexMatches });
-                  } else if (source === 'goldrate24') {
+                  if (source === 'goldrate24') {
                     parseCtx = {
                       methodTried: [...methodTried, 'jina', 'regex'],
                       selectorHits,
@@ -858,9 +856,7 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
             let parseCtx: any = undefined;
             
             try {
-              if (false) {
-                parsedPrices = parseLivePriceOfGold(jinaText, { methodTried: methodTriedJina, selectorHits: selectorHitsJina, regexMatches: regexMatchesJina });
-              } else if (source === 'goldrate24') {
+              if (source === 'goldrate24') {
                 parseCtx = {
                   methodTried: methodTriedJina,
                   selectorHits: selectorHitsJina,

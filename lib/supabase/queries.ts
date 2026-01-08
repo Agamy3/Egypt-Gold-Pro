@@ -110,7 +110,7 @@ export async function getEgyptMarketMedians(
       // Calculate median sell price (if available)
       const sellPrices = karatRows
         .map((row: any) => row[sellKey] as number | null)
-        .filter((p: number | null) => p !== null && p !== undefined && isFinite(p) && p > 0)
+        .filter((p: number | null): p is number => p !== null && p !== undefined && isFinite(p) && p > 0)
         .sort((a, b) => a - b);
       
       let medianSell: number | null = null;
@@ -186,7 +186,7 @@ export async function getEgyptMarketSeries(
   const timeBuckets = new Map<number, number[]>();
   
   for (const row of data) {
-    const price = row[karatKey];
+    const price = (row as any)[karatKey] as number | null;
     if (price !== null && price !== undefined && isFinite(price) && price > 0) {
       const timestamp = row.createdAt as number; // Already in epoch ms
       // Round to nearest minute for bucketing

@@ -112,29 +112,6 @@ export function computeFairValue(
 }
 
 /**
- * Compute fair value using implied Gold FX (from market prices)
- * This is the parity price based on the implied exchange rate
- * @deprecated Use computeFairValue with real FX rate instead
- */
-export function computeFairValueFromImpliedFx(
-  usdPerGram24: number | null,
-  usdPerGram21: number | null,
-  usdEgpGold: number | null
-): {
-  fair24: number | null;
-  fair21: number | null;
-} {
-  if (usdEgpGold === null || usdPerGram24 === null || usdPerGram21 === null) {
-    return { fair24: null, fair21: null };
-  }
-
-  const fair24 = usdPerGram24 * usdEgpGold;
-  const fair21 = usdPerGram21 * usdEgpGold;
-
-  return { fair24, fair21 };
-}
-
-/**
  * Compute over/under pricing variance
  * Uses 21k if available, otherwise 24k
  * 

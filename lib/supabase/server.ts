@@ -40,9 +40,10 @@ export const createServerClient = () => {
 /**
  * Get a singleton Supabase server client
  */
-let serverClient: ReturnType<typeof createClient> | null = null;
+import type { SupabaseClient } from '@supabase/supabase-js';
+let serverClient: SupabaseClient | null = null;
 
-export const getServerClient = () => {
+export const getServerClient = (): SupabaseClient => {
   if (!serverClient) {
     serverClient = createServerClient();
   }
