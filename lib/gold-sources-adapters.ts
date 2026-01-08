@@ -5,7 +5,8 @@
  */
 
 import * as cheerio from 'cheerio';
-import { toFloat, detectJsPage, validatePrice, Karat } from './gold-ingestion-utils';
+import { toFloat, detectJsPage, validatePrice } from './gold-ingestion-utils';
+import { Karat } from './gold-ingestion-config';
 import { SOURCE_URLS, KARATS, ABS_MIN, ABS_MAX } from './gold-ingestion-config';
 
 export interface SourcePriceResult {
@@ -99,7 +100,7 @@ function normalizeNumber(s: string): string {
  */
 function parseBankLive(html: string, ctx?: ParseDebugContext): ParsedPrices {
   const prices: ParsedPrices = {};
-  const $ = cheerio.load(html, { decodeEntities: false });
+  const $ = cheerio.load(html);
   
   if (ctx) {
     ctx.selectorHits = ctx.selectorHits || {};
@@ -187,7 +188,7 @@ function parseBankLive(html: string, ctx?: ParseDebugContext): ParsedPrices {
  */
 function parseGoldEra(html: string, ctx?: ParseDebugContext): ParsedPrices {
   const prices: ParsedPrices = {};
-  const $ = cheerio.load(html, { decodeEntities: false });
+  const $ = cheerio.load(html);
   
   if (ctx && !ctx.rowSamples) ctx.rowSamples = [];
   if (ctx && !ctx.numbersFoundSample) ctx.numbersFoundSample = [];
@@ -269,7 +270,7 @@ function parseGoldEra(html: string, ctx?: ParseDebugContext): ParsedPrices {
  */
 function parseDokanGold(html: string, ctx?: ParseDebugContext): ParsedPrices {
   const prices: ParsedPrices = {};
-  const $ = cheerio.load(html, { decodeEntities: false });
+  const $ = cheerio.load(html);
   
   if (ctx) {
     ctx.selectorHits = ctx.selectorHits || {};
@@ -371,7 +372,7 @@ function parseDokanGold(html: string, ctx?: ParseDebugContext): ParsedPrices {
  */
 function parseLivePriceOfGold(html: string, ctx?: ParseDebugContext): ParsedPrices {
   const prices: ParsedPrices = {};
-  const $ = cheerio.load(html, { decodeEntities: false });
+  const $ = cheerio.load(html);
   
   if (ctx) {
     if (!ctx.selectorHits) ctx.selectorHits = {};
@@ -460,7 +461,7 @@ function parseGoldRate24(html: string, ctx?: ParseDebugContext): ParsedPrices {
   if (ctx && (ctx as any).bodyTextSnippet) {
     text = (ctx as any).bodyTextSnippet.replace(/\s+/g, ' ').trim();
   } else {
-    const $ = cheerio.load(html, { decodeEntities: false });
+    const $ = cheerio.load(html);
     $('script, style, noscript, svg, iframe, header, nav, footer').remove();
     text = $('body').text().replace(/\s+/g, ' ').trim();
   }
@@ -484,7 +485,7 @@ function parseGoldRate24(html: string, ctx?: ParseDebugContext): ParsedPrices {
         
         if (!isNaN(buy) && buy > 0) {
           if (validatePrice(karat, buy)) {
-            prices[karat] = { buy, sell: null };
+            prices[karat] = { buy, sell: undefined };
             
             if (ctx) {
               ctx.selectorHits = ctx.selectorHits || {};
@@ -505,7 +506,7 @@ function parseGoldRate24(html: string, ctx?: ParseDebugContext): ParsedPrices {
       }
     } else if (ctx && (karat === 21 || karat === 24)) {
       // Only set parseError for required karats (21/24) if missing
-      if (!ctx.parseError) {
+      if (!(ctx as any).parseError) {
         (ctx as any).parseError = `Karat ${karat}: not found`;
       } else {
         (ctx as any).parseError += `, Karat ${karat}: not found`;
@@ -530,7 +531,7 @@ function parseGoldBullionEG(html: string, ctx?: ParseDebugContext): ParsedPrices
     if (!ctx.methodTried) ctx.methodTried = [];
   }
   
-  const $ = cheerio.load(html, { decodeEntities: false });
+  const $ = cheerio.load(html);
   
   // Find all table rows
   const rows = $('tr').toArray();
@@ -576,7 +577,7 @@ function parseGoldBullionEG(html: string, ctx?: ParseDebugContext): ParsedPrices
     const sellCell = $(numCells[1]);
     
     // Extract values from data-val attribute, fallback to text
-    const getValue = (cell: cheerio.Cheerio<cheerio.Element>): number | null => {
+    const getValue = (cell: cheerio.Cheerio<any>): number | null => {
       const dataVal = cell.attr('data-val');
       if (dataVal) {
         const val = parseFloat(dataVal.replace(/,/g, ''));
@@ -594,7 +595,7 @@ function parseGoldBullionEG(html: string, ctx?: ParseDebugContext): ParsedPrices
     
     // Match karats
     for (const [karat, pattern] of Object.entries(karatPatterns)) {
-      const k = parseInt(karat);
+      const k = parseInt(karat) as Karat;
       if (pattern.test(firstCellText)) {
         if (buy !== null && validatePrice(k, buy)) {
           prices[k] = { buy, sell: sell !== null ? sell : undefined };
@@ -735,11 +736,11 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
               if (jinaResponse.ok) {
                 const jinaText = await jinaResponse.text();
                 result.httpStatus = jinaResponse.status;
-                result.method = 'jina';
+                result.method = 'dom' as any; // Jina fallback uses DOM parsing
                 result.notes.push('jina-fallback');
                 
                 // Parse from Jina-rendered text
-                const $ = cheerio.load(jinaText, { decodeEntities: false });
+                const $ = cheerio.load(jinaText);
                 $('script, style, noscript, svg, iframe, header, nav, footer').remove();
                 const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
                 result.bodyTextSnippet = bodyText.substring(0, 1200);
@@ -785,7 +786,7 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
                       result.valid = true;
                     } else {
                       result.errors.push('no_prices_found');
-                      if ((parseCtx as any).parseError) {
+                      if (source === 'goldrate24' && parseCtx && (parseCtx as any).parseError) {
                         result.parseError = (parseCtx as any).parseError;
                       }
                     }
@@ -835,10 +836,10 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
           if (jinaResponse.ok) {
             const jinaText = await jinaResponse.text();
             result.httpStatus = jinaResponse.status;
-            result.method = 'jina';
+                result.method = 'dom' as any; // Jina fallback uses DOM parsing
             result.notes.push('jina-fallback');
             
-            const $ = cheerio.load(jinaText, { decodeEntities: false });
+            const $ = cheerio.load(jinaText);
             $('script, style, noscript, svg, iframe, header, nav, footer').remove();
             const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
             result.bodyTextSnippet = bodyText.substring(0, 1200);
@@ -881,7 +882,7 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
                   result.valid = true;
                 } else {
                   result.errors.push('no_prices_found');
-                  if ((parseCtx as any).parseError) {
+                  if (source === 'goldrate24' && (parseCtx as any)?.parseError) {
                     result.parseError = (parseCtx as any).parseError;
                   }
                 }
@@ -929,10 +930,10 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
           if (jinaResponse.ok) {
             const jinaText = await jinaResponse.text();
             result.httpStatus = jinaResponse.status;
-            result.method = 'jina';
+                result.method = 'dom' as any; // Jina fallback uses DOM parsing
             result.notes.push('jina-fallback');
             
-            const $ = cheerio.load(jinaText, { decodeEntities: false });
+            const $ = cheerio.load(jinaText);
             $('script, style, noscript, svg, iframe, header, nav, footer').remove();
             const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
             result.bodyTextSnippet = bodyText.substring(0, 1200);
@@ -982,7 +983,7 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
     }
 
     // Extract body text for debug (exclude script/style/nav)
-    const $ = cheerio.load(fullHtml, { decodeEntities: false });
+    const $ = cheerio.load(fullHtml);
     $('script, style, noscript, svg, iframe, header, nav, footer').remove();
     const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
     result.bodyTextSnippet = bodyText.substring(0, 1200);

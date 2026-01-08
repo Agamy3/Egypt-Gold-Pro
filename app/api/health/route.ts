@@ -14,10 +14,6 @@ export const revalidate = 0;
 // Track last run time (in-memory, or could use DB)
 let lastRunTimestamp: number | null = null;
 
-export function setLastRunTimestamp(timestamp: number): void {
-  lastRunTimestamp = timestamp;
-}
-
 export async function GET() {
   try {
     // Count valid sources (sources with valid data in last 10 minutes)

@@ -103,6 +103,9 @@ export async function GET(request: Request) {
     // Supabase PostgREST: for quoted identifiers in schema, use them without quotes in JS client
     // The schema has "createdAt" (quoted in SQL) but we access as createdAt (no quotes) in JS
     const supabase = getServerClient();
+    if (!supabase) {
+      return NextResponse.json({ error: 'Database client unavailable' }, { status: 500 });
+    }
     let snapshotQuery = supabase
       .from('market_snapshots')
       .select('createdAt, market21Buy, market24Buy, error, source')
@@ -122,10 +125,20 @@ export async function GET(request: Request) {
     if (snapshotError) {
       console.error('[Forecast Series] Query error:', snapshotError);
     }
-    if (!snapshotRows || snapshotRows.length === 0) {
+    // Type guard for snapshot rows
+    type SnapshotRow = {
+      createdAt: number;
+      market21Buy: number | null;
+      market24Buy: number | null;
+      error: string | null;
+      source: string;
+    };
+    const typedRows: SnapshotRow[] = (snapshotRows || []) as SnapshotRow[];
+
+    if (typedRows.length === 0) {
       console.log('[Forecast Series] No snapshots found. Window start:', windowStart, 'Now:', now, 'Window ms:', windowMs, 'Trusted mode:', EGYPT_TRUSTED_ONLY_MODE);
     } else {
-      console.log('[Forecast Series] Found', snapshotRows.length, 'snapshots. First snapshot:', snapshotRows[0]);
+      console.log('[Forecast Series] Found', typedRows.length, 'snapshots. First snapshot:', typedRows[0]);
     }
 
     // Transform to snapshot format - use ALL snapshots, don't bucket aggressively
@@ -137,9 +150,9 @@ export async function GET(request: Request) {
       count: number; // Track how many snapshots were merged
     }>();
 
-    if (snapshotRows) {
-      console.log('[Forecast Series] Processing', snapshotRows.length, 'raw snapshot rows');
-      for (const row of snapshotRows) {
+    if (typedRows && typedRows.length > 0) {
+      console.log('[Forecast Series] Processing', typedRows.length, 'raw snapshot rows');
+      for (const row of typedRows) {
         // Skip if no valid prices
         const has21k = row.market21Buy !== null && isFinite(row.market21Buy) && row.market21Buy > 0;
         const has24k = row.market24Buy !== null && isFinite(row.market24Buy) && row.market24Buy > 0;
@@ -184,7 +197,7 @@ export async function GET(request: Request) {
         }
       }
       
-      console.log('[Forecast Series] Created', snapshotsByTime.size, 'time buckets from', snapshotRows.length, 'raw rows');
+      console.log('[Forecast Series] Created', snapshotsByTime.size, 'time buckets from', typedRows.length, 'raw rows');
     }
 
     // Convert to array and sort by timestamp (ascending for chart)

@@ -246,8 +246,8 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
         });
         
         // Get median sell prices for start/end
-        const startSellPrice = median(startBucketSnapshots.map(s => s.market21Sell));
-        const endSellPrice = median(endBucketSnapshots.map(s => s.market21Sell));
+        const startSellPrice = median(startBucketSnapshots.map(s => s.market21Sell).filter((p): p is number => p !== null));
+        const endSellPrice = median(endBucketSnapshots.map(s => s.market21Sell).filter((p): p is number => p !== null));
         
         if (startSellPrice !== null && endSellPrice !== null) {
           const startPricing = calculatePricing({

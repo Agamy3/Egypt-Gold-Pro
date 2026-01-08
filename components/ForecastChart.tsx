@@ -140,7 +140,7 @@ export default function ForecastChart({ minutes = 120 }: ForecastChartProps) {
               borderRadius: '6px',
               padding: '8px',
             }}
-            formatter={(value: any, name: string) => {
+            formatter={(value: any, name?: string) => {
               if (name === 'ounceUsd') {
                 return [`$${value?.toFixed(2) ?? 'N/A'}`, 'Global Ounce (XAU/USD)'];
               }

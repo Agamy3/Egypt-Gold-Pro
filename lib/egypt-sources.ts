@@ -408,7 +408,7 @@ export async function parseTa3weemDahabMasr(): Promise<ParseResult | null> {
       },
       rawResponse: '',
       url: candidateUrls[0], // Return first URL as reference
-      httpStatus: null,
+      httpStatus: undefined,
       error: `All Ta3weem URLs failed. Last error: ${lastError || 'All URLs returned non-200 status'}`,
     };
   }
