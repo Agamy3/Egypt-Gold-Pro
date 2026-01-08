@@ -55,19 +55,22 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
   const windowStart = now - FORECAST_WINDOW_MS;
 
   try {
-    // Get snapshots from Supabase (SQLite-compatible schema)
+    // Get snapshots from Supabase (normalized schema)
     // Filter by trusted source if trusted-only mode is enabled
     const isTrustedMode = trustedMode || getTrustedModeFromEnv();
+    const windowStartISO = new Date(windowStart).toISOString();
 
     let snapshotQuery = db.supabase
       .from('market_snapshots')
-      .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, error')
-      .gte('createdAt', windowStart) // Remove quotes - Supabase handles column names
-      .is('error', null);
+      .select('karat, price_egp, source, trusted, created_at')
+      .eq('market', 'egypt')
+      .in('karat', [21, 24]) // Only need 21k and 24k for forecast
+      .gte('created_at', windowStartISO)
+      .not('price_egp', 'is', null);
 
-    // For trusted mode, filter by source (goldbullioneg is trusted)
+    // For trusted mode, filter by trusted flag
     if (isTrustedMode) {
-      snapshotQuery = snapshotQuery.eq('source', 'goldbullioneg');
+      snapshotQuery = snapshotQuery.eq('trusted', true);
     }
 
     const { data: snapshotRows, error: snapshotError } = await snapshotQuery;
@@ -85,15 +88,15 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
 
     if (!snapshotError && snapshotRows) {
       for (const row of snapshotRows) {
-        // Skip if no valid prices
-        const has21k = row.market21Buy !== null && isFinite(row.market21Buy) && row.market21Buy > 0;
-        const has24k = row.market24Buy !== null && isFinite(row.market24Buy) && row.market24Buy > 0;
+        const price = row.price_egp as number;
+        const karat = row.karat as number;
         
-        if (!has21k && !has24k) continue;
+        // Skip if invalid price
+        if (!isFinite(price) || price <= 0) continue;
 
-        const rowTimestamp = row.createdAt as number; // Already in epoch ms
+        const created_at = row.created_at as string;
+        const rowTimestamp = new Date(created_at).getTime(); // Convert ISO to epoch ms
         // Round to nearest minute (60000 ms) for grouping
-        // This groups snapshots that come in within the same minute
         const timeBucket = Math.floor(rowTimestamp / 60000) * 60000;
         
         if (!snapshotsByTime.has(timeBucket)) {
@@ -108,22 +111,20 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
         }
         const snapshot = snapshotsByTime.get(timeBucket)!;
         
-        // Use median if multiple values exist for same time bucket
-        if (has21k) {
+        // Set price for the appropriate karat (normalized schema is buy-only)
+        if (karat === 21) {
           if (snapshot.market21Buy === null) {
-            snapshot.market21Buy = row.market21Buy as number;
+            snapshot.market21Buy = price;
           } else {
-            // Average if multiple values (simple approach)
-            snapshot.market21Buy = (snapshot.market21Buy + (row.market21Buy as number)) / 2;
+            // Average if multiple values in same bucket
+            snapshot.market21Buy = (snapshot.market21Buy + price) / 2;
           }
-        }
-        
-        if (has24k) {
+        } else if (karat === 24) {
           if (snapshot.market24Buy === null) {
-            snapshot.market24Buy = row.market24Buy as number;
+            snapshot.market24Buy = price;
           } else {
-            // Average if multiple values (simple approach)
-            snapshot.market24Buy = (snapshot.market24Buy + (row.market24Buy as number)) / 2;
+            // Average if multiple values in same bucket
+            snapshot.market24Buy = (snapshot.market24Buy + price) / 2;
           }
         }
       }

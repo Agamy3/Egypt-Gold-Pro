@@ -20,7 +20,7 @@ export interface EgyptMarketPrices {
 
 /**
  * Get median Egypt market prices by karat from Supabase
- * Uses SQLite-compatible schema: market_snapshots with camelCase columns (createdAt, market21Buy, etc.)
+ * Uses normalized schema: market_snapshots with columns (market, karat, price_egp, source, trusted, created_at)
  */
 export async function getEgyptMarketMedians(
   trustedMode: boolean = false,
@@ -33,25 +33,25 @@ export async function getEgyptMarketMedians(
 }> {
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
-  const windowStart = Date.now() - windowMs; // Use bigint (epoch ms) for comparison
+  const windowStart = Date.now() - windowMs;
+  const windowStartISO = new Date(windowStart).toISOString();
 
-  // Query using SQLite-compatible schema: camelCase columns
-  // Supabase PostgREST: for quoted identifiers in schema, access without quotes in JS client
-  // Schema has "createdAt" (quoted in SQL) but we access as createdAt (no quotes) in JS
+  // Query using normalized schema: market, karat, price_egp, source, trusted, created_at
   let query = supabase
     .from('market_snapshots')
-    .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, market18Buy, market18Sell, market14Buy, market14Sell, error')
-    .gte('createdAt', windowStart)
-    .is('error', null);
+    .select('karat, price_egp, source, trusted, created_at')
+    .eq('market', 'egypt')
+    .gte('created_at', windowStartISO);
 
-  // For trusted mode, filter by source (goldbullioneg is trusted)
+  // For trusted mode, filter by trusted flag
   if (trustedMode) {
-    query = query.eq('source', 'goldbullioneg');
+    query = query.eq('trusted', true);
   }
 
   const { data, error } = await query;
 
   if (error || !data || data.length === 0) {
+    console.log('[getEgyptMarketMedians] No data found:', { error: error?.message, count: data?.length });
     return {
       prices: {
         market21Buy: null,
@@ -69,14 +69,8 @@ export async function getEgyptMarketMedians(
     };
   }
 
-  // Group by karat and calculate median from camelCase columns
-  const karats = [
-    { karat: 21, buyKey: 'market21Buy', sellKey: 'market21Sell' },
-    { karat: 24, buyKey: 'market24Buy', sellKey: 'market24Sell' },
-    { karat: 18, buyKey: 'market18Buy', sellKey: 'market18Sell' },
-    { karat: 14, buyKey: 'market14Buy', sellKey: 'market14Sell' },
-  ];
-
+  // Group by karat and calculate median
+  const karats = [14, 18, 21, 24];
   const prices: EgyptMarketPrices = {
     market21Buy: null,
     market21Sell: null,
@@ -92,49 +86,53 @@ export async function getEgyptMarketMedians(
   let maxTimestamp = 0;
   const contributingSources = new Set<string>();
 
-  for (const { karat, buyKey, sellKey } of karats) {
-    // Filter rows that have non-null buy price for this karat
+  for (const karat of karats) {
+    // Filter rows for this karat with valid prices
     const karatRows = data.filter((row: any) => {
-      const buyPrice = row[buyKey];
-      return buyPrice !== null && buyPrice !== undefined && isFinite(buyPrice) && buyPrice > 0;
+      return row.karat === karat && 
+             row.price_egp !== null && 
+             row.price_egp !== undefined && 
+             isFinite(row.price_egp) && 
+             row.price_egp > 0;
     });
     
     if (karatRows.length > 0) {
-      // Calculate median buy price
-      const buyPrices = karatRows.map((row: any) => row[buyKey] as number).sort((a, b) => a - b);
+      // Calculate median buy price (normalized schema only has buy prices)
+      const buyPrices = karatRows
+        .map((row: any) => row.price_egp as number)
+        .sort((a, b) => a - b);
+      
       const mid = Math.floor(buyPrices.length / 2);
       const medianBuy = buyPrices.length % 2 === 0
         ? (buyPrices[mid - 1] + buyPrices[mid]) / 2
         : buyPrices[mid];
 
-      // Calculate median sell price (if available)
-      const sellPrices = karatRows
-        .map((row: any) => row[sellKey] as number | null)
-        .filter((p: number | null): p is number => p !== null && p !== undefined && isFinite(p) && p > 0)
-        .sort((a, b) => a - b);
-      
-      let medianSell: number | null = null;
-      if (sellPrices.length > 0) {
-        const sellMid = Math.floor(sellPrices.length / 2);
-        medianSell = sellPrices.length % 2 === 0
-          ? (sellPrices[sellMid - 1] + sellPrices[sellMid]) / 2
-          : sellPrices[sellMid];
-      }
-
-      // Map to output format
-      prices[buyKey as keyof EgyptMarketPrices] = medianBuy;
-      prices[sellKey as keyof EgyptMarketPrices] = medianSell;
+      // Map to output format (normalized schema is buy-only, so sell is null)
+      const buyKey = `market${karat}Buy` as keyof EgyptMarketPrices;
+      const sellKey = `market${karat}Sell` as keyof EgyptMarketPrices;
+      prices[buyKey] = medianBuy;
+      prices[sellKey] = null; // Normalized schema doesn't store sell prices
 
       // Track contributing sources
       const karatSources = Array.from(new Set(karatRows.map((row: any) => row.source as string)));
       sourcesUsed[karat.toString()] = karatSources;
       karatSources.forEach(s => contributingSources.add(s));
 
-      // Track latest timestamp (createdAt is already in epoch ms)
-      const karatTimestamps = karatRows.map((row: any) => row.createdAt as number);
+      // Track latest timestamp (convert ISO string to epoch ms)
+      const karatTimestamps = karatRows.map((row: any) => {
+        const created_at = row.created_at as string;
+        return new Date(created_at).getTime();
+      });
       maxTimestamp = Math.max(maxTimestamp, ...karatTimestamps);
     }
   }
+
+  console.log('[getEgyptMarketMedians] Result:', { 
+    activeSourceCount: contributingSources.size, 
+    lastUpdated: maxTimestamp,
+    has21k: prices.market21Buy !== null,
+    has24k: prices.market24Buy !== null
+  });
 
   return {
     prices,
@@ -146,7 +144,7 @@ export async function getEgyptMarketMedians(
 
 /**
  * Get time-series data for Egypt market prices
- * Uses SQLite-compatible schema: market_snapshots with camelCase columns
+ * Uses normalized schema: market_snapshots with columns (market, karat, price_egp, source, trusted, created_at)
  * Returns points grouped by time bucket
  */
 export async function getEgyptMarketSeries(
@@ -156,24 +154,22 @@ export async function getEgyptMarketSeries(
 ): Promise<Array<{ t: number; v: number }>> {
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
-  const windowStart = Date.now() - windowMs; // Use bigint (epoch ms) for comparison
+  const windowStart = Date.now() - windowMs;
+  const windowStartISO = new Date(windowStart).toISOString();
 
-  // Determine which karat column to use
-  const karatKey = karat === 21 ? 'market21Buy' : karat === 24 ? 'market24Buy' : karat === 18 ? 'market18Buy' : 'market14Buy';
-
-  // Query using SQLite-compatible schema
-  // Note: Supabase handles camelCase column names without quotes in query builder
+  // Query using normalized schema
   let query = supabase
     .from('market_snapshots')
-    .select(`createdAt, ${karatKey}, error`)
-    .gte('createdAt', windowStart) // Remove quotes
-    .is('error', null)
-    .not(karatKey, 'is', null) // Remove quotes
-    .order('createdAt', { ascending: true }); // Remove quotes
+    .select('karat, price_egp, created_at')
+    .eq('market', 'egypt')
+    .eq('karat', karat)
+    .gte('created_at', windowStartISO)
+    .not('price_egp', 'is', null)
+    .order('created_at', { ascending: true });
 
-  // For trusted mode, filter by source (goldbullioneg is trusted)
+  // For trusted mode, filter by trusted flag
   if (trustedMode) {
-    query = query.eq('source', 'goldbullioneg');
+    query = query.eq('trusted', true);
   }
 
   const { data, error } = await query;
@@ -186,9 +182,10 @@ export async function getEgyptMarketSeries(
   const timeBuckets = new Map<number, number[]>();
   
   for (const row of data) {
-    const price = (row as any)[karatKey] as number | null;
+    const price = row.price_egp as number;
     if (price !== null && price !== undefined && isFinite(price) && price > 0) {
-      const timestamp = row.createdAt as number; // Already in epoch ms
+      const created_at = row.created_at as string;
+      const timestamp = new Date(created_at).getTime(); // Convert ISO to epoch ms
       // Round to nearest minute for bucketing
       const bucketKey = Math.floor(timestamp / 60000) * 60000;
       
@@ -219,7 +216,7 @@ export async function getEgyptMarketSeries(
 
 /**
  * Get active source count (distinct sources with data in last window)
- * Uses SQLite-compatible schema: market_snapshots with camelCase columns
+ * Uses normalized schema: market_snapshots with columns (market, karat, price_egp, source, trusted, created_at)
  */
 export async function getActiveSourceCount(
   trustedMode: boolean = false,
@@ -227,18 +224,20 @@ export async function getActiveSourceCount(
 ): Promise<number> {
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
-  const windowStart = Date.now() - windowMs; // Use bigint (epoch ms) for comparison
+  const windowStart = Date.now() - windowMs;
+  const windowStartISO = new Date(windowStart).toISOString();
 
-  // Query using SQLite-compatible schema - check if any karat price is non-null
+  // Query using normalized schema
   let query = supabase
     .from('market_snapshots')
-    .select('source, "market21Buy", "market24Buy", "market18Buy", "market14Buy", error')
-    .gte('"createdAt"', windowStart)
-    .is('error', null);
+    .select('source, trusted, created_at')
+    .eq('market', 'egypt')
+    .gte('created_at', windowStartISO)
+    .not('price_egp', 'is', null);
 
-  // For trusted mode, filter by source (goldbullioneg is trusted)
+  // For trusted mode, filter by trusted flag
   if (trustedMode) {
-    query = query.eq('source', 'goldbullioneg');
+    query = query.eq('trusted', true);
   }
 
   const { data, error } = await query;
@@ -247,16 +246,10 @@ export async function getActiveSourceCount(
     return 0;
   }
 
-  // Filter rows that have at least one valid price and count distinct sources
+  // Count distinct sources
   const validSources = new Set<string>();
   for (const row of data) {
-    const hasValidPrice = 
-      (row.market21Buy !== null && isFinite(row.market21Buy) && row.market21Buy > 0) ||
-      (row.market24Buy !== null && isFinite(row.market24Buy) && row.market24Buy > 0) ||
-      (row.market18Buy !== null && isFinite(row.market18Buy) && row.market18Buy > 0) ||
-      (row.market14Buy !== null && isFinite(row.market14Buy) && row.market14Buy > 0);
-    
-    if (hasValidPrice) {
+    if (row.source) {
       validSources.add(row.source as string);
     }
   }
