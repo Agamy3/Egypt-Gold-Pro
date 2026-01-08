@@ -102,7 +102,8 @@ export async function GET(request: Request) {
     // Note: createdAt is stored as bigint (epoch ms), so we compare directly
     // Supabase PostgREST: for quoted identifiers in schema, use them without quotes in JS client
     // The schema has "createdAt" (quoted in SQL) but we access as createdAt (no quotes) in JS
-    let snapshotQuery = db.supabase
+    const supabase = getServerClient();
+    let snapshotQuery = supabase
       .from('market_snapshots')
       .select('createdAt, market21Buy, market24Buy, error, source')
       .gte('createdAt', windowStart)
