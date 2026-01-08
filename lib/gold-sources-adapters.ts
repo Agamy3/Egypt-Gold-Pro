@@ -753,11 +753,14 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
                 const selectorHits: Record<string, number> = {};
                 const regexMatches: Array<{ karat: number; pattern: string; match: string; snippet?: string }> = [];
                 
+                // Declare parseCtx in broader scope for later use
+                let parseCtx: any = undefined;
+                
                 try {
                   if (false) {
                     parsedPrices = parseLivePriceOfGold(jinaText, { methodTried, selectorHits, regexMatches });
                   } else if (source === 'goldrate24') {
-                    const parseCtx = {
+                    parseCtx = {
                       methodTried: [...methodTried, 'jina', 'regex'],
                       selectorHits,
                       regexMatches,
@@ -850,11 +853,15 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
             const methodTriedJina: string[] = ['jina', 'regex'];
             const selectorHitsJina: Record<string, number> = {};
             const regexMatchesJina: Array<{ karat: number; pattern: string; match: string; snippet?: string }> = [];
+            
+            // Declare parseCtx in broader scope for later use
+            let parseCtx: any = undefined;
+            
             try {
               if (false) {
                 parsedPrices = parseLivePriceOfGold(jinaText, { methodTried: methodTriedJina, selectorHits: selectorHitsJina, regexMatches: regexMatchesJina });
               } else if (source === 'goldrate24') {
-                const parseCtx = {
+                parseCtx = {
                   methodTried: methodTriedJina,
                   selectorHits: selectorHitsJina,
                   regexMatches: regexMatchesJina,
@@ -911,6 +918,13 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
     
     // Store snippet for debug only (1200 chars)
     result.rawSnippet = fullHtml.substring(0, 1200);
+
+    // Declare parsing variables early for use in Jina fallback block
+    let parsedPrices: ParsedPrices;
+    const methodTried: string[] = [];
+    const selectorHits: Record<string, number> = {};
+    const regexMatches: Array<{ karat: number; pattern: string; match: string; snippet?: string }> = [];
+    let finalMethod: 'dom' | 'regex' | null = null;
 
     // Check for JS/placeholder page (use FULL HTML)
     // For goldrate24, try Jina fallback if JS-rendered
@@ -989,11 +1003,7 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
     result.bodyTextSnippet = bodyText.substring(0, 1200);
 
     // Parse prices using source-specific parser (use FULL HTML, never truncated)
-    let parsedPrices: ParsedPrices;
-    const methodTried: string[] = [];
-    const selectorHits: Record<string, number> = {};
-    const regexMatches: Array<{ karat: number; pattern: string; match: string; snippet?: string }> = [];
-    let finalMethod: 'dom' | 'regex' | null = null;
+    // Note: parsedPrices, methodTried, selectorHits, regexMatches, and finalMethod are declared earlier for Jina fallback
     let parseError: string | null = null;
 
     try {
@@ -1041,6 +1051,7 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
           if (priceData.buy && validatePrice(karat, priceData.buy)) {
             result.prices[karat] = priceData.buy;
             if (priceData.sell !== undefined && priceData.sell !== null) {
+              if (!result.sells) result.sells = {};
               result.sells[karat] = priceData.sell;
             }
             result.stale[karat] = false;

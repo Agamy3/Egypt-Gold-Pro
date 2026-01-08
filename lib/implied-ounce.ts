@@ -72,7 +72,7 @@ async function fetchGoldApiOunceUsd(): Promise<{ price: number | null; timestamp
     }
 
     // Validate parsed price (2000-8000 USD range for Egypt Market Implied Ounce)
-    if (!isFinite(price) || price < 2000 || price > 8000) {
+    if (price === null || !isFinite(price) || price < 2000 || price > 8000) {
       return {
         price: null,
         timestamp: null,

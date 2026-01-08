@@ -57,15 +57,15 @@ export async function fetchIsagha(): Promise<IngestionResult> {
         usdBuy: null,
         usdSell: null,
         rawHash,
-        httpStatus: result.httpStatus || null,
+        httpStatus: result.httpStatus ?? undefined,
         url: result.endpoint || url,
         error: result.error || result.parseError || 'Failed to fetch iSagha prices',
         rawResponse: result.jsonSnippet || '',
         regexMatches: result.endpoint ? [{ pattern: 'endpoint', match: result.endpoint }] : undefined,
         discoveredEndpoint: result.endpoint || null,
         jsonSnippet: result.jsonSnippet || null,
-        contentLength: null,
-        bodyTextSnippet: null,
+        contentLength: undefined,
+        bodyTextSnippet: undefined,
       };
     }
     
@@ -108,13 +108,13 @@ export async function fetchIsagha(): Promise<IngestionResult> {
       usdBuy: null,
       usdSell: null,
       rawHash,
-      httpStatus: null,
+      httpStatus: undefined,
       url,
       error: `iSagha adapter error: ${errorMessage}`,
       rawResponse: '',
       regexMatches: undefined,
-      contentLength: null,
-      bodyTextSnippet: null,
+      contentLength: undefined,
+      bodyTextSnippet: undefined,
     };
   }
 }
