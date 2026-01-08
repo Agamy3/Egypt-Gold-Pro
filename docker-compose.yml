@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - GOLDAPI_API_KEY=${GOLDAPI_API_KEY}
+      - DATABASE_PATH=./db/egyptgold.db
+      - GOLDAPI_CACHE_TTL=45
+      - EGYPT_SOURCES_CACHE_TTL=180
+    volumes:
+      - ./db:/app/db
+    restart: unless-stopped
+
