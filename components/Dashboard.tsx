@@ -329,20 +329,34 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-green-600`}>
           <HoverTip text={lang === 'ar' ? 'سعر الصرف الفوري للدولار المستخدم لتحويل أسعار الذهب العالمية إلى القيمة المحلية.' : "Live USD exchange rate used to convert global gold prices into local fair value."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {snapshot.canonicalCurrency === 'EGP' ? (t(lang, 'usdEgp') || 'USD/EGP') :
-               snapshot.canonicalCurrency === 'AED' ? 'USD/AED' :
-               snapshot.canonicalCurrency === 'SAR' ? 'USD/SAR' :
-               'USD Rate'}
+              {(() => {
+                // Determine currency from canonicalCurrency or fallback to country
+                const curr = snapshot.canonicalCurrency || 
+                            (snapshot.country === 'EG' ? 'EGP' :
+                             snapshot.country === 'AE' ? 'AED' :
+                             snapshot.country === 'SA' ? 'SAR' :
+                             snapshot.country === 'US' ? 'USD' : 'EGP');
+                return curr === 'EGP' ? (t(lang, 'usdEgp') || 'USD/EGP') :
+                       curr === 'AED' ? 'USD/AED' :
+                       curr === 'SAR' ? 'USD/SAR' :
+                       'USD Rate';
+              })()}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
             </h2>
           </HoverTip>
           {(() => {
-            const rate = snapshot.canonicalCurrency === 'EGP' ? snapshot.pricing.fx?.usdEgp :
-                         snapshot.canonicalCurrency === 'AED' ? snapshot.pricing.fx?.usdAed :
-                         snapshot.canonicalCurrency === 'SAR' ? snapshot.pricing.fx?.usdSar :
-                         snapshot.pricing.fx?.usdEgp;
+            // Determine currency from canonicalCurrency or fallback to country
+            const curr = snapshot.canonicalCurrency || 
+                        (snapshot.country === 'EG' ? 'EGP' :
+                         snapshot.country === 'AE' ? 'AED' :
+                         snapshot.country === 'SA' ? 'SAR' :
+                         snapshot.country === 'US' ? 'USD' : 'EGP');
+            const rate = curr === 'EGP' ? snapshot.pricing.fx?.usdEgp :
+                        curr === 'AED' ? snapshot.pricing.fx?.usdAed :
+                        curr === 'SAR' ? snapshot.pricing.fx?.usdSar :
+                        snapshot.pricing.fx?.usdEgp;
             return rate !== null && rate !== undefined ? (
               <>
                 <HoverTip 
