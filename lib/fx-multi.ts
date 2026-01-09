@@ -103,13 +103,30 @@ export async function getMultiCurrencyRates(): Promise<MultiCurrencyRates> {
       // If we have at least some valid rates, update cache
       if (usd_egp !== null || usd_aed !== null || usd_sar !== null) {
         // Use cached values if new ones are invalid
+        const cachedUsdEgp = fxCache?.rates.usd_egp ?? 48.0;
+        const cachedUsdAed = fxCache?.rates.usd_aed ?? 3.67;
+        const cachedUsdSar = fxCache?.rates.usd_sar ?? 3.75;
+        
         fxCache = {
           rates: {
-            usd_egp: (usd_egp !== null && usd_egp > 0 && usd_egp < 200) ? usd_egp : (fxCache?.rates.usd_egp ?? 48.0),
-            usd_aed: (usd_aed !== null && usd_aed >= 3.0 && usd_aed <= 4.0) ? usd_aed : (fxCache?.rates.usd_aed ?? 3.67),
-            usd_sar: (usd_sar !== null && usd_sar >= 3.0 && usd_sar <= 4.0) ? usd_sar : (fxCache?.rates.usd_sar ?? 3.75),
+            usd_egp: (usd_egp !== null && usd_egp > 0 && usd_egp < 200) ? usd_egp : cachedUsdEgp,
+            usd_aed: (usd_aed !== null && usd_aed >= 3.0 && usd_aed <= 4.0) ? usd_aed : cachedUsdAed,
+            usd_sar: (usd_sar !== null && usd_sar >= 3.0 && usd_sar <= 4.0) ? usd_sar : cachedUsdSar,
           },
           fetchedAt: now,
+        };
+      }
+      
+      // Ensure fxCache is not null before accessing
+      if (!fxCache) {
+        return {
+          usd_egp: null,
+          usd_aed: null,
+          usd_sar: null,
+          fetchedAt: now,
+          stale: true,
+          source: 'open.er-api.com',
+          errors: { cache: 'No cached rates available' },
         };
       }
       
