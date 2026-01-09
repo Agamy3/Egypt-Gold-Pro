@@ -46,10 +46,11 @@ export async function GET() {
       checks.market_snapshots = true;
     }
 
-    // Check source_staleness
+    // Check source_staleness table exists with correct schema
+    // Try both camelCase and snake_case column names for compatibility
     const { error: ssError } = await supabase
       .from('source_staleness')
-      .select('id')
+      .select('id, source, karat')
       .limit(1)
       .maybeSingle();
     

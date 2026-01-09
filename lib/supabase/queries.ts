@@ -8,7 +8,7 @@
 import db from '../supabase';
 
 // Normalized table name constant
-export const NORMALIZED_SNAPSHOTS_TABLE = 'market_snapshots_long';
+export const NORMALIZED_SNAPSHOTS_TABLE = 'market_snapshots';
 
 export interface EgyptMarketPrices {
   market21Buy: number | null;
@@ -204,11 +204,14 @@ export async function getEgyptMarketSeries(
   // Calculate median per bucket and create time series
   const points: Array<{ t: number; v: number }> = [];
   for (const [bucketKey, prices] of timeBuckets.entries()) {
-    prices.sort((a, b) => a - b);
-    const mid = Math.floor(prices.length / 2);
-    const median = prices.length % 2 === 0
-      ? (prices[mid - 1] + prices[mid]) / 2
-      : prices[mid];
+    // Type guard: ensure all prices are valid numbers before sorting
+    const validPrices: number[] = prices.filter((p): p is number => typeof p === 'number' && isFinite(p) && p > 0);
+    validPrices.sort((a, b) => a - b);
+    if (validPrices.length === 0) continue;
+    const mid = Math.floor(validPrices.length / 2);
+    const median = validPrices.length % 2 === 0
+      ? (validPrices[mid - 1] + validPrices[mid]) / 2
+      : validPrices[mid];
     
     points.push({
       t: bucketKey,
