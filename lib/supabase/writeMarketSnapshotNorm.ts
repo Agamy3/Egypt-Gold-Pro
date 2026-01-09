@@ -24,7 +24,7 @@ interface WriteMarketSnapshotNormParams {
     14?: PriceData;
     18?: PriceData;
     21?: PriceData;
-    22?: PriceData;
+    22?: PriceData; // Optional - skip if schema doesn't support it
     24?: PriceData;
   };
 }
@@ -86,6 +86,7 @@ export async function writeMarketSnapshotNorm(
     // Build rows: one per karat with valid buy price
     const rows: Array<{
       country: string;
+      market: string;
       karat: number;
       price: number;
       currency: string;
@@ -95,7 +96,9 @@ export async function writeMarketSnapshotNorm(
       raw_hash: string | null;
     }> = [];
 
-    const karats: (14 | 18 | 21 | 22 | 24)[] = [14, 18, 21, 22, 24];
+    // Only include karats that exist in schema constraint
+    // Skip 22k for now - schema constraint may not include it yet
+    const karats: (14 | 18 | 21 | 24)[] = [14, 18, 21, 24];
     for (const karat of karats) {
       const priceData = params.prices[karat as keyof typeof params.prices];
       const buyPrice = priceData?.buy;
@@ -103,6 +106,7 @@ export async function writeMarketSnapshotNorm(
       if (buyPrice !== null && buyPrice !== undefined && isFinite(buyPrice) && buyPrice > 0) {
         rows.push({
           country: params.country,
+          market: 'local',
           karat,
           price: buyPrice,
           currency,

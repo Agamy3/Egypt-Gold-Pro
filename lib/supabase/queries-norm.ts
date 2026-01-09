@@ -53,9 +53,9 @@ export async function getMarketMedians(
   if (country === 'EG') {
     query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
   } else if (country === 'AE') {
-    query = query.in('source', ['goldprice_org_ae']);
+    query = query.in('source', ['goldprice_org_ae', 'global_parity']);
   } else if (country === 'SA') {
-    query = query.in('source', ['goldprice_org_sa']);
+    query = query.in('source', ['goldprice_org_sa', 'global_parity']);
   } else if (country === 'US') {
     query = query.in('source', ['goldapi_spot']);
   }
@@ -235,9 +235,9 @@ export async function getActiveSourceCountNorm(
   if (country === 'EG') {
     query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
   } else if (country === 'AE') {
-    query = query.in('source', ['goldprice_org_ae']);
+    query = query.in('source', ['goldprice_org_ae', 'global_parity']);
   } else if (country === 'SA') {
-    query = query.in('source', ['goldprice_org_sa']);
+    query = query.in('source', ['goldprice_org_sa', 'global_parity']);
   } else if (country === 'US') {
     query = query.in('source', ['goldapi_spot']);
   }
@@ -282,9 +282,9 @@ export async function getMarketSeries(
   if (country === 'EG') {
     query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
   } else if (country === 'AE') {
-    query = query.in('source', ['goldprice_org_ae']);
+    query = query.in('source', ['goldprice_org_ae', 'global_parity']);
   } else if (country === 'SA') {
-    query = query.in('source', ['goldprice_org_sa']);
+    query = query.in('source', ['goldprice_org_sa', 'global_parity']);
   } else if (country === 'US') {
     query = query.in('source', ['goldapi_spot']);
   }
