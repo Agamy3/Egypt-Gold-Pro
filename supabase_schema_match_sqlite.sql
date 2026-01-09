@@ -42,7 +42,7 @@ create table if not exists public.market_snapshots (
   url text,
   "rawResponseSnippet" text,
   constraint market_snapshots_source_chk check (source in (
-    'banklive','dokangold','gold_era','goldbillion','goldbullioneg','goldrate24','isagha','livepriceofgold'
+    'banklive','dokangold','gold_era','goldbillion','goldbullioneg','goldrate24','isagha','livepriceofgold','aggregated'
   ))
 );
 
