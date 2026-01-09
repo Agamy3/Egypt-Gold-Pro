@@ -105,11 +105,13 @@ export async function GET(request: Request) {
     }
     const windowStartISO = new Date(windowStart).toISOString();
     
+    // IMPORTANT: Only use local market sources (aggregated and individual sources)
     let snapshotQuery = supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market24Buy, error')
       .gte('createdAt', windowStartISO)
       .is('error', null)
+      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
       .or('market21Buy.not.is.null,market24Buy.not.is.null')
       .order('createdAt', { ascending: false })
       .limit(snapshotLimit);
