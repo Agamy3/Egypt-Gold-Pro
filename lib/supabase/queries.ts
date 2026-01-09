@@ -177,11 +177,14 @@ export async function getEgyptMarketMedians(
         maxTimestamp = Math.max(maxTimestamp, createdAt);
         
         console.log(`[getEgyptMarketMedians] Using aggregated price for ${karat}K:`, aggregatedPrice);
-        continue; // Skip to next karat
+        continue; // Skip to next karat - aggregated price is already set
       }
     }
     
-    // No aggregated data, compute median from individual sources
+    // No aggregated data available for this karat, compute median from individual sources
+    if (validRows.length === 0) {
+      continue; // No data for this karat
+    }
 
     if (validRows.length > 0) {
       // Calculate median buy price with type safety
