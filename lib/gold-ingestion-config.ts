@@ -28,7 +28,7 @@ export const SOURCE_WEIGHTS: Record<string, number> = {
 
 export const STALE_AFTER_MS = 5 * 60 * 1000; // 5 minutes
 
-export const KARATS = [24, 21, 18, 14] as const;
+export const KARATS = [24, 22, 21, 18, 14] as const;
 export type Karat = typeof KARATS[number];
 
 export const SOURCE_URLS: Record<string, string> = {

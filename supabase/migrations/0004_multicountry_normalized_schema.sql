@@ -2,12 +2,11 @@
 -- Creates normalized schema for market snapshots supporting multiple countries
 -- Does NOT drop existing market_snapshots table (keeps wide schema for backward compatibility)
 
--- Create normalized market snapshots table
+-- Create normalized market snapshots table (exact schema as specified)
 CREATE TABLE IF NOT EXISTS public.market_snapshots_norm (
   id BIGSERIAL PRIMARY KEY,
   country TEXT NOT NULL CHECK (country IN ('EG','AE','SA','US')),
-  market TEXT NOT NULL DEFAULT 'local',
-  karat INTEGER NOT NULL CHECK (karat IN (14, 18, 21, 24)),
+  karat INTEGER NOT NULL CHECK (karat IN (14, 18, 21, 22, 24)),
   price NUMERIC NOT NULL,
   currency TEXT NOT NULL CHECK (currency IN ('EGP','USD','AED','SAR')),
   source TEXT NOT NULL,
@@ -157,7 +156,7 @@ BEGIN
       id BIGSERIAL PRIMARY KEY,
       country TEXT NOT NULL DEFAULT 'EG' CHECK (country IN ('EG','AE','SA','US')),
       source TEXT NOT NULL,
-      karat INTEGER NOT NULL CHECK (karat IN (14, 18, 21, 24)),
+      karat INTEGER NOT NULL CHECK (karat IN (14, 18, 21, 22, 24)),
       last_ok_timestamp TIMESTAMPTZ NOT NULL,
       last_ok_price NUMERIC NOT NULL,
       CONSTRAINT source_staleness_country_source_karat_key UNIQUE (country, source, karat)

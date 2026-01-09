@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { runIngestionCycle } from '@/lib/gold-ingestion-engine';
+import { runIngestionCycle, runMultiCountryIngestionCycle } from '@/lib/gold-ingestion-engine';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -57,38 +57,39 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Use the local market data ingestion engine instead of outdated iSagha/GoldBillion
-    // This uses sources: banklive, gold_era, dokangold, goldrate24, goldbullioneg
-    console.log('[Cron] Starting local market data ingestion...');
-    const ingestionResult = await runIngestionCycle();
+    // Run multi-country ingestion (EG, AE, SA, US)
+    console.log('[Cron] Starting multi-country ingestion cycle...');
+    const multiCountryResult = await runMultiCountryIngestionCycle();
     
-    // Count how many sources were successfully ingested AND written to DB
-    // Check the breakdown to see which sources have valid data
-    const sourcesWithData = Object.values(ingestionResult.breakdown).flatMap(karatData => 
-      Object.keys(karatData).filter(source => karatData[source].valid && karatData[source].buy !== null)
-    );
-    const uniqueSources = new Set(sourcesWithData);
+    // Also run Egypt-specific cycle for backward compatibility and aggregated data
+    console.log('[Cron] Running Egypt-specific cycle for aggregated data...');
+    const egResult = await runIngestionCycle();
     
-    // Also check if aggregated data exists (should always be written)
-    const hasAggregatedData = ingestionResult.our_price_buy && Object.values(ingestionResult.our_price_buy).some(price => price !== null);
+    // Aggregate results
+    const allErrors: Array<{ source: string; error: string }> = [];
+    for (const [country, result] of Object.entries(multiCountryResult.results)) {
+      result.errors.forEach(err => allErrors.push({ source: country, error: err }));
+    }
+    egResult.errors.forEach(err => allErrors.push({ source: 'EG', error: err }));
     
     const results = {
-      inserted: uniqueSources.size + (hasAggregatedData ? 1 : 0), // Count individual sources + aggregated
-      sourcesProcessed: uniqueSources.size,
-      sourcesUsed: Array.from(uniqueSources),
-      hasAggregated: hasAggregatedData,
-      numSourcesOk: ingestionResult.num_sources_ok,
-      numSourcesErrors: ingestionResult.num_sources_errors,
-      errors: ingestionResult.errors.map(err => ({ source: 'ingestion', error: err })),
+      inserted: multiCountryResult.totalInserted + (egResult.sourcesWritten || 0),
+      countriesProcessed: Object.keys(multiCountryResult.results).length,
+      countryResults: multiCountryResult.results,
+      egAggregated: egResult.aggregatedSnapshotWritten,
+      egSourcesWritten: egResult.sourcesWritten,
+      numSourcesOk: egResult.num_sources_ok,
+      numSourcesErrors: egResult.num_sources_errors,
+      errors: allErrors.length > 0 ? allErrors : undefined,
       timestamp: Date.now(),
-      confidence: ingestionResult.confidence,
-      prices: ingestionResult.our_price_buy,
+      confidence: egResult.confidence,
+      prices: egResult.our_price_buy,
     };
 
-    console.log('[Cron] Ingestion complete:', {
-      sourcesOk: ingestionResult.num_sources_ok,
-      sourcesErrors: ingestionResult.num_sources_errors,
-      uniqueSources: Array.from(uniqueSources),
+    console.log('[Cron] Multi-country ingestion complete:', {
+      totalInserted: multiCountryResult.totalInserted,
+      countries: Object.keys(multiCountryResult.results),
+      egSourcesOk: egResult.num_sources_ok,
     });
 
     return NextResponse.json(results, { status: 200 });

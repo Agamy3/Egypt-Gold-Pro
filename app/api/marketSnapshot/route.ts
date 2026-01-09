@@ -289,7 +289,7 @@ export async function GET(request: Request) {
             stale: impliedOunceStale || impliedOunce.stale,
           }
         : null,
-      egyptMarket: {
+      market: {
         median: convertedPrices, // Return converted prices
         canonicalMedian: canonicalPrices, // Also return canonical prices for reference
         sources: marketSources.map(s => ({
@@ -349,7 +349,7 @@ export async function GET(request: Request) {
         errors: errors.length > 0 ? errors : [{ source: 'Unexpected', message: errorMessage }],
         timestamp: Date.now(),
         impliedOunce: null,
-        egyptMarket: {
+        market: {
           median: {
             market21Buy: null,
             market21Sell: null,

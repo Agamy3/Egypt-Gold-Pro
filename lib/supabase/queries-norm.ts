@@ -42,17 +42,22 @@ export async function getMarketMedians(
     .from('market_snapshots_norm')
     .select('source, karat, price, currency, created_at')
     .eq('country', country)
-    .eq('market', 'local')
     .gte('created_at', windowStart)
-    .in('karat', [14, 18, 21, 24]);
+    .in('karat', [14, 18, 21, 22, 24]);
 
   if (trustedMode) {
     query = query.eq('trusted', true);
   }
 
-  // Filter by source for local market sources (only for EG currently)
+  // Filter by source for country-specific sources
   if (country === 'EG') {
     query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
+  } else if (country === 'AE') {
+    query = query.in('source', ['goldprice_org_ae']);
+  } else if (country === 'SA') {
+    query = query.in('source', ['goldprice_org_sa']);
+  } else if (country === 'US') {
+    query = query.in('source', ['goldapi_spot']);
   }
 
   const { data, error } = await query;
@@ -219,7 +224,6 @@ export async function getActiveSourceCountNorm(
     .from('market_snapshots_norm')
     .select('source')
     .eq('country', country)
-    .eq('market', 'local')
     .gte('created_at', windowStart)
     .in('karat', [21, 24]);
 
@@ -227,8 +231,15 @@ export async function getActiveSourceCountNorm(
     query = query.eq('trusted', true);
   }
 
+  // Filter by source for country-specific sources
   if (country === 'EG') {
     query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
+  } else if (country === 'AE') {
+    query = query.in('source', ['goldprice_org_ae']);
+  } else if (country === 'SA') {
+    query = query.in('source', ['goldprice_org_sa']);
+  } else if (country === 'US') {
+    query = query.in('source', ['goldapi_spot']);
   }
 
   const { data, error } = await query;
@@ -263,13 +274,19 @@ export async function getMarketSeries(
     .from('market_snapshots_norm')
     .select('karat, price, created_at, source')
     .eq('country', country)
-    .eq('market', 'local')
     .eq('karat', karat)
     .gte('created_at', windowStart)
     .order('created_at', { ascending: true });
 
+  // Filter by source for country-specific sources
   if (country === 'EG') {
     query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
+  } else if (country === 'AE') {
+    query = query.in('source', ['goldprice_org_ae']);
+  } else if (country === 'SA') {
+    query = query.in('source', ['goldprice_org_sa']);
+  } else if (country === 'US') {
+    query = query.in('source', ['goldapi_spot']);
   }
 
   const { data, error } = await query;

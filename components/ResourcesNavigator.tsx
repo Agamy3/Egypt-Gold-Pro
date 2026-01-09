@@ -15,7 +15,7 @@ interface ResourcesNavigatorProps {
     stale: boolean;
     error?: string;
   } | null;
-  egyptMarket?: {
+  market?: {
     sources: Array<{
       source: string;
       status: string;
@@ -23,7 +23,7 @@ interface ResourcesNavigatorProps {
     }>;
     activeSourceCount: number;
     activeUnderlyingSourceCount?: number;
-    activeUnderlyingSources?: number | string[];
+    activeUnderlyingSources?: string[];
     sourcesUsed?: Record<string, string[]>;
   } | null;
 }
@@ -31,7 +31,7 @@ interface ResourcesNavigatorProps {
 export default function ResourcesNavigator({
   impliedOunce,
   fx,
-  egyptMarket,
+  market,
 }: ResourcesNavigatorProps) {
   const { lang } = useLang();
   const isRTL = lang === 'ar';
@@ -127,29 +127,29 @@ export default function ResourcesNavigator({
           </div>
         </div>
 
-        {/* Egypt Market Sources */}
+        {/* Market Sources */}
         <div className={isRTL ? 'text-right' : ''}>
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-gray-300">
-              {t(lang, 'egyptMarket') || 'Egypt Market Sources'}
+              {t(lang, 'marketSources') || 'Market Sources'}
             </h3>
-            {egyptMarket && (
+            {market && (
               <span className="text-xs text-gray-400">
-                {egyptMarket.activeSourceCount || 0} {t(lang, 'active') || 'active'}
+                {market.activeSourceCount || 0} {t(lang, 'active') || 'active'}
               </span>
             )}
           </div>
           
-          {egyptMarket?.sources && egyptMarket.sources.length > 0 ? (
+          {market?.sources && market.sources.length > 0 ? (
             <div className="space-y-2 mt-3">
-              {egyptMarket.sources.map((source, idx) => (
+              {market.sources.map((source, idx) => (
                 <div
                   key={idx}
                   className="flex items-center justify-between text-sm bg-gray-800 rounded px-3 py-2"
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-gray-300 font-mono text-xs">
-                      {source.source}
+                      {source.source.replace(/_/g, ' ')}
                     </span>
                     {getStatusBadge(source.status)}
                   </div>
@@ -166,18 +166,18 @@ export default function ResourcesNavigator({
           )}
 
           {/* Sources Used Breakdown by Karat */}
-          {egyptMarket?.sourcesUsed && Object.keys(egyptMarket.sourcesUsed).length > 0 && (
+          {market?.sourcesUsed && Object.keys(market.sourcesUsed).length > 0 && (
             <div className="mt-4 pt-4 border-t border-gray-800">
               <h4 className="text-xs font-semibold text-gray-400 mb-2">
                 {t(lang, 'sourcesByKarat') || 'Sources by Karat'}
               </h4>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                {Object.entries(egyptMarket.sourcesUsed).map(([karat, sources]) => (
+                {Object.entries(market.sourcesUsed).map(([karat, sources]) => (
                   <div key={karat} className="bg-gray-800 rounded px-2 py-1">
                     <div className="text-gold-300 font-semibold">{karat}K</div>
                     <div className="text-gray-400 mt-1">
                       {Array.isArray(sources) && sources.length > 0
-                        ? sources.join(', ')
+                        ? sources.map(s => s.replace(/_/g, ' ')).join(', ')
                         : 'N/A'}
                     </div>
                   </div>

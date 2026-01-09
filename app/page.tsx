@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, useCallback } from 'react';
 import Dashboard from '@/components/Dashboard';
 import ForecastCard from '@/components/ForecastCard';
 import ResourcesNavigator from '@/components/ResourcesNavigator';
@@ -18,12 +18,26 @@ interface MarketSnapshot {
       timestamp: number;
       stale: boolean;
     } | null;
-  egyptMarket: {
+  market: {
     median: {
       market21Buy: number | null;
       market21Sell: number | null;
       market24Buy: number | null;
       market24Sell: number | null;
+      market18Buy?: number | null;
+      market18Sell?: number | null;
+      market14Buy?: number | null;
+      market14Sell?: number | null;
+    };
+    canonicalMedian?: {
+      market21Buy: number | null;
+      market21Sell: number | null;
+      market24Buy: number | null;
+      market24Sell: number | null;
+      market18Buy?: number | null;
+      market18Sell?: number | null;
+      market14Buy?: number | null;
+      market14Sell?: number | null;
     };
     sources: Array<{
       source: string;
@@ -31,6 +45,9 @@ interface MarketSnapshot {
       fetchedAt: number;
     }>;
     activeSourceCount: number;
+    activeUnderlyingSourceCount?: number;
+    activeUnderlyingSources?: string[];
+    sourcesUsed?: Record<string, string[]>;
   };
   pricing: {
     usdPerGram24: number | null;
@@ -49,18 +66,26 @@ interface MarketSnapshot {
       premiumEGP: number | null;
       classification: 'FAIR' | 'PREMIUM' | 'DISCOUNT' | 'N/A';
     };
-    fx?: {
-      usdEgp: number | null;
-      source: string;
-      fetchedAt: number | null;
-      stale: boolean;
-      error?: string;
-    };
+      fx?: {
+        usdEgp: number | null;
+        usdAed?: number | null;
+        usdSar?: number | null;
+        source: string;
+        fetchedAt: number | null;
+        stale: boolean;
+        errors?: Record<string, string>;
+        error?: string;
+      };
   };
   warnings: {
     lowConfidence: boolean;
     referenceUnavailable: boolean;
+    fxUnavailable?: boolean;
+    buyOnlyVariance?: boolean;
   };
+  country?: string;
+  currency?: string;
+  canonicalCurrency?: string;
 }
 
 function HomeContent() {
@@ -75,7 +100,7 @@ function HomeContent() {
   const country = (searchParams.get('country') || 'EG') as 'EG' | 'AE' | 'SA' | 'US';
   const currency = (searchParams.get('currency') || 'EGP') as 'EGP' | 'USD' | 'AED' | 'SAR';
 
-  const fetchSnapshot = async () => {
+  const fetchSnapshot = useCallback(async () => {
     try {
       const url = `/api/marketSnapshot?country=${country}&currency=${currency}`;
       const res = await fetch(url, {
@@ -95,9 +120,9 @@ function HomeContent() {
         setLoading(false);
       }
     }
-  };
+  }, [country, currency, loading]);
 
-  const fetchForecast = async () => {
+  const fetchForecast = useCallback(async () => {
     try {
       const res = await fetch('/api/forecast', {
         cache: 'no-store', // Ensure fresh data on every fetch
@@ -110,8 +135,7 @@ function HomeContent() {
       // Forecast errors are non-critical, don't set error state
       console.error('Forecast fetch error:', err);
     }
-  };
-
+  }, []);
 
   useEffect(() => {
     fetchSnapshot();
@@ -121,8 +145,7 @@ function HomeContent() {
       fetchForecast();
     }, 30000); // Poll every 30 seconds
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [country, currency]); // Re-fetch when country/currency changes (fetchSnapshot/fetchForecast are recreated on each render)
+  }, [fetchSnapshot, fetchForecast]); // Re-fetch when country/currency changes
 
   if (loading) {
     return (
@@ -187,7 +210,7 @@ function HomeContent() {
                 <ResourcesNavigator
                   impliedOunce={snapshot.impliedOunce}
                   fx={snapshot.pricing.fx}
-                  egyptMarket={snapshot.egyptMarket}
+                  market={snapshot.market}
                 />
               </div>
             </div>

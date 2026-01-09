@@ -13,12 +13,20 @@ interface DashboardProps {
       timestamp: number;
       stale: boolean;
     } | null;
-    egyptMarket: {
+    market: {
       median: {
         market21Buy: number | null;
         market21Sell: number | null;
         market24Buy: number | null;
         market24Sell: number | null;
+        market18Buy?: number | null;
+        market18Sell?: number | null;
+        market14Buy?: number | null;
+        market14Sell?: number | null;
+      };
+      canonicalMedian?: {
+        market21Buy: number | null;
+        market24Buy: number | null;
       };
       sources: Array<{
         source: string;
@@ -27,6 +35,9 @@ interface DashboardProps {
       }>;
       activeSourceCount: number;
     };
+    country?: string;
+    currency?: string;
+    canonicalCurrency?: string;
     pricing: {
       usdPerGram24: number | null;
       usdPerGram21: number | null;
@@ -46,9 +57,12 @@ interface DashboardProps {
       };
       fx?: {
         usdEgp: number | null;
+        usdAed?: number | null;
+        usdSar?: number | null;
         source: string;
         fetchedAt: number | null;
         stale: boolean;
+        errors?: Record<string, string>;
         error?: string;
       };
     };
@@ -160,18 +174,18 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             <span className={`font-semibold text-yellow-300 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'lowConfidence')}</span>
           </div>
           <p className={`mt-2 text-sm text-yellow-200 ${lang === 'ar' ? 'text-right' : ''}`}>
-            {lang === 'ar' ? 'مصدر واحد فقط من السوق المصري متاح. قد تكون النتائج أقل دقة.' : 'Only one Egypt market source is available. Results may be less accurate.'}
+            {lang === 'ar' ? 'مصدر واحد فقط متاح. قد تكون النتائج أقل دقة.' : 'Only one market source is available. Results may be less accurate.'}
           </p>
         </div>
       )}
 
       {/* Main Dashboard Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Egypt Market Implied Ounce */}
+        {/* Global Spot Gold Price */}
         <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gold-600`}>
           <HoverTip text={lang === 'ar' ? 'سعر الذهب العالمي الفوري لكل أونصة تروي (XAUUSD). يُستخدم كمرجع لحسابات القيمة العادلة.' : "Global spot gold price per troy ounce (XAUUSD). Used as the reference for fair-value calculations."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {t(lang, 'impliedOunce')}
+              {t(lang, 'impliedOunce') || 'Global Spot Gold'}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
@@ -201,26 +215,26 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           )}
         </div>
 
-        {/* Egypt Market 21k */}
+        {/* Market 21k */}
         <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600`}>
-          <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 21k المتاحة من السوق المصري من المصادر النشطة (بعد التصفية).' : "Median of available Egypt market 21k buy prices from active sources (after filtering)."}>
+          <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 21k المتاحة من المصادر النشطة.' : "Median of available 21k buy prices from active sources."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {t(lang, 'market21')}
+              {t(lang, 'market21') || '21k Gold Price'}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
             </h2>
           </HoverTip>
-          {snapshot.egyptMarket.median.market21Buy !== null ? (
+          {snapshot.market.median.market21Buy !== null ? (
             <>
               <div className="text-3xl font-bold text-blue-700 mb-2">
-                {formatNumber(snapshot.egyptMarket.median.market21Buy, 0)} {lang === 'ar' ? 'ج.م' : 'EGP'}
+                {formatNumber(snapshot.market.median.market21Buy, 0)} {snapshot.currency || 'EGP'}
               </div>
               <div className="text-sm text-gray-600 mb-4">
-                {t(lang, 'buyPrice')} ({lang === 'ar' ? 'ج.م' : 'EGP'})
+                {t(lang, 'buyPrice')} ({snapshot.currency || 'EGP'})
               </div>
               <div className="mt-4 text-xs text-gray-500">
-                {t(lang, 'sources')}: {snapshot.egyptMarket.activeSourceCount}
+                {t(lang, 'sources')}: {snapshot.market.activeSourceCount}
               </div>
             </>
           ) : (
@@ -228,26 +242,26 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           )}
         </div>
 
-        {/* Egypt Market 24k */}
+        {/* Market 24k */}
         <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-purple-600`}>
-          <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 24k المتاحة من السوق المصري من المصادر النشطة (بعد التصفية).' : "Median of available Egypt market 24k buy prices from active sources (after filtering)."}>
+          <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 24k المتاحة من المصادر النشطة.' : "Median of available 24k buy prices from active sources."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {t(lang, 'market24')}
+              {t(lang, 'market24') || '24k Gold Price'}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
             </h2>
           </HoverTip>
-          {snapshot.egyptMarket.median.market24Buy !== null ? (
+          {snapshot.market.median.market24Buy !== null ? (
             <>
               <div className="text-3xl font-bold text-purple-700 mb-2">
-                {formatNumber(snapshot.egyptMarket.median.market24Buy, 0)} {lang === 'ar' ? 'ج.م' : 'EGP'}
+                {formatNumber(snapshot.market.median.market24Buy, 0)} {snapshot.currency || 'EGP'}
               </div>
               <div className="text-sm text-gray-600 mb-4">
-                {t(lang, 'buyPrice')} ({lang === 'ar' ? 'ج.م' : 'EGP'})
+                {t(lang, 'buyPrice')} ({snapshot.currency || 'EGP'})
               </div>
               <div className="mt-4 text-xs text-gray-500">
-                {t(lang, 'sources')}: {snapshot.egyptMarket.activeSourceCount}
+                {t(lang, 'sources')}: {snapshot.market.activeSourceCount}
               </div>
             </>
           ) : (
@@ -255,47 +269,56 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           )}
         </div>
 
-        {/* USD/EGP (Real) */}
+        {/* USD Exchange Rate */}
         <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-green-600`}>
-          <HoverTip text={lang === 'ar' ? 'سعر الصرف الفوري للدولار مقابل الجنيه المستخدم لتحويل أسعار الذهب العالمية إلى القيمة العادلة المحلية.' : "Live USD→EGP exchange rate used to convert global gold prices into local fair value."}>
+          <HoverTip text={lang === 'ar' ? 'سعر الصرف الفوري للدولار المستخدم لتحويل أسعار الذهب العالمية إلى القيمة المحلية.' : "Live USD exchange rate used to convert global gold prices into local fair value."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {t(lang, 'usdEgp')}
+              {snapshot.canonicalCurrency === 'EGP' ? (t(lang, 'usdEgp') || 'USD/EGP') :
+               snapshot.canonicalCurrency === 'AED' ? 'USD/AED' :
+               snapshot.canonicalCurrency === 'SAR' ? 'USD/SAR' :
+               'USD Rate'}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
             </h2>
           </HoverTip>
-          {snapshot.pricing.fx?.usdEgp !== null && snapshot.pricing.fx?.usdEgp !== undefined ? (
-            <>
-              <div className="text-3xl font-bold text-green-700 mb-2">
-                {formatNumber(snapshot.pricing.fx.usdEgp, 2)}
-              </div>
-              <div className="text-sm text-gray-300">
-                {lang === 'ar' ? 'سعر صرف فعلي' : 'Real exchange rate'}
-              </div>
-              <div className={`mt-2 flex items-center justify-between ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-                {snapshot.pricing.fx.stale && (
-                  <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
-                    {t(lang, 'stale')}
-                  </span>
-                )}
-                {snapshot.pricing.fx.fetchedAt && (
-                  <span className="text-xs text-gray-500">
-                    {t(lang, 'updated')}: {formatTimestamp(snapshot.pricing.fx.fetchedAt)}
-                  </span>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="text-gray-400">
-              N/A (FX unavailable)
-              {snapshot.pricing.fx?.error && (
-                <div className="text-xs text-red-500 mt-1">
-                  {snapshot.pricing.fx.error}
+          {(() => {
+            const rate = snapshot.canonicalCurrency === 'EGP' ? snapshot.pricing.fx?.usdEgp :
+                         snapshot.canonicalCurrency === 'AED' ? snapshot.pricing.fx?.usdAed :
+                         snapshot.canonicalCurrency === 'SAR' ? snapshot.pricing.fx?.usdSar :
+                         snapshot.pricing.fx?.usdEgp;
+            return rate !== null && rate !== undefined ? (
+              <>
+                <div className="text-3xl font-bold text-green-700 mb-2">
+                  {formatNumber(rate, 2)}
                 </div>
-              )}
-            </div>
-          )}
+                <div className="text-sm text-gray-300">
+                  {lang === 'ar' ? 'سعر صرف فعلي' : 'Real exchange rate'}
+                </div>
+                <div className={`mt-2 flex items-center justify-between ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+                  {snapshot.pricing.fx?.stale && (
+                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                      {t(lang, 'stale')}
+                    </span>
+                  )}
+                  {snapshot.pricing.fx?.fetchedAt && (
+                    <span className="text-xs text-gray-500">
+                      {t(lang, 'updated')}: {formatTimestamp(snapshot.pricing.fx.fetchedAt)}
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-gray-400">
+                N/A (FX unavailable)
+                {snapshot.pricing.fx?.error && (
+                  <div className="text-xs text-red-500 mt-1">
+                    {snapshot.pricing.fx.error}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Over/Under Pricing */}
@@ -333,7 +356,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                       </div>
                       <div className="text-lg font-semibold">
                         {snapshot.pricing.variance.premiumEGP > 0 ? '+' : ''}
-                        {formatNumber(snapshot.pricing.variance.premiumEGP, 2)} {lang === 'ar' ? 'ج.م' : 'EGP'}
+                        {formatNumber(snapshot.pricing.variance.premiumEGP, 2)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
                       </div>
                     </div>
                   )}
@@ -397,7 +420,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                   </div>
                 </HoverTip>
                 <div className="font-semibold">
-                  {formatNumber(snapshot.pricing.fairValue.fair24, 2)} {lang === 'ar' ? 'ج.م' : 'EGP'}
+                      {formatNumber(snapshot.pricing.fairValue.fair24, 2)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
                 </div>
               </div>
             )}
@@ -412,7 +435,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                   </div>
                 </HoverTip>
                 <div className="font-semibold">
-                  {formatNumber(snapshot.pricing.fairValue.fair21, 2)} {lang === 'ar' ? 'ج.م' : 'EGP'}
+                      {formatNumber(snapshot.pricing.fairValue.fair21, 2)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
                 </div>
               </div>
             )}

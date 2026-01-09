@@ -40,12 +40,17 @@ export interface IngestionResult {
 /**
  * Update staleness for source+karat (uses Supabase, with country support)
  */
-async function updateStaleness(source: string, karat: Karat, price: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<void> {
+async function updateStaleness(source: string, karat: number, price: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<void> {
   const now = Date.now();
   
   // Update in Supabase (non-fatal)
+  // Only update staleness for valid karats (14, 18, 21, 22, 24)
+  if (![14, 18, 21, 22, 24].includes(karat)) {
+    return;
+  }
+  
   try {
-    await updateSourceStaleness(source, karat, now, price, country);
+    await updateSourceStaleness(country, source, karat as 14 | 18 | 21 | 22 | 24, now, price);
   } catch (error) {
     console.error(`[Supabase] Failed to update staleness for ${source}/${karat} (${country}):`, error);
     // Continue - staleness update failure shouldn't block ingestion
@@ -55,9 +60,13 @@ async function updateStaleness(source: string, karat: Karat, price: number, coun
 /**
  * Check if source+karat is stale (uses Supabase, with country support)
  */
-async function isStale(source: string, karat: Karat, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<boolean> {
+async function isStale(source: string, karat: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<boolean> {
+  // Only check staleness for valid karats
+  if (![14, 18, 21, 22, 24].includes(karat)) {
+    return true; // Unknown karat = stale
+  }
   try {
-    return await isSourceStaleSupabase(source, karat, STALE_AFTER_MS, country);
+    return await isSourceStaleSupabase(country, source, karat as 14 | 18 | 21 | 22 | 24, STALE_AFTER_MS);
   } catch (error) {
     console.error(`[Supabase] Error checking staleness for ${source}/${karat} (${country}):`, error);
     return true; // On error, assume stale
@@ -67,9 +76,13 @@ async function isStale(source: string, karat: Karat, country: 'EG' | 'AE' | 'SA'
 /**
  * Get last valid buy price for source+karat (uses Supabase, with country support)
  */
-async function getLastOkBuy(source: string, karat: Karat, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<number | null> {
+async function getLastOkBuy(source: string, karat: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<number | null> {
+  // Only query for valid karats
+  if (![14, 18, 21, 22, 24].includes(karat)) {
+    return null;
+  }
   try {
-    return await getLastOkBuySupabase(source, karat, country);
+    return await getLastOkBuySupabase(country, source, karat as 14 | 18 | 21 | 22 | 24);
   } catch (error) {
     console.error(`[Supabase] Error getting last ok buy for ${source}/${karat} (${country}):`, error);
     return null;
@@ -202,9 +215,147 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
 /**
  * Run one ingestion cycle
  */
-export async function runIngestionCycle(): Promise<IngestionResult> {
+/**
+ * Run multi-country ingestion cycle
+ * Fetches data for EG, AE, SA, US
+ */
+export async function runMultiCountryIngestionCycle(): Promise<{
+  results: Record<string, { inserted: number; errors: string[] }>;
+  totalInserted: number;
+}> {
+  const results: Record<string, { inserted: number; errors: string[] }> = {};
+  let totalInserted = 0;
+  const now = Date.now();
+
+  // Import multi-country adapters
+  const { fetchUAEGoldPrices, fetchSaudiGoldPrices, fetchUSASpotPrices } = await import('./gold-sources-adapters-multicountry');
+  const { getLatestGoldSpot } = await import('./supabase/goldSpot');
+
+  // 1. EGYPT (existing pipeline)
+  console.log('[Ingestion] Processing Egypt (EG)...');
+  try {
+    const egResult = await runIngestionCycle();
+    results['EG'] = {
+      inserted: egResult.sourcesWritten + (egResult.aggregatedSnapshotWritten ? 1 : 0),
+      errors: egResult.errors,
+    };
+    totalInserted += results['EG'].inserted;
+  } catch (error) {
+    console.error('[Ingestion] Egypt ingestion failed:', error);
+    results['EG'] = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
+  }
+
+  // 2. USA (derive from spot price)
+  console.log('[Ingestion] Processing USA (US)...');
+  try {
+    const spotData = await getLatestGoldSpot();
+    const spotPrice = spotData?.xau_spot_usd_oz ?? null;
+    const usResult = await fetchUSASpotPrices(spotPrice);
+    
+    if (usResult.valid && Object.keys(usResult.prices).length > 0) {
+      const rawHash = Buffer.from(JSON.stringify(usResult)).toString('base64').substring(0, 32);
+      const writeResult = await writeMarketSnapshotNorm({
+        country: 'US',
+        source: 'goldapi_spot',
+        trusted: true,
+        createdAt: now,
+        rawHash,
+        prices: {
+          24: { buy: usResult.prices[24] || null },
+          22: { buy: usResult.prices[22] || null },
+          21: { buy: usResult.prices[21] || null },
+          18: { buy: usResult.prices[18] || null },
+          14: { buy: usResult.prices[14] || null },
+        },
+      });
+      results['US'] = {
+        inserted: writeResult.inserted || 0,
+        errors: writeResult.ok ? [] : [writeResult.error || 'Write failed'],
+      };
+      totalInserted += results['US'].inserted;
+    } else {
+      results['US'] = { inserted: 0, errors: usResult.errors };
+    }
+  } catch (error) {
+    console.error('[Ingestion] USA ingestion failed:', error);
+    results['US'] = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
+  }
+
+  // 3. UAE
+  console.log('[Ingestion] Processing UAE (AE)...');
+  try {
+    const aeResult = await fetchUAEGoldPrices();
+    
+    if (aeResult.valid && Object.keys(aeResult.prices).length > 0) {
+      const rawHash = Buffer.from(JSON.stringify(aeResult)).toString('base64').substring(0, 32);
+      const writeResult = await writeMarketSnapshotNorm({
+        country: 'AE',
+        source: 'goldprice_org_ae',
+        trusted: false,
+        createdAt: now,
+        rawHash,
+        prices: {
+          24: { buy: aeResult.prices[24] || null },
+          22: { buy: aeResult.prices[22] || null },
+          21: { buy: aeResult.prices[21] || null },
+          18: { buy: aeResult.prices[18] || null },
+          14: { buy: aeResult.prices[14] || null },
+        },
+      });
+      results['AE'] = {
+        inserted: writeResult.inserted || 0,
+        errors: writeResult.ok ? [] : [writeResult.error || 'Write failed'],
+      };
+      totalInserted += results['AE'].inserted;
+    } else {
+      results['AE'] = { inserted: 0, errors: aeResult.errors };
+    }
+  } catch (error) {
+    console.error('[Ingestion] UAE ingestion failed:', error);
+    results['AE'] = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
+  }
+
+  // 4. Saudi Arabia
+  console.log('[Ingestion] Processing Saudi Arabia (SA)...');
+  try {
+    const saResult = await fetchSaudiGoldPrices();
+    
+    if (saResult.valid && Object.keys(saResult.prices).length > 0) {
+      const rawHash = Buffer.from(JSON.stringify(saResult)).toString('base64').substring(0, 32);
+      const writeResult = await writeMarketSnapshotNorm({
+        country: 'SA',
+        source: 'goldprice_org_sa',
+        trusted: false,
+        createdAt: now,
+        rawHash,
+        prices: {
+          24: { buy: saResult.prices[24] || null },
+          22: { buy: saResult.prices[22] || null },
+          21: { buy: saResult.prices[21] || null },
+          18: { buy: saResult.prices[18] || null },
+          14: { buy: saResult.prices[14] || null },
+        },
+      });
+      results['SA'] = {
+        inserted: writeResult.inserted || 0,
+        errors: writeResult.ok ? [] : [writeResult.error || 'Write failed'],
+      };
+      totalInserted += results['SA'].inserted;
+    } else {
+      results['SA'] = { inserted: 0, errors: saResult.errors };
+    }
+  } catch (error) {
+    console.error('[Ingestion] Saudi Arabia ingestion failed:', error);
+    results['SA'] = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
+  }
+
+  console.log(`[Ingestion] Multi-country cycle complete: ${totalInserted} total rows inserted`, results);
+  return { results, totalInserted };
+}
+
+export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWritten: number; aggregatedSnapshotWritten: boolean }> {
   const sources = Object.keys(SOURCE_WEIGHTS);
-  console.log(`[Ingestion] Starting cycle with ${sources.length} sources:`, sources);
+  console.log(`[Ingestion] Starting Egypt cycle with ${sources.length} sources:`, sources);
   
   // Fetch all sources in parallel
   const sourceResults = await Promise.all(
@@ -413,6 +564,10 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
   }
 
   console.log(`[Ingestion] Completed: ${sourcesWritten} individual sources written, aggregated: ${aggregatedWritten ? 'YES' : 'NO'}`);
-  return result;
+  return {
+    ...result,
+    sourcesWritten,
+    aggregatedSnapshotWritten: aggregatedWritten,
+  };
 }
 

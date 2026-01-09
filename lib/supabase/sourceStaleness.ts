@@ -8,7 +8,7 @@
 import 'server-only';
 import db from '../supabase';
 
-type Karat = 14 | 18 | 21 | 24;
+type Karat = 14 | 18 | 21 | 22 | 24;
 
 /**
  * Helper to retry a Supabase operation with exponential backoff
@@ -51,11 +51,11 @@ async function retrySupabaseOperation<T>(
  * Includes retry logic for network failures
  */
 export async function updateSourceStaleness(
+  country: 'EG' | 'AE' | 'SA' | 'US',
   source: string,
   karat: Karat,
   lastOkTimestampMs: number,
-  lastOkBuy: number,
-  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'
+  lastOkBuy: number
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const { error } = await retrySupabaseOperation(async () => {
@@ -111,10 +111,10 @@ export async function updateSourceStaleness(
  * Check if source+karat is stale (with country support)
  */
 export async function isSourceStale(
+  country: 'EG' | 'AE' | 'SA' | 'US',
   source: string,
   karat: Karat,
-  staleAfterMs: number = 30 * 60 * 1000,
-  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'
+  staleAfterMs: number = 30 * 60 * 1000
 ): Promise<boolean> {
   try {
     const { data, error } = await db.supabase
@@ -145,9 +145,9 @@ export async function isSourceStale(
  * Get last valid buy price for source+karat (with country support)
  */
 export async function getLastOkBuy(
+  country: 'EG' | 'AE' | 'SA' | 'US',
   source: string,
-  karat: Karat,
-  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'
+  karat: Karat
 ): Promise<number | null> {
   try {
     const { data, error } = await db.supabase
