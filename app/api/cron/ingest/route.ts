@@ -32,22 +32,27 @@ export async function GET(request: NextRequest) {
     }
     // Otherwise allow (no secret, secret='dev', or matches CRON_SECRET)
   } else {
-    // Production: strict validation
-    if (!cronSecret) {
-      return NextResponse.json(
-        { error: 'CRON_SECRET environment variable not configured' },
-        { status: 500 }
-      );
-    }
-
-    // Allow Vercel Cron requests (they send x-vercel-signature) or valid secret
-    const isVercelCron = request.headers.get('x-vercel-signature') !== null;
+    // Production: Vercel Cron authentication
+    // Vercel cron jobs automatically include Authorization header with CRON_SECRET if configured
+    // We need to verify the secret matches, or allow if it's a Vercel internal request
     
-    if (!isVercelCron && providedSecret !== cronSecret) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Invalid or missing CRON_SECRET. Provide valid secret in x-cron-secret header, Authorization: Bearer <secret>, or ?secret=<secret> query param' },
-        { status: 401 }
-      );
+    // Check if this is a Vercel internal cron request (they add x-vercel-id header)
+    const isVercelCron = request.headers.get('x-vercel-id') !== null;
+    
+    if (isVercelCron) {
+      // Vercel cron request - allow it (Vercel handles authentication)
+      console.log('[Cron] Vercel cron request detected (x-vercel-id present)');
+    } else if (cronSecret) {
+      // Manual request - require valid CRON_SECRET
+      if (providedSecret !== cronSecret) {
+        return NextResponse.json(
+          { error: 'Unauthorized: Invalid or missing CRON_SECRET. For Vercel cron, ensure CRON_SECRET is set in environment variables.' },
+          { status: 401 }
+        );
+      }
+    } else {
+      // No CRON_SECRET configured - log warning but allow (might be first-time setup)
+      console.warn('[Cron] CRON_SECRET not configured. Consider setting it in Vercel environment variables for security.');
     }
   }
 

@@ -136,9 +136,24 @@ export async function GET(request: Request) {
     const typedRows: SnapshotRow[] = (snapshotRows || []) as SnapshotRow[];
 
     if (typedRows.length === 0) {
-      console.log('[Forecast Series] No snapshots found. Window start:', windowStart, 'Now:', now, 'Window ms:', windowMs, 'Trusted mode:', EGYPT_TRUSTED_ONLY_MODE);
+      console.log('[Forecast Series] No snapshots found. Window start:', new Date(windowStart).toISOString(), 'Now:', new Date(now).toISOString(), 'Window ms:', windowMs, 'Trusted mode:', EGYPT_TRUSTED_ONLY_MODE);
     } else {
-      console.log('[Forecast Series] Found', typedRows.length, 'snapshots. First snapshot:', typedRows[0]);
+      const latestRow = typedRows[0]; // First row is latest (ordered descending)
+      const oldestRow = typedRows[typedRows.length - 1];
+      console.log('[Forecast Series] Found', typedRows.length, 'snapshots. Latest:', {
+        createdAt: new Date(latestRow.createdAt).toISOString(),
+        source: latestRow.source,
+        has24k: latestRow.market24Buy !== null,
+        has21k: latestRow.market21Buy !== null,
+      }, 'Oldest:', {
+        createdAt: new Date(oldestRow.createdAt).toISOString(),
+      });
+      
+      // Check if latest data is recent (within last 5 minutes)
+      const minutesAgo = (now - latestRow.createdAt) / (60 * 1000);
+      if (minutesAgo > 5) {
+        console.warn(`[Forecast Series] WARNING: Latest snapshot is ${minutesAgo.toFixed(1)} minutes old. Expected data within last 1 minute if cron is running.`);
+      }
     }
 
     // Transform to snapshot format - use ALL snapshots, don't bucket aggressively
