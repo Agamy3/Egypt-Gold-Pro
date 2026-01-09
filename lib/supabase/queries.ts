@@ -91,12 +91,14 @@ export async function getEgyptMarketMedians(
 
   for (const karat of karats) {
     // Filter rows for this karat with valid prices
+    // Ensure karat comparison handles both number and string types from Supabase
     const karatRows = data.filter((row: any) => {
-      return row.karat === karat && 
+      const rowKarat = typeof row.karat === 'number' ? row.karat : parseInt(String(row.karat), 10);
+      return rowKarat === karat && 
              row.price_egp !== null && 
              row.price_egp !== undefined && 
-             isFinite(row.price_egp) && 
-             row.price_egp > 0;
+             isFinite(Number(row.price_egp)) && 
+             Number(row.price_egp) > 0;
     });
     
     if (karatRows.length > 0) {
