@@ -58,13 +58,11 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
     // Get snapshots from Supabase (wide schema)
     // Filter by trusted source if trusted-only mode is enabled
     const isTrustedMode = trustedMode || getTrustedModeFromEnv();
-    const windowStartISO = new Date(windowStart).toISOString();
-
     // IMPORTANT: Only use local market sources (aggregated and individual sources)
     let snapshotQuery = db.supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, error')
-      .gte('createdAt', windowStartISO)
+      .gte('createdAt', windowStart) // createdAt is bigint, use epoch ms number
       .is('error', null)
       .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
       .or('market21Buy.not.is.null,market24Buy.not.is.null');
@@ -98,11 +96,8 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
           continue;
         }
 
-        // createdAt might be ISO string or number (epoch ms)
-        const createdAtRaw = row.createdAt;
-        const createdAt = typeof createdAtRaw === 'string' 
-          ? new Date(createdAtRaw).getTime() 
-          : (typeof createdAtRaw === 'number' ? createdAtRaw : 0);
+        // createdAt is stored as bigint (epoch ms number) in Supabase
+        const createdAt = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
         // Round to nearest minute (60000 ms) for grouping
         const timeBucket = Math.floor(createdAt / 60000) * 60000;
         

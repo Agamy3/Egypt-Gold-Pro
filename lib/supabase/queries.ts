@@ -87,7 +87,6 @@ export async function getEgyptMarketMedians(
       error: error?.message, 
       count: dataToUse?.length || 0,
       windowStart,
-      windowStartISO,
       windowMinutes,
       sources: ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']
     });
@@ -183,11 +182,10 @@ export async function getEgyptMarketMedians(
         sourcesUsed[karat.toString()] = allSourcesFromValidRows.filter(s => s !== 'aggregated');
         allSourcesFromValidRows.forEach(s => contributingSources.add(s));
         
-        // Use aggregated timestamp
-        const createdAtRaw = aggregatedRow.createdAt;
-        const createdAt = typeof createdAtRaw === 'string' 
-          ? new Date(createdAtRaw).getTime() 
-          : (typeof createdAtRaw === 'number' ? createdAtRaw : 0);
+        // Use aggregated timestamp (createdAt is bigint - epoch ms number)
+        const createdAt = typeof aggregatedRow.createdAt === 'number' 
+          ? aggregatedRow.createdAt 
+          : (typeof aggregatedRow.createdAt === 'string' ? new Date(aggregatedRow.createdAt).getTime() : 0);
         maxTimestamp = Math.max(maxTimestamp, createdAt);
         
         console.log(`[getEgyptMarketMedians] Using aggregated price for ${karat}K:`, aggregatedPrice);
@@ -238,15 +236,11 @@ export async function getEgyptMarketMedians(
       sourcesUsed[karat.toString()] = karatSources;
       karatSources.forEach(s => contributingSources.add(s));
 
-      // Track latest timestamp (createdAt might be ISO string or number)
+      // Track latest timestamp (createdAt is bigint - epoch ms number)
       const timestamps = validRows.map((row: any) => {
         const ts = row.createdAt;
-        // If it's a string (ISO), convert to epoch ms
-        if (typeof ts === 'string') {
-          return new Date(ts).getTime();
-        }
-        // If it's already a number (epoch ms), use it directly
-        return typeof ts === 'number' ? ts : 0;
+        // createdAt is stored as bigint (number) in Supabase
+        return typeof ts === 'number' ? ts : (typeof ts === 'string' ? new Date(ts).getTime() : 0);
       });
       if (timestamps.length > 0) {
         maxTimestamp = Math.max(maxTimestamp, ...timestamps);
@@ -283,17 +277,15 @@ export async function getEgyptMarketSeries(
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
   const windowStart = Date.now() - windowMs;
-  const windowStartISO = new Date(windowStart).toISOString();
-
   // Determine which column to use based on karat
   const karatKey = karat === 21 ? 'market21Buy' : karat === 24 ? 'market24Buy' : karat === 18 ? 'market18Buy' : 'market14Buy';
 
-  // Query using wide schema (createdAt is timestamptz, use ISO string for comparison)
+  // Query using wide schema (createdAt is bigint, use epoch ms number)
   // IMPORTANT: Only use our local market sources (exclude old sources)
   let query = supabase
     .from('market_snapshots')
     .select(`createdAt, ${karatKey}, error, source`)
-    .gte('createdAt', windowStartISO)
+    .gte('createdAt', windowStart) // createdAt is bigint, use epoch ms number
     .is('error', null)
     .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
     .not(karatKey, 'is', null)
@@ -316,11 +308,8 @@ export async function getEgyptMarketSeries(
   for (const row of data) {
       const price = (row as any)[karatKey] as number;
       if (price !== null && price !== undefined && isFinite(Number(price)) && Number(price) > 0) {
-        // createdAt might be ISO string or number (epoch ms)
-        const createdAtRaw = row.createdAt;
-        const createdAt = typeof createdAtRaw === 'string' 
-          ? new Date(createdAtRaw).getTime() 
-          : (typeof createdAtRaw === 'number' ? createdAtRaw : 0);
+        // createdAt is stored as bigint (epoch ms number) in Supabase
+        const createdAt = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
         // Round to nearest minute for bucketing
         const bucketKey = Math.floor(createdAt / 60000) * 60000;
       
@@ -363,14 +352,12 @@ export async function getActiveSourceCount(
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
   const windowStart = Date.now() - windowMs;
-  const windowStartISO = new Date(windowStart).toISOString();
-
-  // Query using wide schema - count sources with valid prices (createdAt is timestamptz, use ISO string)
+  // Query using wide schema - count sources with valid prices (createdAt is bigint, use epoch ms number)
   // IMPORTANT: Only count our local market sources (exclude old sources like isagha, goldbillion)
   let query = supabase
     .from('market_snapshots')
     .select('source, createdAt, market21Buy, market24Buy, error')
-    .gte('createdAt', windowStartISO)
+    .gte('createdAt', windowStart) // createdAt is bigint, use epoch ms number
     .is('error', null)
     .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
     .or('market21Buy.not.is.null,market24Buy.not.is.null');

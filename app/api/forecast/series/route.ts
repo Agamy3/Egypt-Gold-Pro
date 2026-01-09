@@ -103,13 +103,11 @@ export async function GET(request: Request) {
     if (!supabase) {
       return NextResponse.json({ error: 'Database client unavailable' }, { status: 500 });
     }
-    const windowStartISO = new Date(windowStart).toISOString();
-    
     // IMPORTANT: Only use local market sources (aggregated and individual sources)
     let snapshotQuery = supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market24Buy, error')
-      .gte('createdAt', windowStartISO)
+      .gte('createdAt', windowStart) // createdAt is bigint, use epoch ms number
       .is('error', null)
       .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
       .or('market21Buy.not.is.null,market24Buy.not.is.null')
@@ -164,11 +162,8 @@ export async function GET(request: Request) {
           continue;
         }
 
-        // createdAt might be ISO string or number (epoch ms)
-        const createdAtRaw = row.createdAt;
-        const createdAt = typeof createdAtRaw === 'string' 
-          ? new Date(createdAtRaw).getTime() 
-          : (typeof createdAtRaw === 'number' ? createdAtRaw : 0);
+        // createdAt is stored as bigint (epoch ms number) in Supabase
+        const createdAt = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
         // Use 10-second buckets instead of 1-minute to preserve more granularity
         // This groups snapshots that are essentially duplicates (within 10 seconds)
         const timeBucket = Math.floor(createdAt / 10000) * 10000;
