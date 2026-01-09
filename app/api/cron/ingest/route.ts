@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
         .limit(1)
         .maybeSingle();
 
-      if (!recentDuplicate && !isaghaResult.error && (isaghaResult.market21Buy || isaghaResult.market24Buy || isaghaResult.market18Buy || isaghaResult.market14Buy)) {
+      if (!recentDuplicate && !isaghaResult.error && (isaghaResult.market21Buy || isaghaResult.market24Buy)) {
         // Write to normalized Supabase schema only
         try {
           const supabaseResult = await writeEgyptSnapshotToSupabase({
@@ -99,8 +99,8 @@ export async function GET(request: NextRequest) {
             createdAtMs: now,
             rawHash,
             prices: {
-              14: { buy: isaghaResult.market14Buy || null },
-              18: { buy: isaghaResult.market18Buy || null },
+              14: { buy: null }, // iSagha doesn't provide 14k
+              18: { buy: null }, // iSagha doesn't provide 18k
               21: { buy: isaghaResult.market21Buy || null },
               24: { buy: isaghaResult.market24Buy || null },
             },
@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
         .limit(1)
         .maybeSingle();
 
-      if (!recentDuplicate && !goldBillionResult.error && (goldBillionResult.market21Buy || goldBillionResult.market24Buy || goldBillionResult.market18Buy || goldBillionResult.market14Buy)) {
+      if (!recentDuplicate && !goldBillionResult.error && (goldBillionResult.market21Buy || goldBillionResult.market24Buy)) {
         // Write to normalized Supabase schema only
         try {
           const supabaseResult = await writeEgyptSnapshotToSupabase({
@@ -156,8 +156,8 @@ export async function GET(request: NextRequest) {
             createdAtMs: now,
             rawHash,
             prices: {
-              14: { buy: goldBillionResult.market14Buy || null },
-              18: { buy: goldBillionResult.market18Buy || null },
+              14: { buy: null }, // GoldBillion doesn't provide 14k
+              18: { buy: null }, // GoldBillion doesn't provide 18k
               21: { buy: goldBillionResult.market21Buy || null },
               24: { buy: goldBillionResult.market24Buy || null },
             },
