@@ -352,8 +352,10 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
             prices14: price14,
           });
         } else {
-          console.error(`[Ingestion] ✗ Failed to write aggregated snapshot:`, aggregatedResult.error, {
-            attempted: { price14, price18, price21, price24 }
+          const errorMsg = aggregatedResult.error || 'Unknown error (no error message provided)';
+          console.error(`[Ingestion] ✗ Failed to write aggregated snapshot:`, errorMsg, {
+            attempted: { price14, price18, price21, price24 },
+            result: aggregatedResult
           });
         }
       } else {
