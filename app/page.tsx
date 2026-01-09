@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Dashboard from '@/components/Dashboard';
 import ForecastCard from '@/components/ForecastCard';
+import ResourcesNavigator from '@/components/ResourcesNavigator';
 import LanguageToggle from '@/components/LanguageToggle';
 import { useLang } from '@/components/LanguageProvider';
 import { t } from '@/lib/i18n';
@@ -163,14 +164,23 @@ export default function Home() {
         {snapshot && (
           <>
             <Dashboard snapshot={snapshot} />
-            {forecast && (
-              <div className="mt-6">
-                <ForecastCard 
-                  forecast={forecast.forecast} 
-                  insufficientData={forecast.insufficientData}
+            <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {forecast && (
+                <div className="lg:col-span-2">
+                  <ForecastCard 
+                    forecast={forecast.forecast} 
+                    insufficientData={forecast.insufficientData}
+                  />
+                </div>
+              )}
+              <div className="lg:col-span-1">
+                <ResourcesNavigator
+                  impliedOunce={snapshot.impliedOunce}
+                  fx={snapshot.pricing.fx}
+                  egyptMarket={snapshot.egyptMarket}
                 />
               </div>
-            )}
+            </div>
           </>
         )}
       </main>
