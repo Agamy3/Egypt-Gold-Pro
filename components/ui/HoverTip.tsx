@@ -56,6 +56,19 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
     }
   }, [isVisible, side]);
 
+  // Handle mobile touch events - show tooltip on tap for 3 seconds
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
+    setIsVisible(true);
+    // Hide after 3 seconds on mobile
+    setTimeout(() => setIsVisible(false), 3000);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault();
+    // Keep visible for a bit to allow reading
+  };
+
   return (
     <>
       <span
@@ -63,10 +76,13 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
         className="inline-flex items-center gap-1 cursor-help"
         onMouseEnter={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         onFocus={() => setIsVisible(true)}
         onBlur={() => setIsVisible(false)}
         tabIndex={0}
         aria-describedby="hover-tooltip"
+        aria-label={text}
       >
         {children}
       </span>
@@ -74,7 +90,7 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
         <div
           ref={tooltipRef}
           id="hover-tooltip"
-          className="fixed z-50 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg max-w-xs pointer-events-none"
+          className="fixed z-50 px-3 py-2 bg-gray-900 text-white text-xs sm:text-sm rounded-lg shadow-lg max-w-[90vw] sm:max-w-xs pointer-events-none break-words border border-gray-700"
           role="tooltip"
         >
           {text}

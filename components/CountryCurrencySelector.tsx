@@ -70,15 +70,15 @@ function CountryCurrencySelectorContent() {
   };
 
   return (
-    <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
+    <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 ${isRTL ? 'sm:flex-row-reverse' : ''}`}>
       <div className="flex items-center gap-2">
-        <label className={`text-xs text-gray-400 ${isRTL ? 'text-right' : ''}`}>
+        <label className={`text-xs text-gray-400 whitespace-nowrap ${isRTL ? 'text-right' : ''}`}>
           {isRTL ? 'البلد' : 'Country'}
         </label>
         <select
           value={country}
           onChange={(e) => handleCountryChange(e.target.value as Country)}
-          className="px-3 py-1.5 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[100px]"
+          className="px-2 sm:px-3 py-1.5 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[90px] sm:min-w-[100px] flex-1"
         >
           <option value="EG">{COUNTRY_LABELS.EG[lang]}</option>
           <option value="AE">{COUNTRY_LABELS.AE[lang]}</option>
@@ -88,13 +88,13 @@ function CountryCurrencySelectorContent() {
       </div>
       
       <div className="flex items-center gap-2">
-        <label className={`text-xs text-gray-400 ${isRTL ? 'text-right' : ''}`}>
+        <label className={`text-xs text-gray-400 whitespace-nowrap ${isRTL ? 'text-right' : ''}`}>
           {isRTL ? 'العملة' : 'Currency'}
         </label>
         <select
           value={currency}
           onChange={(e) => handleCurrencyChange(e.target.value as Currency)}
-          className="px-3 py-1.5 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[80px]"
+          className="px-2 sm:px-3 py-1.5 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[70px] sm:min-w-[80px]"
         >
           <option value="EGP">EGP</option>
           <option value="USD">USD</option>

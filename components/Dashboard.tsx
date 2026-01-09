@@ -34,6 +34,9 @@ interface DashboardProps {
         fetchedAt: number;
       }>;
       activeSourceCount: number;
+      activeUnderlyingSourceCount?: number;
+      activeUnderlyingSources?: string[];
+      sourcesUsed?: Record<string, string[]>;
     };
     country?: string;
     currency?: string;
@@ -109,10 +112,10 @@ export default function Dashboard({ snapshot }: DashboardProps) {
   const { lang } = useLang();
   
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Warnings */}
       {snapshot.warnings.referenceUnavailable && (
-        <div className="bg-red-900/30 border-2 border-red-700 rounded-lg p-4">
+        <div className="bg-red-900/30 border-2 border-red-700 rounded-lg p-3 sm:p-4">
           <div className={`flex items-center ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             <svg
               className={`h-5 w-5 text-red-600 ${lang === 'ar' ? 'ml-2' : 'mr-2'}`}
@@ -136,7 +139,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
       )}
 
       {snapshot.warnings.fxUnavailable && !snapshot.warnings.referenceUnavailable && (
-        <div className="bg-yellow-900/30 border-2 border-yellow-700 rounded-lg p-4">
+        <div className="bg-yellow-900/30 border-2 border-yellow-700 rounded-lg p-3 sm:p-4">
           <div className={`flex items-center ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             <svg
               className={`h-5 w-5 text-yellow-600 ${lang === 'ar' ? 'ml-2' : 'mr-2'}`}
@@ -157,32 +160,11 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
       )}
 
-      {snapshot.warnings.lowConfidence && !snapshot.warnings.referenceUnavailable && (
-        <div className="bg-yellow-900/30 border-2 border-yellow-700 rounded-lg p-4">
-          <div className={`flex items-center ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-            <svg
-              className={`h-5 w-5 text-yellow-600 ${lang === 'ar' ? 'ml-2' : 'mr-2'}`}
-              fill="currentColor"
-              viewBox="0 0 20 20"
-            >
-              <path
-                fillRule="evenodd"
-                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <span className={`font-semibold text-yellow-300 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'lowConfidence')}</span>
-          </div>
-          <p className={`mt-2 text-sm text-yellow-200 ${lang === 'ar' ? 'text-right' : ''}`}>
-            {lang === 'ar' ? 'مصدر واحد فقط متاح. قد تكون النتائج أقل دقة.' : 'Only one market source is available. Results may be less accurate.'}
-          </p>
-        </div>
-      )}
 
       {/* Main Dashboard Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Global Spot Gold Price */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gold-600`}>
+        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gold-600`}>
           <HoverTip text={lang === 'ar' ? 'سعر الذهب العالمي الفوري لكل أونصة تروي (XAUUSD). يُستخدم كمرجع لحسابات القيمة العادلة.' : "Global spot gold price per troy ounce (XAUUSD). Used as the reference for fair-value calculations."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {t(lang, 'impliedOunce') || 'Global Spot Gold'}
@@ -193,22 +175,23 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           </HoverTip>
           {snapshot.impliedOunce ? (
             <>
-              <div className="text-3xl font-bold text-gold-700 mb-2">
-                ${formatNumber(snapshot.impliedOunce.impliedOunceUsd, 2)}
-              </div>
+              <HoverTip 
+                text={`${lang === 'ar' ? 'السعر الفوري العالمي للذهب المستند على بيانات موثوقة. آخر تحديث' : 'Global spot gold price based on reliable data. Last updated'}: ${formatTimestamp(snapshot.impliedOunce.timestamp)}${snapshot.impliedOunce.stale ? ` (${lang === 'ar' ? 'قديم' : 'stale'})` : ''}`}
+              >
+                <div className="text-2xl sm:text-3xl font-bold text-gold-700 mb-2 cursor-help touch-manipulation">
+                  ${formatNumber(snapshot.impliedOunce.impliedOunceUsd, 2)}
+                </div>
+              </HoverTip>
               <div className="text-sm text-gray-300">
                 USD per troy ounce
               </div>
-              <div className={`mt-4 flex items-center justify-between ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-                <span className="text-xs text-gray-500">
-                  {t(lang, 'updated')}: {formatTimestamp(snapshot.impliedOunce.timestamp)}
-                </span>
-                {snapshot.impliedOunce.stale && (
+              {snapshot.impliedOunce.stale && (
+                <div className={`mt-2 ${lang === 'ar' ? 'text-right' : ''}`}>
                   <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
                     {t(lang, 'stale')}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="text-red-400 font-semibold">{t(lang, 'referenceUnavailable')}</div>
@@ -216,7 +199,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* Market 21k */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600`}>
+        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600`}>
           <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 21k المتاحة من المصادر النشطة.' : "Median of available 21k buy prices from active sources."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {t(lang, 'market21') || '21k Gold Price'}
@@ -227,14 +210,30 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           </HoverTip>
           {snapshot.market.median.market21Buy !== null ? (
             <>
-              <div className="text-3xl font-bold text-blue-700 mb-2">
-                {formatNumber(snapshot.market.median.market21Buy, 0)} {snapshot.currency || 'EGP'}
-              </div>
+              <HoverTip 
+                text={(() => {
+                  const sourceCount = snapshot.market.activeSourceCount || 0;
+                  const lastSource = snapshot.market.sources?.find(s => s.status === 'OK') || snapshot.market.sources?.[0];
+                  const lastUpdated = lastSource?.fetchedAt 
+                    ? formatTimestamp(lastSource.fetchedAt)
+                    : formatTimestamp(snapshot.timestamp);
+                  const minutesAgo = lastSource?.fetchedAt 
+                    ? Math.floor((Date.now() - lastSource.fetchedAt) / 60000)
+                    : Math.floor((Date.now() - snapshot.timestamp) / 60000);
+                  const timeAgo = minutesAgo < 1 
+                    ? (lang === 'ar' ? 'الآن' : 'just now')
+                    : minutesAgo < 60
+                    ? `${minutesAgo} ${lang === 'ar' ? 'دقيقة' : minutesAgo === 1 ? 'minute' : 'minutes'} ${lang === 'ar' ? 'مضت' : 'ago'}`
+                    : `${Math.floor(minutesAgo / 60)} ${lang === 'ar' ? 'ساعة' : Math.floor(minutesAgo / 60) === 1 ? 'hour' : 'hours'} ${lang === 'ar' ? 'مضت' : 'ago'}`;
+                  return `${lang === 'ar' ? 'سعر الوسيط المستند على' : 'Median price based on'} ${sourceCount} ${lang === 'ar' ? 'مصدر نشط' : sourceCount === 1 ? 'active source' : 'active sources'}. ${lang === 'ar' ? 'آخر تحديث' : 'Updated'} ${timeAgo}.`;
+                })()}
+              >
+                <div className="text-2xl sm:text-3xl font-bold text-blue-700 mb-2 cursor-help touch-manipulation">
+                  {formatNumber(snapshot.market.median.market21Buy, 0)} {snapshot.currency || 'EGP'}
+                </div>
+              </HoverTip>
               <div className="text-sm text-gray-600 mb-4">
                 {t(lang, 'buyPrice')} ({snapshot.currency || 'EGP'})
-              </div>
-              <div className="mt-4 text-xs text-gray-500">
-                {t(lang, 'sources')}: {snapshot.market.activeSourceCount}
               </div>
             </>
           ) : (
@@ -243,7 +242,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* Market 24k */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-purple-600`}>
+        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-purple-600`}>
           <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 24k المتاحة من المصادر النشطة.' : "Median of available 24k buy prices from active sources."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {t(lang, 'market24') || '24k Gold Price'}
@@ -254,14 +253,30 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           </HoverTip>
           {snapshot.market.median.market24Buy !== null ? (
             <>
-              <div className="text-3xl font-bold text-purple-700 mb-2">
-                {formatNumber(snapshot.market.median.market24Buy, 0)} {snapshot.currency || 'EGP'}
-              </div>
+              <HoverTip 
+                text={(() => {
+                  const sourceCount = snapshot.market.activeSourceCount || 0;
+                  const lastSource = snapshot.market.sources?.find(s => s.status === 'OK') || snapshot.market.sources?.[0];
+                  const lastUpdated = lastSource?.fetchedAt 
+                    ? formatTimestamp(lastSource.fetchedAt)
+                    : formatTimestamp(snapshot.timestamp);
+                  const minutesAgo = lastSource?.fetchedAt 
+                    ? Math.floor((Date.now() - lastSource.fetchedAt) / 60000)
+                    : Math.floor((Date.now() - snapshot.timestamp) / 60000);
+                  const timeAgo = minutesAgo < 1 
+                    ? (lang === 'ar' ? 'الآن' : 'just now')
+                    : minutesAgo < 60
+                    ? `${minutesAgo} ${lang === 'ar' ? 'دقيقة' : minutesAgo === 1 ? 'minute' : 'minutes'} ${lang === 'ar' ? 'مضت' : 'ago'}`
+                    : `${Math.floor(minutesAgo / 60)} ${lang === 'ar' ? 'ساعة' : Math.floor(minutesAgo / 60) === 1 ? 'hour' : 'hours'} ${lang === 'ar' ? 'مضت' : 'ago'}`;
+                  return `${lang === 'ar' ? 'سعر الوسيط المستند على' : 'Median price based on'} ${sourceCount} ${lang === 'ar' ? 'مصدر نشط' : sourceCount === 1 ? 'active source' : 'active sources'}. ${lang === 'ar' ? 'آخر تحديث' : 'Updated'} ${timeAgo}.`;
+                })()}
+              >
+                <div className="text-2xl sm:text-3xl font-bold text-purple-700 mb-2 cursor-help touch-manipulation">
+                  {formatNumber(snapshot.market.median.market24Buy, 0)} {snapshot.currency || 'EGP'}
+                </div>
+              </HoverTip>
               <div className="text-sm text-gray-600 mb-4">
                 {t(lang, 'buyPrice')} ({snapshot.currency || 'EGP'})
-              </div>
-              <div className="mt-4 text-xs text-gray-500">
-                {t(lang, 'sources')}: {snapshot.market.activeSourceCount}
               </div>
             </>
           ) : (
@@ -270,7 +285,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* USD Exchange Rate */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-green-600`}>
+        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-green-600`}>
           <HoverTip text={lang === 'ar' ? 'سعر الصرف الفوري للدولار المستخدم لتحويل أسعار الذهب العالمية إلى القيمة المحلية.' : "Live USD exchange rate used to convert global gold prices into local fair value."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {snapshot.canonicalCurrency === 'EGP' ? (t(lang, 'usdEgp') || 'USD/EGP') :
@@ -289,24 +304,23 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                          snapshot.pricing.fx?.usdEgp;
             return rate !== null && rate !== undefined ? (
               <>
-                <div className="text-3xl font-bold text-green-700 mb-2">
-                  {formatNumber(rate, 2)}
-                </div>
+                <HoverTip 
+                  text={`${lang === 'ar' ? 'سعر صرف فوري مستند على بيانات موثوقة' : 'Live exchange rate based on reliable data'}${snapshot.pricing.fx?.fetchedAt ? `. ${lang === 'ar' ? 'آخر تحديث' : 'Last updated'}: ${formatTimestamp(snapshot.pricing.fx.fetchedAt)}` : ''}${snapshot.pricing.fx?.stale ? ` (${lang === 'ar' ? 'قديم' : 'stale'})` : ''}`}
+                >
+                  <div className="text-2xl sm:text-3xl font-bold text-green-700 mb-2 cursor-help touch-manipulation">
+                    {formatNumber(rate, 2)}
+                  </div>
+                </HoverTip>
                 <div className="text-sm text-gray-300">
                   {lang === 'ar' ? 'سعر صرف فعلي' : 'Real exchange rate'}
                 </div>
-                <div className={`mt-2 flex items-center justify-between ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-                  {snapshot.pricing.fx?.stale && (
+                {snapshot.pricing.fx?.stale && (
+                  <div className={`mt-2 ${lang === 'ar' ? 'text-right' : ''}`}>
                     <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
                       {t(lang, 'stale')}
                     </span>
-                  )}
-                  {snapshot.pricing.fx?.fetchedAt && (
-                    <span className="text-xs text-gray-500">
-                      {t(lang, 'updated')}: {formatTimestamp(snapshot.pricing.fx.fetchedAt)}
-                    </span>
-                  )}
-                </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="text-gray-400">
@@ -322,7 +336,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* Over/Under Pricing */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-indigo-600`}>
+        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-indigo-600`}>
           <HoverTip text={lang === 'ar' ? 'الفرق بين وسيط السوق المحلي والقيمة العادلة المحسوبة. يوضح العلاوة/الخصم والتصنيف.' : "Difference between local market median and computed fair value. Shows premium/discount and classification."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {t(lang, 'marketVariance')}
@@ -373,7 +387,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* Pricing Details */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-600`}>
+        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-600`}>
           <HoverTip text={lang === 'ar' ? 'مقاييس التسعير المشتقة المحسوبة من سعر الذهب العالمي الفوري وسعر صرف الدولار/الجنيه.' : "Derived pricing metrics calculated from global gold spot price and USD/EGP exchange rate."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {t(lang, 'pricingDetails')}

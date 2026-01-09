@@ -6,3 +6,9 @@ body {
   @apply bg-black text-gray-100;
 }
 
+/* Mobile touch improvements */
+.touch-manipulation {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+

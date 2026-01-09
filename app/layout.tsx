@@ -6,6 +6,7 @@ import { Analytics } from '@vercel/analytics/next'
 export const metadata: Metadata = {
   title: 'EgyptGold Pro - Egyptian Gold Market Analysis',
   description: 'Educational decision-support for the Egyptian gold market',
+  viewport: 'width=device-width, initial-scale=1, maximum-scale=5',
 }
 
 export default function RootLayout({
@@ -15,7 +16,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" dir="ltr">
-      <body>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+      </head>
+      <body className="touch-pan-y">
         <LanguageProvider>{children}</LanguageProvider>
         <Analytics />
       </body>

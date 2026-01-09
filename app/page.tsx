@@ -3,7 +3,6 @@
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import Dashboard from '@/components/Dashboard';
 import ForecastCard from '@/components/ForecastCard';
-import ResourcesNavigator from '@/components/ResourcesNavigator';
 import LanguageToggle from '@/components/LanguageToggle';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import { useLang } from '@/components/LanguageProvider';
@@ -177,15 +176,15 @@ function HomeContent() {
   return (
     <div className="min-h-screen bg-black">
       <header className="bg-gray-900 shadow-sm border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className={`flex items-center ${lang === 'ar' ? 'flex-row-reverse' : ''} justify-between`}>
-            <div>
-              <h1 className="text-3xl font-bold text-gold-400">{t(lang, 'appTitle')}</h1>
-              <p className="text-sm text-gray-300 mt-1">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <div className={`flex flex-col sm:flex-row items-start sm:items-center ${lang === 'ar' ? 'sm:flex-row-reverse' : ''} gap-3 sm:gap-4 justify-between`}>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gold-400 truncate">{t(lang, 'appTitle')}</h1>
+              <p className="text-xs sm:text-sm text-gray-300 mt-1">
                 {t(lang, 'appSubtitle')}
               </p>
             </div>
-            <div className={`flex items-center gap-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            <div className={`flex items-center gap-2 sm:gap-4 w-full sm:w-auto ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               <CountryCurrencySelector />
               <LanguageToggle />
             </div>
@@ -193,27 +192,18 @@ function HomeContent() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
         {snapshot && (
           <>
             <Dashboard snapshot={snapshot} />
-            <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {forecast && (
-                <div className="lg:col-span-2">
-                  <ForecastCard 
-                    forecast={forecast.forecast} 
-                    insufficientData={forecast.insufficientData}
-                  />
-                </div>
-              )}
-              <div className="lg:col-span-1">
-                <ResourcesNavigator
-                  impliedOunce={snapshot.impliedOunce}
-                  fx={snapshot.pricing.fx}
-                  market={snapshot.market}
+            {forecast && (
+              <div className="mt-4 sm:mt-6">
+                <ForecastCard 
+                  forecast={forecast.forecast} 
+                  insufficientData={forecast.insufficientData}
                 />
               </div>
-            </div>
+            )}
           </>
         )}
       </main>
