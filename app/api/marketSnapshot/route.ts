@@ -233,6 +233,12 @@ export async function GET(request: Request) {
     // Pricing calculations are typically done in the canonical currency
     let pricing = null;
     try {
+      // Get the appropriate FX rate for the country's canonical currency
+      const canonicalFxRate = canonicalCurrency === 'EGP' ? usdEgp :
+                             canonicalCurrency === 'AED' ? fxRates.usd_aed :
+                             canonicalCurrency === 'SAR' ? fxRates.usd_sar :
+                             1.0; // USD (no conversion needed)
+      
       // Use canonical prices for calculations, then convert if needed
       pricing = calculatePricing({
         impliedOunceUsd: impliedOunce?.impliedOunceUsd ?? null,
@@ -240,7 +246,7 @@ export async function GET(request: Request) {
         market21Sell: canonicalPrices.market21Sell,
         market24Buy: canonicalPrices.market24Buy,
         market24Sell: canonicalPrices.market24Sell,
-        usdEgp: usdEgp, // Still needed for pricing calc
+        usdLocalRate: canonicalFxRate, // Use country-specific FX rate
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -304,7 +310,17 @@ export async function GET(request: Request) {
         sourcesUsed: sourcesUsed,
       },
       pricing: pricing ? {
-        ...pricing,
+        usdPerGram24: pricing.usdPerGram24,
+        usdPerGram21: pricing.usdPerGram21,
+        usdEgpGold: pricing.usdLocalRate, // Map to usdEgpGold for backward compatibility (but it's actually canonical currency rate)
+        localMarketParity: pricing.localMarketParity,
+        fairValue: pricing.fairValue,
+        // Map premiumLocal to premiumEGP for backward compatibility, but it's actually in canonical currency
+        variance: {
+          variancePct: pricing.variance.variancePct,
+          premiumEGP: pricing.variance.premiumLocal, // Keep backward compatibility (actually in canonical currency)
+          classification: pricing.variance.classification,
+        },
         fx: {
           usdEgp: usdEgp,
           usdAed: fxRates.usd_aed,

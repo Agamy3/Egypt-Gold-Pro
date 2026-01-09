@@ -297,6 +297,7 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
             market21Sell: startSellPrice,
             market24Buy: null,
             market24Sell: null,
+            usdLocalRate: null, // Forecast uses implied FX (computed from gold prices), not real FX
           });
           const endPricing = calculatePricing({
             impliedOunceUsd: endOunce,
@@ -304,12 +305,19 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
             market21Sell: endSellPrice,
             market24Buy: null,
             market24Sell: null,
+            usdLocalRate: null, // Forecast uses implied FX (computed from gold prices), not real FX
           });
 
           startVariance = startPricing.variance.variancePct;
           endVariance = endPricing.variance.variancePct;
-          startFX = startPricing.usdEgpGold;
-          endFX = endPricing.usdEgpGold;
+          // For forecast, we need implied FX (from gold prices), not real FX rate
+          // Calculate implied FX from gold prices if available
+          startFX = startPrice !== null && startPricing.usdPerGram21 !== null && startPricing.usdPerGram21 > 0
+            ? startPrice / startPricing.usdPerGram21
+            : null;
+          endFX = endPrice !== null && endPricing.usdPerGram21 !== null && endPricing.usdPerGram21 > 0
+            ? endPrice / endPricing.usdPerGram21
+            : null;
         }
       } catch (error) {
         // Pricing calculation failed, continue with nulls

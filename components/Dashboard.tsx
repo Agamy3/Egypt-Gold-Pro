@@ -55,7 +55,8 @@ interface DashboardProps {
       };
       variance: {
         variancePct: number | null;
-        premiumEGP: number | null;
+        premiumEGP?: number | null;
+        premiumLocal?: number | null;
         classification: 'FAIR' | 'PREMIUM' | 'DISCOUNT' | 'N/A';
       };
       fx?: {
@@ -155,7 +156,15 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             <span className={`font-semibold text-yellow-300 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'fxUnavailable')}</span>
           </div>
           <p className={`mt-2 text-sm text-yellow-200 ${lang === 'ar' ? 'text-right' : ''}`}>
-            {lang === 'ar' ? 'سعر صرف الدولار/الجنيه غير متاح. تم تعطيل مقارنة القيمة العادلة.' : 'USD/EGP exchange rate is unavailable. Fair value comparison is disabled.'}
+            {(() => {
+              const currencyLabel = snapshot.canonicalCurrency === 'EGP' ? 'USD/EGP' :
+                                   snapshot.canonicalCurrency === 'AED' ? 'USD/AED' :
+                                   snapshot.canonicalCurrency === 'SAR' ? 'USD/SAR' :
+                                   'USD';
+              return lang === 'ar' 
+                ? `سعر الصرف ${currencyLabel} غير متاح. تم تعطيل مقارنة القيمة العادلة.`
+                : `${currencyLabel} exchange rate is unavailable. Fair value comparison is disabled.`;
+            })()}
           </p>
         </div>
       )}
@@ -229,11 +238,11 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                 })()}
               >
                 <div className="text-2xl sm:text-3xl font-bold text-blue-700 mb-2 cursor-help touch-manipulation">
-                  {formatNumber(snapshot.market.median.market21Buy, 0)} {snapshot.currency || 'EGP'}
+                  {formatNumber(snapshot.market.median.market21Buy, 0)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
                 </div>
               </HoverTip>
               <div className="text-sm text-gray-600 mb-4">
-                {t(lang, 'buyPrice')} ({snapshot.currency || 'EGP'})
+                {t(lang, 'buyPrice')} ({snapshot.currency || snapshot.canonicalCurrency || 'EGP'})
               </div>
             </>
           ) : (
@@ -272,11 +281,11 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                 })()}
               >
                 <div className="text-2xl sm:text-3xl font-bold text-purple-700 mb-2 cursor-help touch-manipulation">
-                  {formatNumber(snapshot.market.median.market24Buy, 0)} {snapshot.currency || 'EGP'}
+                  {formatNumber(snapshot.market.median.market24Buy, 0)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
                 </div>
               </HoverTip>
               <div className="text-sm text-gray-600 mb-4">
-                {t(lang, 'buyPrice')} ({snapshot.currency || 'EGP'})
+                {t(lang, 'buyPrice')} ({snapshot.currency || snapshot.canonicalCurrency || 'EGP'})
               </div>
             </>
           ) : (
@@ -363,14 +372,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                       {formatNumber(snapshot.pricing.variance.variancePct, 2)}%
                     </div>
                   </div>
-                  {snapshot.pricing.variance.premiumEGP !== null && (
+                  {(snapshot.pricing.variance.premiumEGP !== null || (snapshot.pricing.variance as any).premiumLocal !== null) && (
                     <div>
                       <div className="text-sm text-gray-300">
-                        {snapshot.pricing.variance.premiumEGP > 0 ? t(lang, 'premium') : t(lang, 'discount')}
+                        {((snapshot.pricing.variance.premiumEGP ?? (snapshot.pricing.variance as any).premiumLocal ?? 0) > 0) ? t(lang, 'premium') : t(lang, 'discount')}
                       </div>
                       <div className="text-lg font-semibold">
-                        {snapshot.pricing.variance.premiumEGP > 0 ? '+' : ''}
-                        {formatNumber(snapshot.pricing.variance.premiumEGP, 2)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
+                        {((snapshot.pricing.variance.premiumEGP ?? (snapshot.pricing.variance as any).premiumLocal ?? 0) > 0) ? '+' : ''}
+                        {formatNumber(snapshot.pricing.variance.premiumEGP ?? (snapshot.pricing.variance as any).premiumLocal ?? 0, 2)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
                       </div>
                     </div>
                   )}
@@ -380,7 +389,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           ) : (
             <div className="text-gray-400">
               {snapshot.warnings.fxUnavailable 
-                ? (lang === 'ar' ? 'القيمة العادلة غير متاحة (يُطلب سعر الصرف)' : 'Fair value not available (FX required)')
+                ? (lang === 'ar' ? 'القيمة العادلة غير متاحة (يُطلب سعر الصرف)' : 'Fair value not available (FX rate required)')
                 : (lang === 'ar' ? 'القيمة العادلة غير متاحة للمقارنة' : 'Fair value not available for comparison')}
             </div>
           )}
@@ -388,7 +397,15 @@ export default function Dashboard({ snapshot }: DashboardProps) {
 
         {/* Pricing Details */}
         <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-600`}>
-          <HoverTip text={lang === 'ar' ? 'مقاييس التسعير المشتقة المحسوبة من سعر الذهب العالمي الفوري وسعر صرف الدولار/الجنيه.' : "Derived pricing metrics calculated from global gold spot price and USD/EGP exchange rate."}>
+          <HoverTip text={(() => {
+            const currencyLabel = snapshot.canonicalCurrency === 'EGP' ? 'USD/EGP' :
+                                 snapshot.canonicalCurrency === 'AED' ? 'USD/AED' :
+                                 snapshot.canonicalCurrency === 'SAR' ? 'USD/SAR' :
+                                 'USD';
+            return lang === 'ar' 
+              ? `مقاييس التسعير المشتقة المحسوبة من سعر الذهب العالمي الفوري وسعر صرف ${currencyLabel}.`
+              : `Derived pricing metrics calculated from global gold spot price and ${currencyLabel} exchange rate.`;
+          })()}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {t(lang, 'pricingDetails')}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
@@ -425,7 +442,15 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             </div>
             {snapshot.pricing.fairValue.fair24 !== null && (
               <div className="pt-2 border-t border-gray-200">
-                <HoverTip text={lang === 'ar' ? 'السعر المحلي المتوقع للـ 24k المستنتج من سعر الأونصة العالمية والدولار/الجنيه.' : "Expected local 24k price implied by global ounce price and USD/EGP."}>
+                <HoverTip text={(() => {
+                  const currencyLabel = snapshot.canonicalCurrency === 'EGP' ? 'USD/EGP' :
+                                       snapshot.canonicalCurrency === 'AED' ? 'USD/AED' :
+                                       snapshot.canonicalCurrency === 'SAR' ? 'USD/SAR' :
+                                       'USD';
+                  return lang === 'ar' 
+                    ? `السعر المحلي المتوقع للـ 24k المستنتج من سعر الأونصة العالمية وسعر صرف ${currencyLabel}.`
+                    : `Expected local 24k price implied by global ounce price and ${currencyLabel}.`;
+                })()}>
                   <div className={`text-gray-600 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
                     {t(lang, 'fairValue24')}
                     <svg className="w-3 h-3 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
@@ -440,7 +465,15 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             )}
             {snapshot.pricing.fairValue.fair21 !== null && (
               <div>
-                <HoverTip text={lang === 'ar' ? 'السعر المحلي المتوقع للـ 21k المستنتج من سعر الأونصة العالمية والدولار/الجنيه.' : "Expected local 21k price implied by global ounce price and USD/EGP."}>
+                <HoverTip text={(() => {
+                  const currencyLabel = snapshot.canonicalCurrency === 'EGP' ? 'USD/EGP' :
+                                       snapshot.canonicalCurrency === 'AED' ? 'USD/AED' :
+                                       snapshot.canonicalCurrency === 'SAR' ? 'USD/SAR' :
+                                       'USD';
+                  return lang === 'ar' 
+                    ? `السعر المحلي المتوقع للـ 21k المستنتج من سعر الأونصة العالمية وسعر صرف ${currencyLabel}.`
+                    : `Expected local 21k price implied by global ounce price and ${currencyLabel}.`;
+                })()}>
                   <div className={`text-gray-600 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
                     {t(lang, 'fairValue21')}
                     <svg className="w-3 h-3 text-gray-400" fill="currentColor" viewBox="0 0 20 20">

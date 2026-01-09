@@ -75,38 +75,38 @@ export function computeImpliedGoldFx(
 export function computeLocalMarketParity(
   usdPerGram24: number | null,
   usdPerGram21: number | null,
-  usdEgpGold: number | null
+  usdLocalRate: number | null
 ): {
   local24: number | null;
   local21: number | null;
 } {
-  if (usdEgpGold === null || usdPerGram24 === null || usdPerGram21 === null) {
+  if (usdLocalRate === null || usdPerGram24 === null || usdPerGram21 === null) {
     return { local24: null, local21: null };
   }
 
-  const local24 = usdPerGram24 * usdEgpGold;
+  const local24 = usdPerGram24 * usdLocalRate;
   const local21 = local24 * KARAT_21_FACTOR;
 
   return { local24, local21 };
 }
 
 /**
- * Compute fair value using real USD/EGP exchange rate
+ * Compute fair value using real USD/local currency exchange rate
  */
 export function computeFairValue(
   usdPerGram24: number | null,
   usdPerGram21: number | null,
-  usdEgp: number | null
+  usdLocalRate: number | null
 ): {
   fair24: number | null;
   fair21: number | null;
 } {
-  if (usdEgp === null || usdPerGram24 === null || usdPerGram21 === null) {
+  if (usdLocalRate === null || usdPerGram24 === null || usdPerGram21 === null) {
     return { fair24: null, fair21: null };
   }
 
-  const fair24 = usdPerGram24 * usdEgp;
-  const fair21 = usdPerGram21 * usdEgp;
+  const fair24 = usdPerGram24 * usdLocalRate;
+  const fair21 = usdPerGram21 * usdLocalRate;
 
   return { fair24, fair21 };
 }
@@ -122,7 +122,7 @@ export function computeFairValue(
  * 
  * Returns:
  * - variancePct: percentage difference
- * - premiumEGP: absolute difference in EGP
+ * - premiumLocal: absolute difference in local currency (not hardcoded to EGP)
  * - classification
  */
 export function computeVariance(
@@ -132,7 +132,7 @@ export function computeVariance(
   fair24: number | null
 ): {
   variancePct: number | null;
-  premiumEGP: number | null;
+  premiumLocal: number | null; // Renamed from premiumEGP to be currency-agnostic
   classification: 'FAIR' | 'PREMIUM' | 'DISCOUNT' | 'N/A';
 } {
   // Prefer 21k, fallback to 24k
@@ -142,13 +142,13 @@ export function computeVariance(
   if (marketBuy === null || fairValue === null || fairValue <= 0) {
     return {
       variancePct: null,
-      premiumEGP: null,
+      premiumLocal: null,
       classification: 'N/A',
     };
   }
 
   const variancePct = ((marketBuy - fairValue) / fairValue) * 100;
-  const premiumEGP = marketBuy - fairValue;
+  const premiumLocal = marketBuy - fairValue;
 
   const absVariance = Math.abs(variancePct);
   let classification: 'FAIR' | 'PREMIUM' | 'DISCOUNT';
@@ -161,7 +161,7 @@ export function computeVariance(
 
   return {
     variancePct,
-    premiumEGP,
+    premiumLocal,
     classification,
   };
 }
@@ -175,16 +175,16 @@ export function calculatePricing(params: {
   market21Sell: number | null;
   market24Buy: number | null;
   market24Sell: number | null;
-  usdEgp?: number | null; // Real USD/EGP exchange rate
+  usdLocalRate?: number | null; // Real USD/local currency exchange rate (EGP, AED, SAR, or 1.0 for USD)
 }): {
   usdPerGram24: number | null;
   usdPerGram21: number | null;
-  usdEgpGold: number | null; // Real USD/EGP rate
+  usdLocalRate: number | null; // Real USD/local currency rate
   localMarketParity: { local24: number | null; local21: number | null };
   fairValue: { fair24: number | null; fair21: number | null };
   variance: {
     variancePct: number | null;
-    premiumEGP: number | null;
+    premiumLocal: number | null; // Premium/discount in local currency (not hardcoded to EGP)
     classification: 'FAIR' | 'PREMIUM' | 'DISCOUNT' | 'N/A';
   };
 } {
@@ -192,21 +192,21 @@ export function calculatePricing(params: {
   const usdPerGram24 = impliedOunceToUsdPerGram24(params.impliedOunceUsd);
   const usdPerGram21 = usdPerGram24To21(usdPerGram24);
 
-  // Step 2: Use real USD/EGP exchange rate
-  const usdEgpGold = params.usdEgp ?? null;
+  // Step 2: Use real USD/local currency exchange rate
+  const usdLocalRate = params.usdLocalRate ?? null;
 
   // Step 3: Local market parity (using real FX)
   const localMarketParity = computeLocalMarketParity(
     usdPerGram24,
     usdPerGram21,
-    usdEgpGold
+    usdLocalRate
   );
 
-  // Step 4: Fair value (using real USD/EGP exchange rate)
+  // Step 4: Fair value (using real USD/local currency exchange rate)
   const fairValue = computeFairValue(
     usdPerGram24,
     usdPerGram21,
-    usdEgpGold
+    usdLocalRate
   );
 
   // Step 5: Variance (using BUY prices and real FX fair value)
@@ -220,10 +220,14 @@ export function calculatePricing(params: {
   return {
     usdPerGram24,
     usdPerGram21,
-    usdEgpGold, // Real USD/EGP rate
+    usdLocalRate, // Real USD/local currency rate
     localMarketParity,
     fairValue,
-    variance,
+    variance: {
+      variancePct: variance.variancePct,
+      premiumLocal: variance.premiumLocal, // Currency-agnostic premium/discount
+      classification: variance.classification,
+    },
   };
 }
 
