@@ -42,11 +42,14 @@ export async function getEgyptMarketMedians(
 
   // Query using wide schema: createdAt, market21Buy, market24Buy, etc.
   // createdAt is likely stored as timestamptz, so use ISO string for comparison
+  // IMPORTANT: Aggregate ALL sources (banklive, gold_era, dokangold, goldrate24, goldbullioneg, aggregated)
+  // Exclude 'aggregated' from individual source queries, but include all other sources
   let query = supabase
     .from('market_snapshots')
     .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, market18Buy, market18Sell, market14Buy, market14Sell, error')
     .gte('createdAt', windowStartISO) // Use ISO string for timestamptz comparison
-    .is('error', null);
+    .is('error', null)
+    .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']); // Only use our local market sources
 
   // For trusted mode, filter by source (goldbullioneg is trusted)
   if (trustedMode) {
@@ -219,11 +222,13 @@ export async function getEgyptMarketSeries(
   const karatKey = karat === 21 ? 'market21Buy' : karat === 24 ? 'market24Buy' : karat === 18 ? 'market18Buy' : 'market14Buy';
 
   // Query using wide schema (createdAt is timestamptz, use ISO string for comparison)
+  // IMPORTANT: Only use our local market sources (exclude old sources)
   let query = supabase
     .from('market_snapshots')
     .select(`createdAt, ${karatKey}, error, source`)
     .gte('createdAt', windowStartISO)
     .is('error', null)
+    .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
     .not(karatKey, 'is', null)
     .order('createdAt', { ascending: true });
 
@@ -294,11 +299,13 @@ export async function getActiveSourceCount(
   const windowStartISO = new Date(windowStart).toISOString();
 
   // Query using wide schema - count sources with valid prices (createdAt is timestamptz, use ISO string)
+  // IMPORTANT: Only count our local market sources (exclude old sources like isagha, goldbillion)
   let query = supabase
     .from('market_snapshots')
     .select('source, createdAt, market21Buy, market24Buy, error')
     .gte('createdAt', windowStartISO)
     .is('error', null)
+    .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
     .or('market21Buy.not.is.null,market24Buy.not.is.null');
 
   // For trusted mode, filter by source (goldbullioneg is trusted)

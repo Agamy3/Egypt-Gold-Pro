@@ -239,6 +239,9 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
 
   // Store source results in database
   const now = Date.now();
+  let sourcesWritten = 0;
+  
+  // Write individual source snapshots
   for (const sourceResult of sourceResults) {
     const rawHash = Buffer.from(JSON.stringify(sourceResult)).toString('base64').substring(0, 32);
     
@@ -247,43 +250,74 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
       // Check if source is trusted (e.g., goldbullioneg)
       const isTrusted = sourceResult.source === 'goldbullioneg';
       
-      // Only write if we have valid prices
+      // Only write if we have valid prices and source is valid
       const hasValidPrices = 
-        sourceResult.prices[24] || 
-        sourceResult.prices[21] || 
-        sourceResult.prices[18] || 
-        sourceResult.prices[14];
+        (sourceResult.prices[24] && sourceResult.prices[24] > 0) || 
+        (sourceResult.prices[21] && sourceResult.prices[21] > 0) || 
+        (sourceResult.prices[18] && sourceResult.prices[18] > 0) || 
+        (sourceResult.prices[14] && sourceResult.prices[14] > 0);
       
-      if (hasValidPrices) {
-        // Write to normalized Supabase schema only (Supabase-only, no SQLite)
-        if (sourceResult.errors.length === 0) {
-          try {
-            const supabaseResult = await writeEgyptSnapshotToSupabase({
-              source: sourceResult.source,
-              trusted: isTrusted,
-              createdAtMs: now,
-              rawHash,
-              prices: {
-                14: { buy: sourceResult.prices[14] || null },
-                18: { buy: sourceResult.prices[18] || null },
-                21: { buy: sourceResult.prices[21] || null },
-                24: { buy: sourceResult.prices[24] || null },
-              },
-            });
-            if (!supabaseResult.ok) {
-              console.error(`[Supabase] Normalized write failed for ${sourceResult.source}:`, supabaseResult.error);
-            }
-          } catch (supabaseError) {
-            // Non-fatal: log and continue
-            console.error(`[Supabase] Normalized write exception for ${sourceResult.source}:`, supabaseError);
+      // Write if source is valid OR if we have valid prices (even with errors, log them)
+      if (sourceResult.valid && hasValidPrices) {
+        try {
+          const supabaseResult = await writeEgyptSnapshotToSupabase({
+            source: sourceResult.source,
+            trusted: isTrusted,
+            createdAtMs: now,
+            rawHash,
+            prices: {
+              14: { buy: sourceResult.prices[14] || null },
+              18: { buy: sourceResult.prices[18] || null },
+              21: { buy: sourceResult.prices[21] || null },
+              24: { buy: sourceResult.prices[24] || null },
+            },
+          });
+          if (supabaseResult.ok && supabaseResult.inserted && supabaseResult.inserted > 0) {
+            sourcesWritten++;
+            console.log(`[Ingestion] Wrote snapshot for ${sourceResult.source}: ${supabaseResult.inserted} row(s)`);
+          } else {
+            console.error(`[Ingestion] Write failed for ${sourceResult.source}:`, supabaseResult.error);
           }
+        } catch (supabaseError) {
+          // Non-fatal: log and continue
+          console.error(`[Ingestion] Write exception for ${sourceResult.source}:`, supabaseError);
         }
+      } else {
+        console.log(`[Ingestion] Skipping ${sourceResult.source}: valid=${sourceResult.valid}, hasValidPrices=${hasValidPrices}`);
       }
     } catch (e) {
-      console.error(`Failed to store snapshot for ${sourceResult.source}:`, e);
+      console.error(`[Ingestion] Failed to store snapshot for ${sourceResult.source}:`, e);
     }
   }
 
+  // IMPORTANT: Also write the aggregated weighted average as 'aggregated' source
+  // This ensures we always have data even if individual sources fail
+  if (result.our_price_buy && Object.keys(result.our_price_buy).length > 0) {
+    try {
+      const aggregatedHash = Buffer.from(JSON.stringify(result)).toString('base64').substring(0, 32);
+      const aggregatedResult = await writeEgyptSnapshotToSupabase({
+        source: 'aggregated',
+        trusted: false, // Aggregated is not a single trusted source
+        createdAtMs: now,
+        rawHash: aggregatedHash,
+        prices: {
+          14: { buy: result.our_price_buy['14'] || null },
+          18: { buy: result.our_price_buy['18'] || null },
+          21: { buy: result.our_price_buy['21'] || null },
+          24: { buy: result.our_price_buy['24'] || null },
+        },
+      });
+      if (aggregatedResult.ok && aggregatedResult.inserted && aggregatedResult.inserted > 0) {
+        console.log(`[Ingestion] Wrote aggregated snapshot: ${aggregatedResult.inserted} row(s)`);
+      } else {
+        console.error(`[Ingestion] Failed to write aggregated snapshot:`, aggregatedResult.error);
+      }
+    } catch (aggregatedError) {
+      console.error(`[Ingestion] Exception writing aggregated snapshot:`, aggregatedError);
+    }
+  }
+
+  console.log(`[Ingestion] Completed: ${sourcesWritten} individual sources written, aggregated snapshot written`);
   return result;
 }
 
