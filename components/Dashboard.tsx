@@ -360,16 +360,16 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           <HoverTip text={lang === 'ar' ? 'سعر الصرف الفوري للدولار المستخدم لتحويل أسعار الذهب العالمية إلى القيمة المحلية.' : "Live USD exchange rate used to convert global gold prices into local fair value."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {(() => {
-                // Use selected currency (or canonical currency as fallback, then country)
-                const curr = snapshot.currency || snapshot.canonicalCurrency || 
-                            (snapshot.country === 'EG' ? 'EGP' :
-                             snapshot.country === 'AE' ? 'AED' :
-                             snapshot.country === 'SA' ? 'SAR' :
-                             snapshot.country === 'US' ? 'USD' : 'EGP');
-                return curr === 'EGP' ? (t(lang, 'usdEgp') || 'USD/EGP') :
-                       curr === 'AED' ? 'USD/AED' :
-                       curr === 'SAR' ? 'USD/SAR' :
-                       curr === 'USD' ? 'USD Rate' :
+                // Always use selected currency (not canonical currency) to show the rate the user wants to see
+                const displayCurrency = snapshot.currency || 
+                                      (snapshot.country === 'EG' ? 'EGP' :
+                                       snapshot.country === 'AE' ? 'AED' :
+                                       snapshot.country === 'SA' ? 'SAR' :
+                                       snapshot.country === 'US' ? 'USD' : 'EGP');
+                return displayCurrency === 'EGP' ? (t(lang, 'usdEgp') || 'USD/EGP') :
+                       displayCurrency === 'AED' ? 'USD/AED' :
+                       displayCurrency === 'SAR' ? 'USD/SAR' :
+                       displayCurrency === 'USD' ? 'USD/USD' :
                        'USD Rate';
               })()}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
@@ -378,18 +378,43 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             </h2>
           </HoverTip>
           {(() => {
-            // Use selected currency (or canonical currency as fallback, then country)
-            const curr = snapshot.currency || snapshot.canonicalCurrency || 
-                        (snapshot.country === 'EG' ? 'EGP' :
-                         snapshot.country === 'AE' ? 'AED' :
-                         snapshot.country === 'SA' ? 'SAR' :
-                         snapshot.country === 'US' ? 'USD' : 'EGP');
-            const rate = curr === 'EGP' ? snapshot.pricing.fx?.usdEgp :
-                        curr === 'AED' ? snapshot.pricing.fx?.usdAed :
-                        curr === 'SAR' ? snapshot.pricing.fx?.usdSar :
-                        curr === 'USD' ? 1.0 :
-                        snapshot.pricing.fx?.usdEgp;
-            return rate !== null && rate !== undefined ? (
+            // Always use selected currency to determine which rate to show
+            const displayCurrency = snapshot.currency || 
+                                  (snapshot.country === 'EG' ? 'EGP' :
+                                   snapshot.country === 'AE' ? 'AED' :
+                                   snapshot.country === 'SA' ? 'SAR' :
+                                   snapshot.country === 'US' ? 'USD' : 'EGP');
+            
+            // Get the rate based on the selected currency
+            let rate: number | null | undefined;
+            if (displayCurrency === 'EGP') {
+              rate = snapshot.pricing.fx?.usdEgp;
+            } else if (displayCurrency === 'AED') {
+              rate = snapshot.pricing.fx?.usdAed;
+            } else if (displayCurrency === 'SAR') {
+              rate = snapshot.pricing.fx?.usdSar;
+            } else if (displayCurrency === 'USD') {
+              rate = 1.0; // USD to USD is always 1.0
+            } else {
+              // Fallback to EGP rate if currency is unknown
+              rate = snapshot.pricing.fx?.usdEgp;
+            }
+            
+            // Validate rate exists and is a valid number
+            if (rate === null || rate === undefined || !Number.isFinite(rate) || rate <= 0) {
+              return (
+                <div className="text-gray-400">
+                  {lang === 'ar' ? 'غير متاح' : 'N/A'} ({lang === 'ar' ? 'سعر الصرف غير متاح' : 'FX unavailable'})
+                  {snapshot.pricing.fx?.error && (
+                    <div className="text-xs text-red-500 mt-1">
+                      {snapshot.pricing.fx.error}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            
+            return (
               <>
                 <HoverTip 
                   text={`${lang === 'ar' ? 'سعر صرف فوري مستند على بيانات موثوقة' : 'Live exchange rate based on reliable data'}${snapshot.pricing.fx?.fetchedAt ? `. ${lang === 'ar' ? 'آخر تحديث' : 'Last updated'}: ${formatTimestamp(snapshot.pricing.fx.fetchedAt)}` : ''}${snapshot.pricing.fx?.stale ? ` (${lang === 'ar' ? 'قديم' : 'stale'})` : ''}`}
@@ -409,15 +434,6 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                   </div>
                 )}
               </>
-            ) : (
-              <div className="text-gray-400">
-                N/A (FX unavailable)
-                {snapshot.pricing.fx?.error && (
-                  <div className="text-xs text-red-500 mt-1">
-                    {snapshot.pricing.fx.error}
-                  </div>
-                )}
-              </div>
             );
           })()}
         </div>
