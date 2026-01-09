@@ -30,6 +30,7 @@ interface ForecastData {
 interface ForecastCardProps {
   forecast: ForecastData | null;
   insufficientData?: boolean;
+  country?: 'EG' | 'AE' | 'SA' | 'US';
 }
 
 interface SeriesPoint {
@@ -57,7 +58,7 @@ const TIME_RANGE_MAP: Record<TimeRange, number> = {
   yoy: 525600,      // 365 days
 };
 
-export default function ForecastCard({ forecast, insufficientData }: ForecastCardProps) {
+export default function ForecastCard({ forecast, insufficientData, country = 'EG' }: ForecastCardProps) {
   const { lang } = useLang();
   const [timeRange, setTimeRange] = useState<TimeRange>('daily');
   const [scope, setScope] = useState<ForecastScope>('local');
@@ -73,7 +74,7 @@ export default function ForecastCard({ forecast, insufficientData }: ForecastCar
         const trustedMode = typeof window !== 'undefined' && localStorage.getItem('egyptTrustedOnlyMode') === 'true';
         const minutes = TIME_RANGE_MAP[timeRange];
         
-        const url = `/api/forecast/series?minutes=${minutes}&scope=${scope}${trustedMode ? '&trustedMode=true' : ''}`;
+        const url = `/api/forecast/series?range=${timeRange}&minutes=${minutes}&scope=${scope}&country=${country}${trustedMode ? '&trustedMode=true' : ''}`;
         
         const res = await fetch(url, {
           headers: {
@@ -112,7 +113,7 @@ export default function ForecastCard({ forecast, insufficientData }: ForecastCar
     }, 30000);
     
     return () => clearInterval(interval);
-  }, [timeRange, scope]);
+  }, [timeRange, scope, country]);
 
   // Filter and transform reasons to remove provider names
   const cleanReasons = forecast?.reasons.map(reason => {
@@ -143,8 +144,14 @@ export default function ForecastCard({ forecast, insufficientData }: ForecastCar
     SIDEWAYS: '→',
   };
 
-  // Determine unit and range for chart
-  const chartUnit = scope === 'global' ? 'USD' as const : 'EGP' as const;
+  // Determine unit and range for chart based on country and scope
+  const getCurrency = (country: string) => {
+    return country === 'EG' ? 'EGP' : 
+           country === 'AE' ? 'AED' :
+           country === 'SA' ? 'SAR' :
+           country === 'US' ? 'USD' : 'EGP';
+  };
+  const chartUnit = scope === 'global' ? 'USD' as const : (getCurrency(country) as 'EGP' | 'AED' | 'SAR' | 'USD');
   const chartRange = timeRange;
 
   if (insufficientData || !forecast) {

@@ -226,6 +226,7 @@ function HomeContent() {
                 <ForecastCard 
                   forecast={forecast.forecast} 
                   insufficientData={forecast.insufficientData}
+                  country={country}
                 />
               </div>
             )}

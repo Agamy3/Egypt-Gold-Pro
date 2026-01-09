@@ -24,7 +24,7 @@ interface ChartPoint {
 
 interface ForecastMiniChartProps {
   points: ChartPoint[];
-  unit?: 'EGP' | 'USD';
+  unit?: 'EGP' | 'USD' | 'AED' | 'SAR';
   range?: 'daily' | 'weekly' | 'monthly' | 'yoy';
   height?: number;
   strokeColor?: string;
@@ -225,8 +225,8 @@ export default function ForecastMiniChart({
   // Format Y-axis value with thousands separators
   const formatYValue = (value: number): string => {
     return new Intl.NumberFormat('en-US', {
-      maximumFractionDigits: unit === 'USD' ? 2 : 0,
-      minimumFractionDigits: unit === 'USD' ? 2 : 0,
+      maximumFractionDigits: (unit === 'USD' || unit === 'AED' || unit === 'SAR') ? 2 : 0,
+      minimumFractionDigits: (unit === 'USD' || unit === 'AED' || unit === 'SAR') ? 2 : 0,
     }).format(value);
   };
 

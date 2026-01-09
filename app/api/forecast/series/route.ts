@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { getServerClient } from '@/lib/supabase/server';
 import { getGoldSpotHistory } from '@/lib/supabase/goldSpot';
+import { getCountryCurrency } from '@/lib/fx-multi';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -47,17 +48,24 @@ export async function GET(request: Request) {
     const minutesParam = searchParams.get('minutes');
     const rangeParam = searchParams.get('range') as 'daily' | 'weekly' | 'monthly' | 'yoy' | null;
     const scopeParam = searchParams.get('scope') as 'local' | 'global' | null;
+    const countryParam = searchParams.get('country') as 'EG' | 'AE' | 'SA' | 'US' | null;
+    
+    // Default to EG if country not specified
+    const country = (countryParam && ['EG', 'AE', 'SA', 'US'].includes(countryParam)) 
+      ? countryParam 
+      : 'EG';
     
     // Map range to minutes if provided
-    // Use 7 days (same as forecast) to ensure we have all available data
+    // Match frontend TIME_RANGE_MAP values
     const rangeMap: Record<string, number> = {
-      daily: 7 * 24 * 60,      // 7 days = 10080 minutes
-      weekly: 7 * 24 * 60,      // 7 days (same as forecast window)
-      monthly: 30 * 24 * 60,    // 30 days
-      yoy: 365 * 24 * 60,       // 1 year
+      daily: 24 * 60,           // 24 hours = 1440 minutes
+      weekly: 7 * 24 * 60,      // 7 days = 10080 minutes
+      monthly: 30 * 24 * 60,    // 30 days = 43200 minutes
+      yoy: 365 * 24 * 60,       // 1 year = 525600 minutes
     };
     
-    let minutes = 7 * 24 * 60; // default to 7 days to match forecast window
+    // Priority: rangeParam > minutesParam > default (7 days)
+    let minutes = 7 * 24 * 60; // default to 7 days
     if (rangeParam && rangeMap[rangeParam]) {
       minutes = rangeMap[rangeParam];
     } else if (minutesParam) {
@@ -82,147 +90,6 @@ export async function GET(request: Request) {
     
     // Determine scope (default to local if not specified)
     const scope: 'local' | 'global' = scopeParam || 'local';
-
-    // Get snapshots from Supabase (SQLite-compatible schema)
-    // Determine limit based on range - increase limits to avoid missing data
-    // For 7 days with 1 snapshot/minute = 10,080 snapshots max
-    // Set limits higher to ensure we get all data
-    const baseLimitMap: Record<string, number> = {
-      daily: 15000,    // 7 days * 144 snapshots/day (1 per 10 min) = ~10K, add buffer
-      weekly: 15000,   // Same as daily (7 days)
-      monthly: 50000,  // 30 days with buffer
-      yoy: 200000,     // 1 year with buffer
-    };
-    const effectiveRangeKey = rangeParam && baseLimitMap[rangeParam] ? rangeParam : 'daily';
-    const snapshotLimit = baseLimitMap[effectiveRangeKey];
-    
-    console.log('[Forecast Series] Query limit:', snapshotLimit, 'for range:', effectiveRangeKey);
-
-    // Query using wide schema: createdAt, market21Buy, market24Buy, etc.
-    const supabase = getServerClient();
-    if (!supabase) {
-      return NextResponse.json({ error: 'Database client unavailable' }, { status: 500 });
-    }
-    // IMPORTANT: Only use local market sources (aggregated and individual sources)
-    let snapshotQuery = supabase
-      .from('market_snapshots')
-      .select('source, createdAt, market21Buy, market24Buy, error')
-      .gte('createdAt', windowStart) // createdAt is bigint, use epoch ms number
-      .is('error', null)
-      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
-      .or('market21Buy.not.is.null,market24Buy.not.is.null')
-      .order('createdAt', { ascending: false })
-      .limit(snapshotLimit);
-
-    // For trusted mode, filter by source (goldbullioneg is trusted)
-    if (EGYPT_TRUSTED_ONLY_MODE) {
-      snapshotQuery = snapshotQuery.eq('source', 'goldbullioneg');
-    }
-
-    const { data: snapshotRows, error: snapshotError } = await snapshotQuery;
-    
-    // Log for debugging
-    if (snapshotError) {
-      console.error('[Forecast Series] Query error:', snapshotError);
-    }
-    // Type guard for snapshot rows
-    type SnapshotRow = {
-      source: string;
-      createdAt: number;
-      market21Buy: number | null;
-      market24Buy: number | null;
-      error: string | null;
-    };
-    const typedRows: SnapshotRow[] = (snapshotRows || []) as SnapshotRow[];
-
-    if (typedRows.length === 0) {
-      console.log('[Forecast Series] No snapshots found. Window start:', new Date(windowStart).toISOString(), 'Now:', new Date(now).toISOString(), 'Window ms:', windowMs, 'Trusted mode:', EGYPT_TRUSTED_ONLY_MODE);
-    } else {
-      const latestRow = typedRows[0]; // First row is latest (ordered descending)
-      const oldestRow = typedRows[typedRows.length - 1];
-      console.log('[Forecast Series] Found', typedRows.length, 'snapshots. Latest:', {
-        createdAt: new Date(latestRow.createdAt).toISOString(),
-        source: latestRow.source,
-        has24k: latestRow.market24Buy !== null,
-        has21k: latestRow.market21Buy !== null,
-      }, 'Oldest:', {
-        createdAt: new Date(oldestRow.createdAt).toISOString(),
-      });
-      
-      // Check if latest data is recent (within last 5 minutes)
-      const minutesAgo = (now - latestRow.createdAt) / (60 * 1000);
-      if (minutesAgo > 5) {
-        console.warn(`[Forecast Series] WARNING: Latest snapshot is ${minutesAgo.toFixed(1)} minutes old. Expected data within last 1 minute if cron is running.`);
-      }
-    }
-
-    // Transform to snapshot format - use ALL snapshots, don't bucket aggressively
-    // Only bucket if we have multiple snapshots within the same 10-second window to avoid exact duplicates
-    const snapshotsByTime = new Map<number, {
-      createdAt: number;
-      market21Buy: number | null;
-      market24Buy: number | null;
-      count: number; // Track how many snapshots were merged
-    }>();
-
-    if (typedRows && typedRows.length > 0) {
-      console.log('[Forecast Series] Processing', typedRows.length, 'raw snapshot rows');
-      for (const row of typedRows) {
-        const market21Buy = row.market21Buy as number | null;
-        const market24Buy = row.market24Buy as number | null;
-        
-        // Skip if no valid prices
-        if ((market21Buy === null || !isFinite(market21Buy) || market21Buy <= 0) &&
-            (market24Buy === null || !isFinite(market24Buy) || market24Buy <= 0)) {
-          continue;
-        }
-
-        // createdAt is stored as bigint (epoch ms number) in Supabase
-        const createdAt = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
-        // Use 10-second buckets instead of 1-minute to preserve more granularity
-        // This groups snapshots that are essentially duplicates (within 10 seconds)
-        const timeBucket = Math.floor(createdAt / 10000) * 10000;
-        
-        if (!snapshotsByTime.has(timeBucket)) {
-          snapshotsByTime.set(timeBucket, {
-            createdAt: timeBucket,
-            market21Buy: null,
-            market24Buy: null,
-            count: 0,
-          });
-        }
-        const snapshot = snapshotsByTime.get(timeBucket)!;
-        snapshot.count++;
-        
-        // Set price for the appropriate karat (prefer 24k, fallback to 21k for local scope)
-        // Use the latest value (or average if multiple in same bucket)
-        if (market24Buy !== null && isFinite(market24Buy) && market24Buy > 0) {
-          if (snapshot.market24Buy === null) {
-            snapshot.market24Buy = market24Buy;
-          } else {
-            // Average if multiple values in same bucket
-            snapshot.market24Buy = (snapshot.market24Buy * (snapshot.count - 1) + market24Buy) / snapshot.count;
-          }
-        } else if (market21Buy !== null && isFinite(market21Buy) && market21Buy > 0 && snapshot.market24Buy === null) {
-          // Only use 21k if 24k is not available
-          if (snapshot.market21Buy === null) {
-            snapshot.market21Buy = market21Buy;
-          } else {
-            // Average if multiple values in same bucket
-            snapshot.market21Buy = (snapshot.market21Buy * (snapshot.count - 1) + market21Buy) / snapshot.count;
-          }
-        }
-      }
-      
-      console.log('[Forecast Series] Created', snapshotsByTime.size, 'time buckets from', typedRows.length, 'raw rows');
-    }
-
-    // Convert to array and sort by timestamp (ascending for chart)
-    const snapshots = Array.from(snapshotsByTime.values())
-      .map(({ count, ...rest }) => rest) // Remove count field
-      .sort((a, b) => a.createdAt - b.createdAt);
-    
-    console.log('[Forecast Series] After time bucketing:', snapshots.length, 'snapshots. Sample:', snapshots.slice(0, 3));
 
     // Get gold spot data for the entire window (for chart display)
     const goldSpotHistory = await getGoldSpotHistory(windowStart);
@@ -263,17 +130,90 @@ export async function GET(request: Request) {
         });
       }
     } else {
-      // Local scope: return local market buy price series
-      // Use market24Buy (preferred) or market21Buy as fallback
-      for (const snapshot of snapshots) {
-        const marketBuy = snapshot.market24Buy ?? snapshot.market21Buy;
-        
-        if (marketBuy !== null && isFinite(marketBuy) && marketBuy > 0) {
-          points.push({
-            t: snapshot.createdAt,
-            v: marketBuy,
-          });
+      // Local scope: return local market buy price series using normalized schema
+      // Query market_snapshots_norm directly with country filter
+      const supabase = getServerClient();
+      if (!supabase) {
+        console.error('[Forecast Series] Database client unavailable');
+        points = [];
+      } else {
+        // Query normalized schema for country-specific data
+        let seriesQuery = supabase
+          .from('market_snapshots_norm')
+          .select('karat, price, created_at, source')
+          .eq('country', country)
+          .gte('created_at', new Date(windowStart).toISOString())
+          .order('created_at', { ascending: true });
+
+        // Filter by source for country-specific sources
+        if (country === 'EG') {
+          seriesQuery = seriesQuery.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
+        } else if (country === 'AE') {
+          seriesQuery = seriesQuery.in('source', ['goldprice_org_ae', 'global_parity']);
+        } else if (country === 'SA') {
+          seriesQuery = seriesQuery.in('source', ['goldprice_org_sa', 'global_parity']);
+        } else if (country === 'US') {
+          seriesQuery = seriesQuery.in('source', ['goldapi_spot']);
         }
+
+        // Try 24k first
+        const { data: data24k, error: error24k } = await seriesQuery.eq('karat', 24);
+        
+        if (!error24k && data24k && data24k.length > 0) {
+          // Group by 10-second buckets and average prices
+          const timeBuckets = new Map<number, number[]>();
+          for (const row of data24k) {
+            const price = Number(row.price);
+            if (isFinite(price) && price > 0) {
+              const createdAt = typeof row.created_at === 'string' 
+                ? new Date(row.created_at).getTime()
+                : (typeof row.created_at === 'number' ? row.created_at : 0);
+              const bucketKey = Math.floor(createdAt / 10000) * 10000; // 10-second buckets
+              
+              if (!timeBuckets.has(bucketKey)) {
+                timeBuckets.set(bucketKey, []);
+              }
+              timeBuckets.get(bucketKey)!.push(price);
+            }
+          }
+          
+          // Convert to points (average prices per bucket)
+          points = Array.from(timeBuckets.entries())
+            .map(([t, prices]) => ({
+              t,
+              v: prices.reduce((sum, p) => sum + p, 0) / prices.length, // Average
+            }))
+            .sort((a, b) => a.t - b.t);
+        } else {
+          // Fallback to 21k
+          const { data: data21k, error: error21k } = await seriesQuery.eq('karat', 21);
+          if (!error21k && data21k && data21k.length > 0) {
+            const timeBuckets = new Map<number, number[]>();
+            for (const row of data21k) {
+              const price = Number(row.price);
+              if (isFinite(price) && price > 0) {
+                const createdAt = typeof row.created_at === 'string' 
+                  ? new Date(row.created_at).getTime()
+                  : (typeof row.created_at === 'number' ? row.created_at : 0);
+                const bucketKey = Math.floor(createdAt / 10000) * 10000;
+                
+                if (!timeBuckets.has(bucketKey)) {
+                  timeBuckets.set(bucketKey, []);
+                }
+                timeBuckets.get(bucketKey)!.push(price);
+              }
+            }
+            
+            points = Array.from(timeBuckets.entries())
+              .map(([t, prices]) => ({
+                t,
+                v: prices.reduce((sum, p) => sum + p, 0) / prices.length,
+              }))
+              .sort((a, b) => a.t - b.t);
+          }
+        }
+        
+        console.log('[Forecast Series] Local market data for country', country, ':', points.length, 'points');
       }
     }
 
@@ -318,8 +258,8 @@ export async function GET(request: Request) {
     // Ensure points are sorted by timestamp (ascending)
     points.sort((a, b) => a.t - b.t);
 
-    // Determine unit based on scope (simplified to match chart props)
-    const unit = scope === 'global' ? 'USD' : 'EGP';
+    // Determine unit based on scope and country
+    const unit = scope === 'global' ? 'USD' : getCountryCurrency(country);
     
     // Determine range label
     const rangeLabel = rangeParam || 'custom';
@@ -331,6 +271,7 @@ export async function GET(request: Request) {
         scope,
         range: rangeLabel,
         unit,
+        country,
       },
     });
   } catch (error) {
