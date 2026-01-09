@@ -121,7 +121,8 @@ function HomeContent() {
       fetchForecast();
     }, 30000); // Poll every 30 seconds
     return () => clearInterval(interval);
-  }, [country, currency]); // Re-fetch when country/currency changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [country, currency]); // Re-fetch when country/currency changes (fetchSnapshot/fetchForecast are recreated on each render)
 
   if (loading) {
     return (
