@@ -98,8 +98,10 @@ export async function getEgyptMarketMedians(
     
     if (karatRows.length > 0) {
       // Calculate median buy price (normalized schema only has buy prices)
-      const buyPrices = karatRows
-        .map((row: any) => row.price_egp as number)
+      // Filter and map to ensure type safety for sort comparator
+      const buyPrices: number[] = karatRows
+        .map((row: any) => row.price_egp)
+        .filter((price: any): price is number => typeof price === 'number' && isFinite(price) && price > 0)
         .sort((a, b) => a - b);
       
       const mid = Math.floor(buyPrices.length / 2);

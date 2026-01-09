@@ -255,50 +255,7 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
         sourceResult.prices[14];
       
       if (hasValidPrices) {
-        try {
-          // Write to market_snapshots table (SQLite schema with camelCase columns) using Supabase
-          const { error: insertError } = await db.supabase
-            .from('market_snapshots')
-            .insert({
-              createdAt: now,
-              source: sourceResult.source,
-              market24Buy: sourceResult.prices[24] || null,
-              market24Sell: (sourceResult.sells && sourceResult.sells[24]) || null,
-              market21Buy: sourceResult.prices[21] || null,
-              market21Sell: (sourceResult.sells && sourceResult.sells[21]) || null,
-              market18Buy: sourceResult.prices[18] || null,
-              market18Sell: (sourceResult.sells && sourceResult.sells[18]) || null,
-              market14Buy: sourceResult.prices[14] || null,
-              market14Sell: (sourceResult.sells && sourceResult.sells[14]) || null,
-              rawHash: rawHash,
-              error: sourceResult.errors.length > 0 ? sourceResult.errors.join('; ') : null,
-              rawResponseSnippet: JSON.stringify(sourceResult).substring(0, 1000),
-            });
-          
-          if (insertError) {
-            // Fallback: Try without optional columns
-            const { error: fallbackError } = await db.supabase
-              .from('market_snapshots')
-              .insert({
-                createdAt: now,
-                source: sourceResult.source,
-                market24Buy: sourceResult.prices[24] || null,
-                market21Buy: sourceResult.prices[21] || null,
-                market18Buy: sourceResult.prices[18] || null,
-                market14Buy: sourceResult.prices[14] || null,
-                rawHash: rawHash,
-                error: sourceResult.errors.length > 0 ? sourceResult.errors.join('; ') : null,
-              });
-            
-            if (fallbackError) {
-              console.error(`Failed to insert snapshot for ${sourceResult.source}:`, fallbackError.message);
-            }
-          }
-        } catch (dbError: any) {
-          console.error(`Failed to insert snapshot for ${sourceResult.source}:`, dbError.message);
-        }
-        
-        // Also write to normalized Supabase schema (for queries)
+        // Write to normalized Supabase schema only (Supabase-only, no SQLite)
         if (sourceResult.errors.length === 0) {
           try {
             const supabaseResult = await writeEgyptSnapshotToSupabase({
