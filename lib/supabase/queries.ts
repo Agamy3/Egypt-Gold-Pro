@@ -161,7 +161,8 @@ export async function getEgyptMarketMedians(
     // Filter rows that have valid buy price for this karat
     // Prefer aggregated source if available, but also include individual sources for median
     const validRows = dataToUse.filter((row: any) => {
-      const buyPrice = row[buyKey];
+      const rowAny = row as Record<string, any>;
+      const buyPrice = rowAny[buyKey];
       return buyPrice !== null && 
              buyPrice !== undefined && 
              isFinite(Number(buyPrice)) && 
@@ -171,25 +172,31 @@ export async function getEgyptMarketMedians(
     // If we have aggregated data, use it directly (it's already a weighted average)
     // Otherwise, compute median from individual sources
     const aggregatedRow = validRows.find((r: any) => r.source === 'aggregated');
-    if (aggregatedRow && aggregatedRow[buyKey] !== null) {
-      const aggregatedPrice = Number(aggregatedRow[buyKey]);
-      if (isFinite(aggregatedPrice) && aggregatedPrice > 0) {
-        prices[buyKey as keyof EgyptMarketPrices] = aggregatedPrice;
-        prices[sellKey as keyof EgyptMarketPrices] = aggregatedRow[sellKey] ? Number(aggregatedRow[sellKey]) : null;
-        
-        // Track sources used (aggregated represents all sources)
-        const allSourcesFromValidRows = Array.from(new Set(validRows.map((row: any) => row.source as string)));
-        sourcesUsed[karat.toString()] = allSourcesFromValidRows.filter(s => s !== 'aggregated');
-        allSourcesFromValidRows.forEach(s => contributingSources.add(s));
-        
-        // Use aggregated timestamp (createdAt is bigint - epoch ms number)
-        const createdAt = typeof aggregatedRow.createdAt === 'number' 
-          ? aggregatedRow.createdAt 
-          : (typeof aggregatedRow.createdAt === 'string' ? new Date(aggregatedRow.createdAt).getTime() : 0);
-        maxTimestamp = Math.max(maxTimestamp, createdAt);
-        
-        console.log(`[getEgyptMarketMedians] Using aggregated price for ${karat}K:`, aggregatedPrice);
-        continue; // Skip to next karat - aggregated price is already set
+    if (aggregatedRow) {
+      const rowAny = aggregatedRow as Record<string, any>;
+      const buyPriceValue = rowAny[buyKey] as number | null | undefined;
+      if (buyPriceValue !== null && buyPriceValue !== undefined) {
+        const aggregatedPrice = Number(buyPriceValue);
+        if (isFinite(aggregatedPrice) && aggregatedPrice > 0) {
+          prices[buyKey as keyof EgyptMarketPrices] = aggregatedPrice;
+          const sellPriceValue = rowAny[sellKey] as number | null | undefined;
+          prices[sellKey as keyof EgyptMarketPrices] = (sellPriceValue !== null && sellPriceValue !== undefined && isFinite(Number(sellPriceValue)) && Number(sellPriceValue) > 0) ? Number(sellPriceValue) : null;
+          
+          // Track sources used (aggregated represents all sources)
+          const allSourcesFromValidRows = Array.from(new Set(validRows.map((row: any) => row.source as string)));
+          sourcesUsed[karat.toString()] = allSourcesFromValidRows.filter(s => s !== 'aggregated');
+          allSourcesFromValidRows.forEach(s => contributingSources.add(s));
+          
+          // Use aggregated timestamp (createdAt is bigint - epoch ms number)
+          const createdAtRaw = rowAny.createdAt;
+          const createdAt = typeof createdAtRaw === 'number'
+            ? createdAtRaw
+            : (typeof createdAtRaw === 'string' ? new Date(createdAtRaw).getTime() : 0);
+          maxTimestamp = Math.max(maxTimestamp, createdAt);
+          
+          console.log(`[getEgyptMarketMedians] Using aggregated price for ${karat}K:`, aggregatedPrice);
+          continue; // Skip to next karat - aggregated price is already set
+        }
       }
     }
     
@@ -201,7 +208,10 @@ export async function getEgyptMarketMedians(
     if (validRows.length > 0) {
       // Calculate median buy price with type safety
       const buyPrices: number[] = validRows
-        .map((row: any) => Number(row[buyKey]))
+        .map((row: any) => {
+          const rowAny = row as Record<string, any>;
+          return Number(rowAny[buyKey]);
+        })
         .filter((price): price is number => isFinite(price) && price > 0)
         .sort((a, b) => a - b);
       
@@ -212,7 +222,10 @@ export async function getEgyptMarketMedians(
 
       // Calculate median sell price if available
       const sellPrices: number[] = validRows
-        .map((row: any) => row[sellKey])
+        .map((row: any) => {
+          const rowAny = row as Record<string, any>;
+          return rowAny[sellKey];
+        })
         .filter((price: any): price is number => 
           price !== null && price !== undefined && isFinite(Number(price)) && Number(price) > 0
         )
@@ -306,13 +319,14 @@ export async function getEgyptMarketSeries(
   const timeBuckets = new Map<number, number[]>();
   
   for (const row of data) {
-      const price = (row as any)[karatKey] as number;
-      if (price !== null && price !== undefined && isFinite(Number(price)) && Number(price) > 0) {
-        // createdAt is stored as bigint (epoch ms number) in Supabase
-        const createdAt = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
-        // Round to nearest minute for bucketing
-        const bucketKey = Math.floor(createdAt / 60000) * 60000;
-      
+    const rowAny = row as Record<string, any>;
+    const price = rowAny[karatKey] as number;
+    if (price !== null && price !== undefined && isFinite(Number(price)) && Number(price) > 0) {
+      // createdAt is stored as bigint (epoch ms number) in Supabase
+      const createdAt = typeof rowAny.createdAt === 'number' ? rowAny.createdAt : (typeof rowAny.createdAt === 'string' ? new Date(rowAny.createdAt).getTime() : 0);
+      // Round to nearest minute for bucketing
+      const bucketKey = Math.floor(createdAt / 60000) * 60000;
+    
       if (!timeBuckets.has(bucketKey)) {
         timeBuckets.set(bucketKey, []);
       }
