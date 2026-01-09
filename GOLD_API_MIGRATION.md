@@ -168,3 +168,4 @@ curl -H "x-cron-secret: YOUR_SECRET" http://localhost:3000/api/cron/ingest
 ✅ No manual entry, no silent fallbacks, never compute Egypt market from ounce
 
 
+

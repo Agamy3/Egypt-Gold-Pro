@@ -72,3 +72,4 @@ export function generateParityHash(
   return Buffer.from(hashInput).toString('base64').substring(0, 32);
 }
 
+

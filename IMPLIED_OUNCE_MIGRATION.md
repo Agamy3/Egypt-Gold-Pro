@@ -125,3 +125,4 @@ Updated the application to use "Egypt Market Implied Ounce" instead of "Global G
 - Price range expectations updated to 3000-6000 USD
 
 
+

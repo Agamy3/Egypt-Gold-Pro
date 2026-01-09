@@ -69,3 +69,4 @@
 ✅ At least one source should become OK with market21Buy not null after running cron ingest
 
 
+

@@ -297,3 +297,4 @@ sqlite3 db/egyptgold.db "SELECT source, rawHash, COUNT(*) as count FROM market_s
   3. Cron job execution logs
 
 
+

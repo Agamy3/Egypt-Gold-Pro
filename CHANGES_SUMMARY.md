@@ -198,3 +198,4 @@ Fixed GoldAPI integration, implemented Egypt sources HTML parsing, added debug e
 - Raw responses are limited to 500-1000 chars to avoid memory issues
 
 
+

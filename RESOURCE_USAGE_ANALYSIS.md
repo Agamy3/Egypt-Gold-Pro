@@ -121,3 +121,4 @@ If user changes time range to "Year-over-year":
 - Most users likely use "daily" range (default), keeping data transfer low
 - Users exploring historical data (monthly/yoy) will use more bandwidth
 
+

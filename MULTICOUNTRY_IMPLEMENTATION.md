@@ -251,3 +251,4 @@ curl "http://localhost:3000/api/marketSnapshot?country=US&currency=USD"
 - **Canonical Currency**: Each country has a canonical currency (EG→EGP, AE→AED, SA→SAR, US→USD)
 - **UI Labels**: Still shows "Egypt Market" in some places - can be updated to use selected country
 
+

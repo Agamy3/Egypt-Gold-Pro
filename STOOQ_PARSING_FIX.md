@@ -112,3 +112,4 @@ When Stooq succeeds, `/api/marketSnapshot` returns:
 6. ✅ **Detailed error messages** - Includes raw data line (200 chars)
 
 
+

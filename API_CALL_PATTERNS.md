@@ -138,3 +138,4 @@ useEffect(() => {
    - Already optimal - runs once per minute regardless of users
    - Consider reducing frequency if data doesn't change that fast
 
+

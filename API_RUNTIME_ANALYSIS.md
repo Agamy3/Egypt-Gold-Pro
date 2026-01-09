@@ -122,3 +122,4 @@ API Routes (Node.js Serverless Functions)
    - Use Supabase Edge Functions for database-heavy operations
    - Consider background jobs for data ingestion (already using cron)
 
+
