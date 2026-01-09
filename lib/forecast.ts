@@ -59,13 +59,15 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
     // Filter by trusted source if trusted-only mode is enabled
     const isTrustedMode = trustedMode || getTrustedModeFromEnv();
     // IMPORTANT: Only use local market sources (aggregated and individual sources)
+    // Remove order limit to get all data in the window
     let snapshotQuery = db.supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, error')
       .gte('createdAt', windowStart) // createdAt is bigint, use epoch ms number
       .is('error', null)
       .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
-      .or('market21Buy.not.is.null,market24Buy.not.is.null');
+      .or('market21Buy.not.is.null,market24Buy.not.is.null')
+      .order('createdAt', { ascending: true }); // Order by createdAt ascending to get oldest first
 
     // For trusted mode, filter by source (goldbullioneg is trusted)
     if (isTrustedMode) {
@@ -73,6 +75,41 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
     }
 
     const { data: snapshotRows, error: snapshotError } = await snapshotQuery;
+    
+    // Log query results for debugging
+    if (snapshotError) {
+      console.error('[Forecast] Query error:', snapshotError);
+    } else {
+      const latestRow = snapshotRows && snapshotRows.length > 0 
+        ? snapshotRows.reduce((latest, row) => {
+            const rowTime = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
+            const latestTime = typeof latest.createdAt === 'number' ? latest.createdAt : (typeof latest.createdAt === 'string' ? new Date(latest.createdAt).getTime() : 0);
+            return rowTime > latestTime ? row : latest;
+          })
+        : null;
+      const oldestRow = snapshotRows && snapshotRows.length > 0
+        ? snapshotRows.reduce((oldest, row) => {
+            const rowTime = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
+            const oldestTime = typeof oldest.createdAt === 'number' ? oldest.createdAt : (typeof oldest.createdAt === 'string' ? new Date(oldest.createdAt).getTime() : 0);
+            return rowTime < oldestTime ? row : oldest;
+          })
+        : null;
+      
+      console.log('[Forecast] Query results:', {
+        totalRows: snapshotRows?.length || 0,
+        windowStart: new Date(windowStart).toISOString(),
+        now: new Date(now).toISOString(),
+        latestSnapshot: latestRow ? {
+          createdAt: new Date(typeof latestRow.createdAt === 'number' ? latestRow.createdAt : new Date(latestRow.createdAt).getTime()).toISOString(),
+          source: latestRow.source,
+          minutesAgo: (now - (typeof latestRow.createdAt === 'number' ? latestRow.createdAt : new Date(latestRow.createdAt).getTime())) / (60 * 1000),
+        } : null,
+        oldestSnapshot: oldestRow ? {
+          createdAt: new Date(typeof oldestRow.createdAt === 'number' ? oldestRow.createdAt : new Date(oldestRow.createdAt).getTime()).toISOString(),
+          daysAgo: (now - (typeof oldestRow.createdAt === 'number' ? oldestRow.createdAt : new Date(oldestRow.createdAt).getTime())) / (24 * 60 * 60 * 1000),
+        } : null,
+      });
+    }
 
     // Transform to snapshot format (group by time bucket - rounded to nearest minute)
     // This ensures that multiple snapshots ingested at slightly different times are grouped together
