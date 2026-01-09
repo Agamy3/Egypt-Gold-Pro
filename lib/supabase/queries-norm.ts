@@ -37,13 +37,15 @@ export async function getMarketMedians(
   const windowMs = windowMinutes * 60 * 1000;
   const windowStart = new Date(Date.now() - windowMs).toISOString();
 
-  // Query normalized schema
+  // Query normalized schema - optimize by ordering and limiting
+  // Order by created_at DESC to get most recent data first (better for aggregation)
   let query = supabase
     .from('market_snapshots_norm')
     .select('source, karat, price, currency, created_at')
     .eq('country', country)
     .gte('created_at', windowStart)
-    .in('karat', [14, 18, 21, 22, 24]);
+    .in('karat', [14, 18, 21, 22, 24])
+    .order('created_at', { ascending: false });
 
   if (trustedMode) {
     query = query.eq('trusted', true);

@@ -109,6 +109,38 @@ function getVarianceBadgeColor(classification: string): string {
   }
 }
 
+function getCountryName(country: string | undefined, lang: 'en' | 'ar'): string {
+  const countryNames: Record<string, { en: string; ar: string }> = {
+    EG: { en: 'Egypt', ar: 'مصر' },
+    AE: { en: 'UAE', ar: 'الإمارات' },
+    SA: { en: 'Saudi', ar: 'السعودية' },
+    US: { en: 'USA', ar: 'الولايات المتحدة' },
+  };
+  return countryNames[country || 'EG']?.[lang] || countryNames.EG[lang];
+}
+
+function getCountryMarketLabel(country: string | undefined, karat: '21' | '24', lang: 'en' | 'ar'): string {
+  const countryLabels: Record<string, Record<string, { en: string; ar: string }>> = {
+    EG: {
+      '21': { en: 'Egypt Market 21k (Median)', ar: 'سوق مصر ٢١ (وسيط)' },
+      '24': { en: 'Egypt Market 24k (Median)', ar: 'سوق مصر ٢٤ (وسيط)' },
+    },
+    AE: {
+      '21': { en: 'UAE Market 21k (Median)', ar: 'سوق الإمارات ٢١ (وسيط)' },
+      '24': { en: 'UAE Market 24k (Median)', ar: 'سوق الإمارات ٢٤ (وسيط)' },
+    },
+    SA: {
+      '21': { en: 'Saudi Market 21k (Median)', ar: 'سوق السعودية ٢١ (وسيط)' },
+      '24': { en: 'Saudi Market 24k (Median)', ar: 'سوق السعودية ٢٤ (وسيط)' },
+    },
+    US: {
+      '21': { en: 'USA Market 21k (Median)', ar: 'سوق الولايات المتحدة ٢١ (وسيط)' },
+      '24': { en: 'USA Market 24k (Median)', ar: 'سوق الولايات المتحدة ٢٤ (وسيط)' },
+    },
+  };
+  return countryLabels[country || 'EG']?.[karat]?.[lang] || countryLabels.EG[karat][lang];
+}
+
 export default function Dashboard({ snapshot }: DashboardProps) {
   const { lang } = useLang();
   
@@ -176,7 +208,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gold-600`}>
           <HoverTip text={lang === 'ar' ? 'سعر الذهب العالمي الفوري لكل أونصة تروي (XAUUSD). يُستخدم كمرجع لحسابات القيمة العادلة.' : "Global spot gold price per troy ounce (XAUUSD). Used as the reference for fair-value calculations."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {t(lang, 'impliedOunce') || 'Global Spot Gold'}
+              {lang === 'ar' ? 'السعر الفوري العالمي للذهب' : 'Global Spot Gold (USD)'}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
@@ -211,7 +243,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600`}>
           <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 21k المتاحة من المصادر النشطة.' : "Median of available 21k buy prices from active sources."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {t(lang, 'market21') || '21k Gold Price'}
+              {getCountryMarketLabel(snapshot.country, '21', lang)}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
@@ -254,7 +286,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-purple-600`}>
           <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 24k المتاحة من المصادر النشطة.' : "Median of available 24k buy prices from active sources."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {t(lang, 'market24') || '24k Gold Price'}
+              {getCountryMarketLabel(snapshot.country, '24', lang)}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>

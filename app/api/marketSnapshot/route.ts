@@ -105,20 +105,27 @@ export async function GET(request: Request) {
                           (canonicalCurrency === 'SAR' && (fxRates.usd_sar === null || !Number.isFinite(fxRates.usd_sar) || fxRates.usd_sar <= 0));
 
     // Fetch market prices from normalized schema (country-aware)
+    // Use shorter window for faster queries (30 minutes instead of 60)
     let marketData;
     try {
-      marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 60);
+      marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 30);
       
-      // If no data in Supabase for EG, trigger ingestion (but don't wait for it)
-      if (country === 'EG' && marketData.activeSourceCount === 0 && marketData.lastUpdated === 0) {
-        console.log('[MarketSnapshot] No data in Supabase, triggering ingestion...');
+      // If no data in Supabase for any country, trigger ingestion (but don't wait for it)
+      if (marketData.activeSourceCount === 0 && marketData.lastUpdated === 0) {
+        console.log(`[MarketSnapshot] No data in Supabase for ${country}, triggering ingestion...`);
         // Trigger web sources ingestion in background (non-blocking)
-        import('@/lib/gold-ingestion-engine').then(({ runIngestionCycle }) => {
-          runIngestionCycle().catch(err => {
-            console.error('[MarketSnapshot] Web sources ingestion failed:', err);
-          });
+        import('@/lib/gold-ingestion-engine').then(({ runIngestionCycle, runMultiCountryIngestionCycle }) => {
+          if (country === 'EG') {
+            runIngestionCycle().catch(err => {
+              console.error('[MarketSnapshot] Web sources ingestion failed:', err);
+            });
+          } else {
+            runMultiCountryIngestionCycle().catch(err => {
+              console.error('[MarketSnapshot] Multi-country ingestion failed:', err);
+            });
+          }
         }).catch(err => {
-          console.error('[MarketSnapshot] Failed to load web ingestion engine:', err);
+          console.error('[MarketSnapshot] Failed to load ingestion engine:', err);
         });
       }
     } catch (error) {
@@ -143,10 +150,10 @@ export async function GET(request: Request) {
       };
     }
 
-    // Get active source count from normalized schema
+    // Get active source count from normalized schema (use same 30min window for consistency)
     let activeSources = marketData.activeSourceCount;
     try {
-      activeSources = await getActiveSourceCountNorm(country, TRUSTED_ONLY_MODE, 60);
+      activeSources = await getActiveSourceCountNorm(country, TRUSTED_ONLY_MODE, 30);
     } catch (error) {
       console.error(`[MarketSnapshot] Failed to get active source count for ${country} -`, error);
       // Use the count from marketData as fallback

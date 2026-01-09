@@ -181,7 +181,18 @@ function HomeContent() {
             <div className="flex-1 min-w-0">
               <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gold-400 truncate">{t(lang, 'appTitle')}</h1>
               <p className="text-xs sm:text-sm text-gray-300 mt-1">
-                {t(lang, 'appSubtitle')}
+                {(() => {
+                  const countryNames: Record<string, { en: string; ar: string }> = {
+                    EG: { en: 'Egyptian', ar: 'المصرية' },
+                    AE: { en: 'UAE', ar: 'الإماراتية' },
+                    SA: { en: 'Saudi', ar: 'السعودية' },
+                    US: { en: 'USA', ar: 'الولايات المتحدة' },
+                  };
+                  const countryName = countryNames[country] || countryNames.EG;
+                  return lang === 'ar' 
+                    ? `دعم قرار تعليمي لسوق الذهب ${countryName.ar}`
+                    : `Educational decision-support for the ${countryName.en} gold market`;
+                })()}
               </p>
             </div>
             <div className={`flex items-center gap-2 sm:gap-4 w-full sm:w-auto ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
