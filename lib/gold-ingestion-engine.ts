@@ -203,10 +203,27 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
  */
 export async function runIngestionCycle(): Promise<IngestionResult> {
   const sources = Object.keys(SOURCE_WEIGHTS);
+  console.log(`[Ingestion] Starting cycle with ${sources.length} sources:`, sources);
   
   // Fetch all sources in parallel
   const sourceResults = await Promise.all(
-    sources.map(source => processSource(source))
+    sources.map(async (source) => {
+      try {
+        const result = await processSource(source);
+        console.log(`[Ingestion] Source ${source}: valid=${result.valid}, prices=${Object.keys(result.prices).length}, errors=${result.errors.length}`);
+        return result;
+      } catch (error) {
+        console.error(`[Ingestion] Error processing source ${source}:`, error);
+        return {
+          source,
+          valid: false,
+          stale: {},
+          prices: {},
+          errors: [error instanceof Error ? error.message : String(error)],
+          notes: [],
+        } as SourcePriceResult;
+      }
+    })
   );
 
   // Update staleness tracking for valid prices
@@ -235,7 +252,14 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
   }
 
   // Compute weighted averages
+  console.log(`[Ingestion] Computing weighted averages from ${sourceResults.filter(s => s.valid).length} valid sources`);
   const result = await computeWeightedAverage(sourceResults);
+  console.log(`[Ingestion] Weighted averages computed:`, {
+    24: result.our_price_buy['24'],
+    21: result.our_price_buy['21'],
+    18: result.our_price_buy['18'],
+    14: result.our_price_buy['14'],
+  });
 
   // Store source results in database
   const now = Date.now();
