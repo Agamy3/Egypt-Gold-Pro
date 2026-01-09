@@ -9,7 +9,6 @@ import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import { useLang } from '@/components/LanguageProvider';
 import { t } from '@/lib/i18n';
 import { useSearchParams } from 'next/navigation';
-import { useSearchParams } from 'next/navigation';
 
 interface MarketSnapshot {
   timestamp: number;
