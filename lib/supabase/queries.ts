@@ -43,13 +43,14 @@ export async function getEgyptMarketMedians(
   // Query using wide schema: createdAt, market21Buy, market24Buy, etc.
   // createdAt is likely stored as timestamptz, so use ISO string for comparison
   // IMPORTANT: Aggregate ALL sources (banklive, gold_era, dokangold, goldrate24, goldbullioneg, aggregated)
-  // Exclude 'aggregated' from individual source queries, but include all other sources
+  // Prefer 'aggregated' source if available, otherwise aggregate from individual sources
   let query = supabase
     .from('market_snapshots')
     .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, market18Buy, market18Sell, market14Buy, market14Sell, error')
     .gte('createdAt', windowStartISO) // Use ISO string for timestamptz comparison
     .is('error', null)
-    .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']); // Only use our local market sources
+    .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']) // Only use our local market sources
+    .order('source', { ascending: false }); // Put 'aggregated' first (alphabetically last, but we'll sort manually)
 
   // For trusted mode, filter by source (goldbullioneg is trusted)
   if (trustedMode) {
@@ -57,6 +58,14 @@ export async function getEgyptMarketMedians(
   }
 
   const { data, error } = await query;
+  
+  // If we have aggregated data, prefer it but still include individual sources for median calculation
+  // Sort so aggregated is first, then others
+  const sortedData = data ? [...data].sort((a, b) => {
+    if (a.source === 'aggregated') return -1;
+    if (b.source === 'aggregated') return 1;
+    return 0;
+  }) : [];
 
   if (error) {
     console.error('[getEgyptMarketMedians] Query error:', error);
@@ -64,24 +73,30 @@ export async function getEgyptMarketMedians(
     const { data: allData, error: allError } = await supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market24Buy, error')
+      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
       .limit(10);
     console.log('[getEgyptMarketMedians] Sample data (without filters):', { count: allData?.length, error: allError?.message, sample: allData?.[0] });
   }
 
-  if (error || !data || data.length === 0) {
+  // Use sortedData (with aggregated first) if available, otherwise use original data
+  const dataToUse = sortedData.length > 0 ? sortedData : (data || []);
+  
+  if (error || !dataToUse || dataToUse.length === 0) {
     console.log('[getEgyptMarketMedians] No data found:', { 
       error: error?.message, 
-      count: data?.length,
+      count: dataToUse?.length || 0,
       windowStart,
       windowStartISO,
-      windowMinutes
+      windowMinutes,
+      sources: ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']
     });
     // Try querying without time window to see if there's any data at all
     const { data: anyData } = await supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market24Buy')
+      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
       .limit(5);
-    console.log('[getEgyptMarketMedians] Any data in table (no filters):', anyData?.length || 0, 'rows');
+    console.log('[getEgyptMarketMedians] Any data in table (no time filter):', anyData?.length || 0, 'rows', anyData?.map(r => ({ source: r.source, createdAt: r.createdAt })));
     return {
       prices: {
         market21Buy: null,
@@ -98,8 +113,14 @@ export async function getEgyptMarketMedians(
       lastUpdated: 0,
     };
   }
+  
+  console.log(`[getEgyptMarketMedians] Found ${dataToUse.length} rows:`, {
+    sources: dataToUse.map((r: any) => r.source),
+    hasAggregated: dataToUse.some((r: any) => r.source === 'aggregated'),
+  });
 
   // Calculate medians for each karat from wide schema columns
+  // If we have aggregated data, we can use it directly OR still compute median from all sources
   const prices: EgyptMarketPrices = {
     market21Buy: null,
     market21Sell: null,
@@ -125,13 +146,42 @@ export async function getEgyptMarketMedians(
 
   for (const { karat, buyKey, sellKey } of karatConfigs) {
     // Filter rows that have valid buy price for this karat
-    const validRows = data.filter((row: any) => {
+    // Prefer aggregated source if available, but also include individual sources for median
+    const validRows = dataToUse.filter((row: any) => {
       const buyPrice = row[buyKey];
       return buyPrice !== null && 
              buyPrice !== undefined && 
              isFinite(Number(buyPrice)) && 
              Number(buyPrice) > 0;
     });
+    
+    // If we have aggregated data, use it directly (it's already a weighted average)
+    // Otherwise, compute median from individual sources
+    const aggregatedRow = validRows.find((r: any) => r.source === 'aggregated');
+    if (aggregatedRow && aggregatedRow[buyKey] !== null) {
+      const aggregatedPrice = Number(aggregatedRow[buyKey]);
+      if (isFinite(aggregatedPrice) && aggregatedPrice > 0) {
+        prices[buyKey as keyof EgyptMarketPrices] = aggregatedPrice;
+        prices[sellKey as keyof EgyptMarketPrices] = aggregatedRow[sellKey] ? Number(aggregatedRow[sellKey]) : null;
+        
+        // Track sources used (aggregated represents all sources)
+        const allSourcesFromValidRows = Array.from(new Set(validRows.map((row: any) => row.source as string)));
+        sourcesUsed[karat.toString()] = allSourcesFromValidRows.filter(s => s !== 'aggregated');
+        allSourcesFromValidRows.forEach(s => contributingSources.add(s));
+        
+        // Use aggregated timestamp
+        const createdAtRaw = aggregatedRow.createdAt;
+        const createdAt = typeof createdAtRaw === 'string' 
+          ? new Date(createdAtRaw).getTime() 
+          : (typeof createdAtRaw === 'number' ? createdAtRaw : 0);
+        maxTimestamp = Math.max(maxTimestamp, createdAt);
+        
+        console.log(`[getEgyptMarketMedians] Using aggregated price for ${karat}K:`, aggregatedPrice);
+        continue; // Skip to next karat
+      }
+    }
+    
+    // No aggregated data, compute median from individual sources
 
     if (validRows.length > 0) {
       // Calculate median buy price with type safety
