@@ -21,6 +21,27 @@ function generateHash(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex').substring(0, 32);
 }
 
+/**
+ * Type-safe check if IngestionResult has any valid buy prices
+ * Checks both direct fields (market21Buy, market24Buy) and prices map if available
+ */
+function hasValidBuyPrices(result: { market21Buy?: number | null; market24Buy?: number | null; prices?: Record<string, { buy?: number | null }> }): boolean {
+  // Check prices map first (if available)
+  if (result.prices && typeof result.prices === 'object') {
+    const prices = Object.values(result.prices);
+    return prices.some(price => {
+      const buyPrice = typeof price === 'object' && price !== null ? price.buy : null;
+      return typeof buyPrice === 'number' && isFinite(buyPrice) && buyPrice > 0;
+    });
+  }
+  
+  // Fallback to direct fields (for backward compatibility)
+  return (
+    (typeof result.market21Buy === 'number' && isFinite(result.market21Buy) && result.market21Buy > 0) ||
+    (typeof result.market24Buy === 'number' && isFinite(result.market24Buy) && result.market24Buy > 0)
+  );
+}
+
 export async function GET(request: NextRequest) {
   // Guard: Check CRON_SECRET (with dev mode exception)
   const cronSecret = process.env.CRON_SECRET;
@@ -90,8 +111,15 @@ export async function GET(request: NextRequest) {
         .limit(1)
         .maybeSingle();
 
-      if (!recentDuplicate && !isaghaResult.error && (isaghaResult.market21Buy || isaghaResult.market24Buy)) {
+      if (!recentDuplicate && !isaghaResult.error && hasValidBuyPrices(isaghaResult)) {
         // Write to normalized Supabase schema only
+        // Extract prices from prices map if available, otherwise use direct fields
+        const pricesMap = (isaghaResult as any).prices;
+        const buy21 = pricesMap?.[21]?.buy ?? isaghaResult.market21Buy ?? null;
+        const buy24 = pricesMap?.[24]?.buy ?? isaghaResult.market24Buy ?? null;
+        const buy18 = pricesMap?.[18]?.buy ?? null;
+        const buy14 = pricesMap?.[14]?.buy ?? null;
+        
         try {
           const supabaseResult = await writeEgyptSnapshotToSupabase({
             source: 'isagha',
@@ -99,10 +127,10 @@ export async function GET(request: NextRequest) {
             createdAtMs: now,
             rawHash,
             prices: {
-              14: { buy: null }, // iSagha doesn't provide 14k
-              18: { buy: null }, // iSagha doesn't provide 18k
-              21: { buy: isaghaResult.market21Buy || null },
-              24: { buy: isaghaResult.market24Buy || null },
+              14: { buy: buy14 },
+              18: { buy: buy18 },
+              21: { buy: buy21 },
+              24: { buy: buy24 },
             },
           });
           if (supabaseResult.ok && supabaseResult.inserted && supabaseResult.inserted > 0) {
@@ -147,8 +175,15 @@ export async function GET(request: NextRequest) {
         .limit(1)
         .maybeSingle();
 
-      if (!recentDuplicate && !goldBillionResult.error && (goldBillionResult.market21Buy || goldBillionResult.market24Buy)) {
+      if (!recentDuplicate && !goldBillionResult.error && hasValidBuyPrices(goldBillionResult)) {
         // Write to normalized Supabase schema only
+        // Extract prices from prices map if available, otherwise use direct fields
+        const pricesMap = (goldBillionResult as any).prices;
+        const buy21 = pricesMap?.[21]?.buy ?? goldBillionResult.market21Buy ?? null;
+        const buy24 = pricesMap?.[24]?.buy ?? goldBillionResult.market24Buy ?? null;
+        const buy18 = pricesMap?.[18]?.buy ?? null;
+        const buy14 = pricesMap?.[14]?.buy ?? null;
+        
         try {
           const supabaseResult = await writeEgyptSnapshotToSupabase({
             source: 'goldbillion',
@@ -156,10 +191,10 @@ export async function GET(request: NextRequest) {
             createdAtMs: now,
             rawHash,
             prices: {
-              14: { buy: null }, // GoldBillion doesn't provide 14k
-              18: { buy: null }, // GoldBillion doesn't provide 18k
-              21: { buy: goldBillionResult.market21Buy || null },
-              24: { buy: goldBillionResult.market24Buy || null },
+              14: { buy: buy14 },
+              18: { buy: buy18 },
+              21: { buy: buy21 },
+              24: { buy: buy24 },
             },
           });
           if (supabaseResult.ok && supabaseResult.inserted && supabaseResult.inserted > 0) {
