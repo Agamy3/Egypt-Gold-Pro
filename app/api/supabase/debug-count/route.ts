@@ -18,21 +18,19 @@ export async function GET() {
     const now = Date.now();
     const tenMinutesAgo = now - 10 * 60 * 1000;
     const sixtyMinutesAgo = now - 60 * 60 * 1000;
-    const tenMinutesAgoISO = new Date(tenMinutesAgo).toISOString();
-    const sixtyMinutesAgoISO = new Date(sixtyMinutesAgo).toISOString();
 
-    // Count rows in last 10 minutes (using createdAt as timestamptz, use ISO string)
+    // Count rows in last 10 minutes (createdAt is bigint, use number)
     const { count: rowsLast10m, error: error10m } = await supabase
       .from('market_snapshots')
       .select('*', { count: 'exact', head: true })
-      .gte('createdAt', tenMinutesAgoISO)
+      .gte('createdAt', tenMinutesAgo)
       .is('error', null);
 
     // Count rows in last 60 minutes
     const { count: rowsLast60m, error: error60m } = await supabase
       .from('market_snapshots')
       .select('*', { count: 'exact', head: true })
-      .gte('createdAt', sixtyMinutesAgoISO)
+      .gte('createdAt', sixtyMinutesAgo)
       .is('error', null);
 
     // Get latest createdAt

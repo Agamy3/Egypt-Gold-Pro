@@ -36,18 +36,19 @@ export async function getEgyptMarketMedians(
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
   const windowStart = Date.now() - windowMs;
-  // If createdAt is stored as timestamptz, convert to ISO string for comparison
-  // If it's bigint (epoch ms), Supabase PostgREST handles number conversion
+  
+  // createdAt might be stored as bigint (number) or timestamptz (string)
+  // Try querying with number first (more common for epoch ms)
+  // If that fails, we'll try ISO string
   const windowStartISO = new Date(windowStart).toISOString();
 
   // Query using wide schema: createdAt, market21Buy, market24Buy, etc.
-  // createdAt is likely stored as timestamptz, so use ISO string for comparison
   // IMPORTANT: Aggregate ALL sources (banklive, gold_era, dokangold, goldrate24, goldbullioneg, aggregated)
-  // Prefer 'aggregated' source if available, otherwise aggregate from individual sources
+  // createdAt is stored as bigint (epoch ms number), so use number for comparison
   let query = supabase
     .from('market_snapshots')
     .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, market18Buy, market18Sell, market14Buy, market14Sell, error')
-    .gte('createdAt', windowStartISO) // Use ISO string for timestamptz comparison
+    .gte('createdAt', windowStart) // Use epoch ms number directly (createdAt is bigint)
     .is('error', null)
     .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']) // Only use our local market sources
     .order('source', { ascending: false }); // Put 'aggregated' first (alphabetically last, but we'll sort manually)
@@ -91,12 +92,25 @@ export async function getEgyptMarketMedians(
       sources: ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']
     });
     // Try querying without time window to see if there's any data at all
-    const { data: anyData } = await supabase
+    const { data: anyData, error: anyDataError } = await supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market24Buy')
       .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
       .limit(5);
-    console.log('[getEgyptMarketMedians] Any data in table (no time filter):', anyData?.length || 0, 'rows', anyData?.map(r => ({ source: r.source, createdAt: r.createdAt })));
+    console.log('[getEgyptMarketMedians] Any data in table (no time filter):', {
+      count: anyData?.length || 0,
+      error: anyDataError?.message,
+      rows: anyData?.map(r => ({ source: r.source, createdAt: r.createdAt, createdAtType: typeof r.createdAt }))
+    });
+    
+    // If no time filter query also fails, try without source filter
+    if (!anyData || anyData.length === 0) {
+      const { data: anySourceData } = await supabase
+        .from('market_snapshots')
+        .select('source, createdAt, market21Buy, market24Buy')
+        .limit(5);
+      console.log('[getEgyptMarketMedians] Any data in table (no filters):', anySourceData?.length || 0, 'rows');
+    }
     return {
       prices: {
         market21Buy: null,

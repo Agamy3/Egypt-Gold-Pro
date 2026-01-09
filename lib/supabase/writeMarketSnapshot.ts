@@ -41,10 +41,9 @@ export async function writeEgyptSnapshotToSupabase(
 ): Promise<WriteResult> {
   try {
     const supabase = db.supabase;
-    // createdAt might be stored as timestamptz in Supabase, so convert epoch ms to ISO string
-    // If it's stored as bigint, Supabase will handle the conversion
-    // Try ISO string first (most common for timestamptz columns)
-    const createdAt = new Date(params.createdAtMs).toISOString();
+    // createdAt is stored as bigint (epoch milliseconds number) in Supabase
+    // Use the number directly - Supabase handles bigint conversion
+    const createdAt = params.createdAtMs;
 
     // Build ONE wide row with all karat prices
     const row: any = {
