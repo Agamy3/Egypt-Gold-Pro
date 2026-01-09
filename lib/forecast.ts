@@ -135,8 +135,9 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
 
         // createdAt is stored as bigint (epoch ms number) in Supabase
         const createdAt = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
-        // Round to nearest minute (60000 ms) for grouping
-        const timeBucket = Math.floor(createdAt / 60000) * 60000;
+        // Round to nearest 10 seconds (10000 ms) for grouping - more granular than 1 minute
+        // This ensures snapshots written within the same minute but different seconds create separate buckets
+        const timeBucket = Math.floor(createdAt / 10000) * 10000;
         
         if (!snapshotsByTime.has(timeBucket)) {
           snapshotsByTime.set(timeBucket, {
