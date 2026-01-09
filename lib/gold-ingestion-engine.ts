@@ -6,6 +6,7 @@
 
 import db from './supabase';
 import { writeEgyptSnapshotToSupabase } from './supabase/writeMarketSnapshot';
+import { writeMarketSnapshotNorm } from './supabase/writeMarketSnapshotNorm';
 import { updateSourceStaleness, isSourceStale as isSourceStaleSupabase, getLastOkBuy as getLastOkBuySupabase } from './supabase/sourceStaleness';
 import { processSource, SourcePriceResult } from './gold-sources-adapters';
 import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, Karat } from './gold-ingestion-config';
@@ -37,40 +38,40 @@ export interface IngestionResult {
 }
 
 /**
- * Update staleness for source+karat (uses Supabase)
+ * Update staleness for source+karat (uses Supabase, with country support)
  */
-async function updateStaleness(source: string, karat: Karat, price: number): Promise<void> {
+async function updateStaleness(source: string, karat: Karat, price: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<void> {
   const now = Date.now();
   
   // Update in Supabase (non-fatal)
   try {
-    await updateSourceStaleness(source, karat, now, price);
+    await updateSourceStaleness(source, karat, now, price, country);
   } catch (error) {
-    console.error(`[Supabase] Failed to update staleness for ${source}/${karat}:`, error);
+    console.error(`[Supabase] Failed to update staleness for ${source}/${karat} (${country}):`, error);
     // Continue - staleness update failure shouldn't block ingestion
   }
 }
 
 /**
- * Check if source+karat is stale (uses Supabase)
+ * Check if source+karat is stale (uses Supabase, with country support)
  */
-async function isStale(source: string, karat: Karat): Promise<boolean> {
+async function isStale(source: string, karat: Karat, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<boolean> {
   try {
-    return await isSourceStaleSupabase(source, karat, STALE_AFTER_MS);
+    return await isSourceStaleSupabase(source, karat, STALE_AFTER_MS, country);
   } catch (error) {
-    console.error(`[Supabase] Error checking staleness for ${source}/${karat}:`, error);
+    console.error(`[Supabase] Error checking staleness for ${source}/${karat} (${country}):`, error);
     return true; // On error, assume stale
   }
 }
 
 /**
- * Get last valid buy price for source+karat (uses Supabase)
+ * Get last valid buy price for source+karat (uses Supabase, with country support)
  */
-async function getLastOkBuy(source: string, karat: Karat): Promise<number | null> {
+async function getLastOkBuy(source: string, karat: Karat, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<number | null> {
   try {
-    return await getLastOkBuySupabase(source, karat);
+    return await getLastOkBuySupabase(source, karat, country);
   } catch (error) {
-    console.error(`[Supabase] Error getting last ok buy for ${source}/${karat}:`, error);
+    console.error(`[Supabase] Error getting last ok buy for ${source}/${karat} (${country}):`, error);
     return null;
   }
 }
@@ -171,7 +172,7 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
     const breakdown: Record<string, any> = {};
     for (const sourceResult of sourceResults) {
       const source = sourceResult.source;
-      const stale = await isStale(source, karat);
+      const stale = await isStale(source, karat, 'EG');
       if (karat in sourceResult.prices) {
         breakdown[source] = {
           buy: sourceResult.prices[karat],
@@ -284,7 +285,9 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
       // Write if source is valid OR if we have valid prices (even with errors, log them)
       if (sourceResult.valid && hasValidPrices) {
         try {
-          const supabaseResult = await writeEgyptSnapshotToSupabase({
+          // Write to both wide schema (backward compatibility) and normalized schema
+          // Wide schema write (existing)
+          const wideResult = await writeEgyptSnapshotToSupabase({
             source: sourceResult.source,
             trusted: isTrusted,
             createdAtMs: now,
@@ -296,11 +299,32 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
               24: { buy: sourceResult.prices[24] || null },
             },
           });
-          if (supabaseResult.ok && supabaseResult.inserted && supabaseResult.inserted > 0) {
+          
+          // Normalized schema write (new multi-country support)
+          // Only write for EG (Egypt) - other countries will be stubbed later
+          const normResult = await writeMarketSnapshotNorm({
+            country: 'EG',
+            source: sourceResult.source,
+            trusted: isTrusted,
+            createdAt: now,
+            rawHash,
+            prices: {
+              14: { buy: sourceResult.prices[14] || null },
+              18: { buy: sourceResult.prices[18] || null },
+              21: { buy: sourceResult.prices[21] || null },
+              24: { buy: sourceResult.prices[24] || null },
+            },
+          });
+          
+          if ((wideResult.ok && wideResult.inserted && wideResult.inserted > 0) ||
+              (normResult.ok && normResult.inserted && normResult.inserted > 0)) {
             sourcesWritten++;
-            console.log(`[Ingestion] Wrote snapshot for ${sourceResult.source}: ${supabaseResult.inserted} row(s)`);
+            console.log(`[Ingestion] Wrote snapshot for ${sourceResult.source}: wide=${wideResult.inserted || 0}, norm=${normResult.inserted || 0} row(s)`);
           } else {
-            console.error(`[Ingestion] Write failed for ${sourceResult.source}:`, supabaseResult.error);
+            console.error(`[Ingestion] Write failed for ${sourceResult.source}:`, {
+              wide: wideResult.error,
+              norm: normResult.error,
+            });
           }
         } catch (supabaseError) {
           // Non-fatal: log and continue
@@ -331,9 +355,10 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
       
       // Only write if we have at least one valid price
       if (price14 !== null || price18 !== null || price21 !== null || price24 !== null) {
-        const aggregatedResult = await writeEgyptSnapshotToSupabase({
+        // Write to wide schema (backward compatibility)
+        const wideAggregatedResult = await writeEgyptSnapshotToSupabase({
           source: 'aggregated',
-          trusted: false, // Aggregated is not a single trusted source
+          trusted: false,
           createdAtMs: now,
           rawHash: aggregatedHash,
           prices: {
@@ -343,19 +368,38 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
             24: { buy: price24 },
           },
         });
-        if (aggregatedResult.ok && aggregatedResult.inserted && aggregatedResult.inserted > 0) {
+        
+        // Write to normalized schema (new multi-country support)
+        // Only write for EG (Egypt) - other countries will be stubbed later
+        const normAggregatedResult = await writeMarketSnapshotNorm({
+          country: 'EG',
+          source: 'aggregated',
+          trusted: false,
+          createdAt: now,
+          rawHash: aggregatedHash,
+          prices: {
+            14: { buy: price14 },
+            18: { buy: price18 },
+            21: { buy: price21 },
+            24: { buy: price24 },
+          },
+        });
+        
+        if ((wideAggregatedResult.ok && wideAggregatedResult.inserted && wideAggregatedResult.inserted > 0) ||
+            (normAggregatedResult.ok && normAggregatedResult.inserted && normAggregatedResult.inserted > 0)) {
           aggregatedWritten = true;
-          console.log(`[Ingestion] ✓ Wrote aggregated snapshot: ${aggregatedResult.inserted} row(s)`, {
+          console.log(`[Ingestion] ✓ Wrote aggregated snapshot: wide=${wideAggregatedResult.inserted || 0}, norm=${normAggregatedResult.inserted || 0} row(s)`, {
             prices24: price24,
             prices21: price21,
             prices18: price18,
             prices14: price14,
           });
         } else {
-          const errorMsg = aggregatedResult.error || 'Unknown error (no error message provided)';
+          const errorMsg = normAggregatedResult.error || wideAggregatedResult.error || 'Unknown error';
           console.error(`[Ingestion] ✗ Failed to write aggregated snapshot:`, errorMsg, {
             attempted: { price14, price18, price21, price24 },
-            result: aggregatedResult
+            wide: wideAggregatedResult.error,
+            norm: normAggregatedResult.error,
           });
         }
       } else {

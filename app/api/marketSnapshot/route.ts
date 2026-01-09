@@ -8,11 +8,8 @@
 import { NextResponse } from 'next/server';
 import { getImpliedOunceWithCache } from '@/lib/goldapi';
 import { calculatePricing } from '@/lib/pricing';
-import { getUsdEgpRate } from '@/lib/fx';
-import { getEgyptMarketMedians, getActiveSourceCount } from '@/lib/supabase/queries';
-
-// Always use all sources (trusted mode toggle removed from UI)
-const USE_ALL_SOURCES = false; // Always false to use all sources
+import { getMultiCurrencyRates, convertMoney, getCountryCurrency, Currency } from '@/lib/fx-multi';
+import { getMarketMedians, getActiveSourceCountNorm } from '@/lib/supabase/queries-norm';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -20,8 +17,23 @@ export const revalidate = 0;
 export async function GET(request: Request) {
   const errors: Array<{ source: string; message: string }> = [];
   
+  // Parse query params
+  const { searchParams } = new URL(request.url);
+  const countryParam = searchParams.get('country');
+  const currencyParam = searchParams.get('currency');
+  
+  // Validate and default country
+  const country = (['EG', 'AE', 'SA', 'US'].includes(countryParam || '') 
+    ? countryParam 
+    : 'EG') as 'EG' | 'AE' | 'SA' | 'US';
+  
+  // Validate and default currency
+  const currency = (['EGP', 'USD', 'AED', 'SAR'].includes(currencyParam || '') 
+    ? currencyParam 
+    : getCountryCurrency(country)) as Currency;
+  
   // Always use all sources (trusted mode toggle removed)
-  const EGYPT_TRUSTED_ONLY_MODE = false;
+  const TRUSTED_ONLY_MODE = false;
   
   try {
     // Fetch Egypt Market Implied Ounce with individual error handling
@@ -63,38 +75,42 @@ export async function GET(request: Request) {
       }
     }
 
-    // Fetch real USD/EGP exchange rate
-    let fxData: { rate: number | null; fetchedAt: number; stale: boolean; source: string; error?: string } | null = null;
+    // Fetch multi-currency FX rates (USD pivot)
+    let fxRates;
     try {
-      fxData = await getUsdEgpRate();
-      if (fxData.rate === null) {
-        errors.push({ source: 'FXRate', message: fxData.error || 'Failed to fetch USD/EGP rate' });
+      fxRates = await getMultiCurrencyRates();
+      if (fxRates.usd_egp === null || fxRates.usd_aed === null || fxRates.usd_sar === null) {
+        errors.push({ source: 'FXRate', message: 'Failed to fetch some FX rates' });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('Market snapshot error: FX rate fetch failed -', errorMessage);
       errors.push({ source: 'FXRate', message: errorMessage });
-      fxData = {
-        rate: null,
+      fxRates = {
+        usd_egp: null,
+        usd_aed: null,
+        usd_sar: null,
         fetchedAt: Date.now(),
         stale: true,
         source: 'open.er-api.com',
-        error: errorMessage,
+        errors: { network: errorMessage },
       };
     }
 
-    // Determine if FX is unavailable (must be defined before use in pricing/warnings)
-    const usdEgp = fxData?.rate ?? null;
-    const fxUnavailable = usdEgp === null || !Number.isFinite(usdEgp) || usdEgp <= 0;
+    // Determine if FX is unavailable
+    const canonicalCurrency = getCountryCurrency(country);
+    const usdEgp = fxRates.usd_egp;
+    const fxUnavailable = (canonicalCurrency === 'EGP' && (usdEgp === null || !Number.isFinite(usdEgp) || usdEgp <= 0)) ||
+                          (canonicalCurrency === 'AED' && (fxRates.usd_aed === null || !Number.isFinite(fxRates.usd_aed) || fxRates.usd_aed <= 0)) ||
+                          (canonicalCurrency === 'SAR' && (fxRates.usd_sar === null || !Number.isFinite(fxRates.usd_sar) || fxRates.usd_sar <= 0));
 
-    // Fetch Egypt market prices from Supabase (new normalized schema)
-    // Always use all sources (trustedMode=false) since we removed the toggle
-    let egyptMarketData;
+    // Fetch market prices from normalized schema (country-aware)
+    let marketData;
     try {
-      egyptMarketData = await getEgyptMarketMedians(false, 60);
+      marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 60);
       
-      // If no data in Supabase, trigger ingestion (but don't wait for it)
-      if (egyptMarketData.activeSourceCount === 0 && egyptMarketData.lastUpdated === 0) {
+      // If no data in Supabase for EG, trigger ingestion (but don't wait for it)
+      if (country === 'EG' && marketData.activeSourceCount === 0 && marketData.lastUpdated === 0) {
         console.log('[MarketSnapshot] No data in Supabase, triggering ingestion...');
         // Trigger web sources ingestion in background (non-blocking)
         import('@/lib/gold-ingestion-engine').then(({ runIngestionCycle }) => {
@@ -107,9 +123,9 @@ export async function GET(request: Request) {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Market snapshot error: Failed to fetch Egypt market data from Supabase -', errorMessage);
-      errors.push({ source: 'EgyptMarket', message: errorMessage });
-      egyptMarketData = {
+      console.error(`[MarketSnapshot] Failed to fetch market data for ${country} from Supabase -`, errorMessage);
+      errors.push({ source: 'MarketData', message: errorMessage });
+      marketData = {
         prices: {
           market21Buy: null,
           market21Sell: null,
@@ -123,71 +139,108 @@ export async function GET(request: Request) {
         activeSourceCount: 0,
         sourcesUsed: {},
         lastUpdated: 0,
+        canonicalCurrency: canonicalCurrency,
       };
     }
 
-    // Get active source count from Supabase (all sources, not trusted-only)
-    let activeSources = egyptMarketData.activeSourceCount;
+    // Get active source count from normalized schema
+    let activeSources = marketData.activeSourceCount;
     try {
-      activeSources = await getActiveSourceCount(false, 60);
+      activeSources = await getActiveSourceCountNorm(country, TRUSTED_ONLY_MODE, 60);
     } catch (error) {
-      console.error('Market snapshot error: Failed to get active source count -', error);
-      // Use the count from egyptMarketData as fallback
+      console.error(`[MarketSnapshot] Failed to get active source count for ${country} -`, error);
+      // Use the count from marketData as fallback
     }
 
-    // Build sources array for response (mock structure for compatibility)
-    // The new schema doesn't have per-source snapshots, so we create a simplified structure
+    // Convert prices to requested currency (if different from canonical)
+    const canonicalPrices = marketData.prices;
+    let convertedPrices = canonicalPrices;
+    
+    if (currency !== marketData.canonicalCurrency && fxRates) {
+      convertedPrices = {
+        market21Buy: canonicalPrices.market21Buy !== null 
+          ? convertMoney(canonicalPrices.market21Buy, marketData.canonicalCurrency, currency, {
+              usd_egp: fxRates.usd_egp,
+              usd_aed: fxRates.usd_aed,
+              usd_sar: fxRates.usd_sar,
+            })
+          : null,
+        market21Sell: canonicalPrices.market21Sell !== null
+          ? convertMoney(canonicalPrices.market21Sell, marketData.canonicalCurrency, currency, {
+              usd_egp: fxRates.usd_egp,
+              usd_aed: fxRates.usd_aed,
+              usd_sar: fxRates.usd_sar,
+            })
+          : null,
+        market24Buy: canonicalPrices.market24Buy !== null
+          ? convertMoney(canonicalPrices.market24Buy, marketData.canonicalCurrency, currency, {
+              usd_egp: fxRates.usd_egp,
+              usd_aed: fxRates.usd_aed,
+              usd_sar: fxRates.usd_sar,
+            })
+          : null,
+        market24Sell: canonicalPrices.market24Sell !== null
+          ? convertMoney(canonicalPrices.market24Sell, marketData.canonicalCurrency, currency, {
+              usd_egp: fxRates.usd_egp,
+              usd_aed: fxRates.usd_aed,
+              usd_sar: fxRates.usd_sar,
+            })
+          : null,
+        market18Buy: canonicalPrices.market18Buy !== null
+          ? convertMoney(canonicalPrices.market18Buy, marketData.canonicalCurrency, currency, {
+              usd_egp: fxRates.usd_egp,
+              usd_aed: fxRates.usd_aed,
+              usd_sar: fxRates.usd_sar,
+            })
+          : null,
+        market18Sell: canonicalPrices.market18Sell !== null
+          ? convertMoney(canonicalPrices.market18Sell, marketData.canonicalCurrency, currency, {
+              usd_egp: fxRates.usd_egp,
+              usd_aed: fxRates.usd_aed,
+              usd_sar: fxRates.usd_sar,
+            })
+          : null,
+        market14Buy: canonicalPrices.market14Buy !== null
+          ? convertMoney(canonicalPrices.market14Buy, marketData.canonicalCurrency, currency, {
+              usd_egp: fxRates.usd_egp,
+              usd_aed: fxRates.usd_aed,
+              usd_sar: fxRates.usd_sar,
+            })
+          : null,
+        market14Sell: canonicalPrices.market14Sell !== null
+          ? convertMoney(canonicalPrices.market14Sell, marketData.canonicalCurrency, currency, {
+              usd_egp: fxRates.usd_egp,
+              usd_aed: fxRates.usd_aed,
+              usd_sar: fxRates.usd_sar,
+            })
+          : null,
+      };
+    }
+
+    // Build sources array (simplified for now)
     const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
     const now = Date.now();
-    const egyptSourceResults: Array<{
-      source: string;
-      status: 'OK' | 'DOWN' | 'STALE';
-      prices: {
-        market21Buy: number | null;
-        market21Sell: number | null;
-        market24Buy: number | null;
-        market24Sell: number | null;
-      };
-      fetchedAt: number;
-      lastError: string | null;
-    }> = [];
-
-    // Create a synthetic source entry for the aggregate
-    const isStale = egyptMarketData.lastUpdated === 0 || (now - egyptMarketData.lastUpdated) > STALE_THRESHOLD_MS;
-    egyptSourceResults.push({
+    const isStale = marketData.lastUpdated === 0 || (now - marketData.lastUpdated) > STALE_THRESHOLD_MS;
+    const marketSources = [{
       source: 'supabase_aggregate',
-      status: isStale ? 'STALE' : (egyptMarketData.activeSourceCount > 0 ? 'OK' : 'DOWN'),
-      prices: {
-        market21Buy: egyptMarketData.prices.market21Buy,
-        market21Sell: egyptMarketData.prices.market21Sell,
-        market24Buy: egyptMarketData.prices.market24Buy,
-        market24Sell: egyptMarketData.prices.market24Sell,
-      },
-      fetchedAt: egyptMarketData.lastUpdated,
+      status: isStale ? 'STALE' : (marketData.activeSourceCount > 0 ? 'OK' : 'DOWN') as 'OK' | 'STALE' | 'DOWN',
+      prices: convertedPrices,
+      fetchedAt: marketData.lastUpdated,
       lastError: null,
-    });
+    }];
 
-    const egyptData = {
-      sources: egyptSourceResults,
-      median: {
-        market21Buy: egyptMarketData.prices.market21Buy,
-        market21Sell: egyptMarketData.prices.market21Sell,
-        market24Buy: egyptMarketData.prices.market24Buy,
-        market24Sell: egyptMarketData.prices.market24Sell,
-      },
-      webAggregate: null, // Removed in new schema
-    };
-    
-    // Calculate pricing (only if we have required data)
+    // Calculate pricing using canonical prices (in canonical currency)
+    // Pricing calculations are typically done in the canonical currency
     let pricing = null;
     try {
+      // Use canonical prices for calculations, then convert if needed
       pricing = calculatePricing({
         impliedOunceUsd: impliedOunce?.impliedOunceUsd ?? null,
-        market21Buy: egyptData.median.market21Buy,
-        market21Sell: egyptData.median.market21Sell,
-        market24Buy: egyptData.median.market24Buy,
-        market24Sell: egyptData.median.market24Sell,
-        usdEgp: usdEgp,
+        market21Buy: canonicalPrices.market21Buy,
+        market21Sell: canonicalPrices.market21Sell,
+        market24Buy: canonicalPrices.market24Buy,
+        market24Sell: canonicalPrices.market24Sell,
+        usdEgp: usdEgp, // Still needed for pricing calc
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -195,26 +248,12 @@ export async function GET(request: Request) {
       errors.push({ source: 'PricingCalculation', message: errorMessage });
     }
 
-    // Active source count is already calculated by getEgyptMarketMedians/getActiveSourceCount
-    // activeSources is set above from Supabase query
-    const hasMarketData = egyptData.median.market21Buy !== null || egyptData.median.market24Buy !== null;
-    
-    // Check if any source has data within the last 10 minutes
-    const hasRecentData = egyptData.sources.some(
-      s => s.status === 'OK' && (now - s.fetchedAt) <= STALE_THRESHOLD_MS
-    );
-    
-    // Determine if we have enough data for variance calculation
-    // Need: impliedOunce AND real USD/EGP FX AND (market21Buy OR market24Buy)
+    const hasMarketData = convertedPrices.market21Buy !== null || convertedPrices.market24Buy !== null;
     const hasVarianceData = impliedOunce?.impliedOunceUsd !== null && 
       !fxUnavailable &&
-      (egyptData.median.market21Buy !== null || egyptData.median.market24Buy !== null);
-    
-    // Check if sells are missing (warn if buy-only)
-    const hasSellData = egyptData.median.market21Sell !== null || egyptData.median.market24Sell !== null;
-    
-    // Check if local market data is missing
-    const localMarketMissing = egyptData.median.market21Buy === null && egyptData.median.market24Buy === null;
+      (convertedPrices.market21Buy !== null || convertedPrices.market24Buy !== null);
+    const hasSellData = convertedPrices.market21Sell !== null || convertedPrices.market24Sell !== null;
+    const localMarketMissing = convertedPrices.market21Buy === null && convertedPrices.market24Buy === null;
     
     // referenceUnavailable: true only if required inputs missing
     // Required: impliedOunceUsd AND real FX rate AND (market21Buy OR market24Buy)
@@ -224,11 +263,8 @@ export async function GET(request: Request) {
       fxUnavailable ||
       localMarketMissing;
 
-    // Aggregate sourcesUsed from Supabase query
-    const sourcesUsed = egyptMarketData.sourcesUsed || {};
-    
-    // Compute active underlying source count and list
-    // sourcesUsed shape: {14:[...],18:[...],21:[...],24:[...]}
+    // Aggregate sourcesUsed from query
+    const sourcesUsed = marketData.sourcesUsed || {};
     const allUnderlyingSources = new Set<string>();
     for (const karat in sourcesUsed) {
       const sources = sourcesUsed[karat];
@@ -239,9 +275,12 @@ export async function GET(request: Request) {
     const activeUnderlyingSourceCount = allUnderlyingSources.size;
     const activeUnderlyingSources = Array.from(allUnderlyingSources).sort();
 
-    // Build response with partial data
+    // Build response with both canonical and converted prices
     return NextResponse.json({
       timestamp: Date.now(),
+      country,
+      currency,
+      canonicalCurrency: marketData.canonicalCurrency,
       impliedOunce: impliedOunce
         ? {
             impliedOunceUsd: impliedOunce.impliedOunceUsd,
@@ -251,28 +290,29 @@ export async function GET(request: Request) {
           }
         : null,
       egyptMarket: {
-        median: egyptData.median,
-        sources: [
-          ...egyptData.sources.map(s => ({
-            source: s.source,
-            status: s.status,
-            fetchedAt: s.fetchedAt,
-            lastError: s.lastError,
-          })),
-        ],
-        activeSourceCount: activeSources, // Only counts trusted sources
+        median: convertedPrices, // Return converted prices
+        canonicalMedian: canonicalPrices, // Also return canonical prices for reference
+        sources: marketSources.map(s => ({
+          source: s.source,
+          status: s.status,
+          fetchedAt: s.fetchedAt,
+          lastError: s.lastError,
+        })),
+        activeSourceCount: activeSources,
         activeUnderlyingSourceCount: activeUnderlyingSourceCount,
-        activeUnderlyingSources: activeUnderlyingSourceCount,
+        activeUnderlyingSources: activeUnderlyingSources,
         sourcesUsed: sourcesUsed,
       },
       pricing: pricing ? {
         ...pricing,
         fx: {
           usdEgp: usdEgp,
-          source: fxData?.source ?? 'open.er-api.com',
-          fetchedAt: fxData?.fetchedAt ?? null,
-          stale: fxData?.stale ?? true,
-          error: fxData?.error,
+          usdAed: fxRates.usd_aed,
+          usdSar: fxRates.usd_sar,
+          source: fxRates.source,
+          fetchedAt: fxRates.fetchedAt,
+          stale: fxRates.stale,
+          errors: fxRates.errors,
         },
       } : {
         usdPerGram24: null,
@@ -283,17 +323,19 @@ export async function GET(request: Request) {
         variance: { variancePct: null, premiumEGP: null, classification: 'N/A' as const },
         fx: {
           usdEgp: usdEgp,
-          source: fxData?.source ?? 'open.er-api.com',
-          fetchedAt: fxData?.fetchedAt ?? null,
-          stale: fxData?.stale ?? true,
-          error: fxData?.error,
+          usdAed: fxRates.usd_aed,
+          usdSar: fxRates.usd_sar,
+          source: fxRates.source,
+          fetchedAt: fxRates.fetchedAt,
+          stale: fxRates.stale,
+          errors: fxRates.errors,
         },
       },
       warnings: {
         lowConfidence: activeSources === 1,
         referenceUnavailable: referenceUnavailable,
         fxUnavailable: fxUnavailable,
-        buyOnlyVariance: !hasSellData && hasVarianceData, // New: warn if variance computed from BUY only
+        buyOnlyVariance: !hasSellData && hasVarianceData,
       },
       errors: errors.length > 0 ? errors : undefined,
     });
@@ -327,13 +369,15 @@ export async function GET(request: Request) {
           localMarketParity: { local24: null, local21: null },
           fairValue: { fair24: null, fair21: null },
           variance: { variancePct: null, premiumEGP: null, classification: 'N/A' as const },
-          fx: {
-            usdEgp: null,
-            source: 'open.er-api.com',
-            fetchedAt: null,
-            stale: true,
-            error: 'Failed to fetch market snapshot',
-          },
+        fx: {
+          usdEgp: null,
+          usdAed: null,
+          usdSar: null,
+          source: 'open.er-api.com',
+          fetchedAt: null,
+          stale: true,
+          errors: { network: 'Failed to fetch market snapshot' },
+        },
         },
         warnings: {
           lowConfidence: false,

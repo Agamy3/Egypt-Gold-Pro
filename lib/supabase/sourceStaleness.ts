@@ -47,28 +47,33 @@ async function retrySupabaseOperation<T>(
 }
 
 /**
- * Update staleness for a source+karat combination
+ * Update staleness for a source+karat combination (with country support)
  * Includes retry logic for network failures
  */
 export async function updateSourceStaleness(
   source: string,
   karat: Karat,
   lastOkTimestampMs: number,
-  lastOkBuy: number
+  lastOkBuy: number,
+  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const { error } = await retrySupabaseOperation(async () => {
+      // Convert epoch ms to timestamptz ISO string
+      const lastOkTimestampISO = new Date(lastOkTimestampMs).toISOString();
+      
       const result = await db.supabase
         .from('source_staleness')
         .upsert(
           {
+            country,
             source,
             karat,
-            lastOkTimestamp: lastOkTimestampMs, // Use bigint (epoch ms) to match SQLite schema
-            lastOkBuy: lastOkBuy,
+            last_ok_timestamp: lastOkTimestampISO, // Use timestamptz (ISO string)
+            last_ok_price: lastOkBuy,
           },
           {
-            onConflict: 'source,karat',
+            onConflict: 'country,source,karat',
           }
         );
       // Check for network errors and throw to trigger retry
@@ -103,17 +108,19 @@ export async function updateSourceStaleness(
 }
 
 /**
- * Check if source+karat is stale
+ * Check if source+karat is stale (with country support)
  */
 export async function isSourceStale(
   source: string,
   karat: Karat,
-  staleAfterMs: number = 30 * 60 * 1000
+  staleAfterMs: number = 30 * 60 * 1000,
+  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'
 ): Promise<boolean> {
   try {
     const { data, error } = await db.supabase
       .from('source_staleness')
-      .select('lastOkTimestamp')
+      .select('last_ok_timestamp')
+      .eq('country', country)
       .eq('source', source)
       .eq('karat', karat)
       .maybeSingle();
@@ -122,7 +129,10 @@ export async function isSourceStale(
       return true; // Never seen before = stale
     }
 
-    const lastOkTimestamp = data.lastOkTimestamp as number; // Already in epoch ms
+    // Convert timestamptz to epoch ms
+    const lastOkTimestamp = typeof data.last_ok_timestamp === 'string'
+      ? new Date(data.last_ok_timestamp).getTime()
+      : (typeof data.last_ok_timestamp === 'number' ? data.last_ok_timestamp : 0);
     const age = Date.now() - lastOkTimestamp;
     return age > staleAfterMs;
   } catch (error) {
@@ -132,16 +142,18 @@ export async function isSourceStale(
 }
 
 /**
- * Get last valid buy price for source+karat
+ * Get last valid buy price for source+karat (with country support)
  */
 export async function getLastOkBuy(
   source: string,
-  karat: Karat
+  karat: Karat,
+  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'
 ): Promise<number | null> {
   try {
     const { data, error } = await db.supabase
       .from('source_staleness')
-      .select('lastOkBuy')
+      .select('last_ok_price')
+      .eq('country', country)
       .eq('source', source)
       .eq('karat', karat)
       .maybeSingle();
@@ -150,7 +162,7 @@ export async function getLastOkBuy(
       return null;
     }
 
-    return data.lastOkBuy as number;
+    return Number(data.last_ok_price);
   } catch (error) {
     console.error('[Supabase] Error getting last ok buy:', error);
     return null;

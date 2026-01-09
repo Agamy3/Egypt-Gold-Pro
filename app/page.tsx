@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import Dashboard from '@/components/Dashboard';
 import ForecastCard from '@/components/ForecastCard';
 import ResourcesNavigator from '@/components/ResourcesNavigator';
 import LanguageToggle from '@/components/LanguageToggle';
+import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import { useLang } from '@/components/LanguageProvider';
 import { t } from '@/lib/i18n';
+import { useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 interface MarketSnapshot {
   timestamp: number;
@@ -61,16 +64,22 @@ interface MarketSnapshot {
   };
 }
 
-export default function Home() {
+function HomeContent() {
   const { lang } = useLang();
+  const searchParams = useSearchParams();
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
   const [forecast, setForecast] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Get country and currency from URL params
+  const country = (searchParams.get('country') || 'EG') as 'EG' | 'AE' | 'SA' | 'US';
+  const currency = (searchParams.get('currency') || 'EGP') as 'EGP' | 'USD' | 'AED' | 'SAR';
+
   const fetchSnapshot = async () => {
     try {
-      const res = await fetch('/api/marketSnapshot', {
+      const url = `/api/marketSnapshot?country=${country}&currency=${currency}`;
+      const res = await fetch(url, {
         cache: 'no-store', // Ensure fresh data on every fetch
       });
       if (!res.ok) {
@@ -113,7 +122,7 @@ export default function Home() {
       fetchForecast();
     }, 30000); // Poll every 30 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [country, currency]); // Re-fetch when country/currency changes
 
   if (loading) {
     return (
@@ -154,6 +163,7 @@ export default function Home() {
               </p>
             </div>
             <div className={`flex items-center gap-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+              <CountryCurrencySelector />
               <LanguageToggle />
             </div>
           </div>
@@ -185,6 +195,21 @@ export default function Home() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }
 
