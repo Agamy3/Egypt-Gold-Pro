@@ -101,12 +101,13 @@ export async function GET(request: NextRequest) {
       
       // Check for duplicate (same hash in last 5 minutes) using wide schema
       const fiveMinutesAgo = now - 5 * 60 * 1000;
+      const fiveMinutesAgoISO = new Date(fiveMinutesAgo).toISOString();
       const { data: recentDuplicate } = await db.supabase
         .from('market_snapshots')
         .select('id')
         .eq('source', 'isagha')
         .eq('rawHash', rawHash)
-        .gte('createdAt', fiveMinutesAgo)
+        .gte('createdAt', fiveMinutesAgoISO)
         .limit(1)
         .maybeSingle();
 
@@ -164,12 +165,13 @@ export async function GET(request: NextRequest) {
       
       // Check for duplicate (same hash in last 5 minutes) using wide schema
       const fiveMinutesAgo = now - 5 * 60 * 1000;
+      const fiveMinutesAgoISO = new Date(fiveMinutesAgo).toISOString();
       const { data: recentDuplicate } = await db.supabase
         .from('market_snapshots')
         .select('id')
         .eq('source', 'goldbillion')
         .eq('rawHash', rawHash)
-        .gte('createdAt', fiveMinutesAgo)
+        .gte('createdAt', fiveMinutesAgoISO)
         .limit(1)
         .maybeSingle();
 

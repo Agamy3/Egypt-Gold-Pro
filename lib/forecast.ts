@@ -58,11 +58,12 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
     // Get snapshots from Supabase (wide schema)
     // Filter by trusted source if trusted-only mode is enabled
     const isTrustedMode = trustedMode || getTrustedModeFromEnv();
+    const windowStartISO = new Date(windowStart).toISOString();
 
     let snapshotQuery = db.supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, error')
-      .gte('createdAt', windowStart)
+      .gte('createdAt', windowStartISO)
       .is('error', null)
       .or('market21Buy.not.is.null,market24Buy.not.is.null');
 
@@ -95,7 +96,11 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
           continue;
         }
 
-        const createdAt = row.createdAt as number; // Already in epoch ms
+        // createdAt might be ISO string or number (epoch ms)
+        const createdAtRaw = row.createdAt;
+        const createdAt = typeof createdAtRaw === 'string' 
+          ? new Date(createdAtRaw).getTime() 
+          : (typeof createdAtRaw === 'number' ? createdAtRaw : 0);
         // Round to nearest minute (60000 ms) for grouping
         const timeBucket = Math.floor(createdAt / 60000) * 60000;
         

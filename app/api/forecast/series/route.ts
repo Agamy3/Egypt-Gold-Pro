@@ -103,11 +103,12 @@ export async function GET(request: Request) {
     if (!supabase) {
       return NextResponse.json({ error: 'Database client unavailable' }, { status: 500 });
     }
+    const windowStartISO = new Date(windowStart).toISOString();
     
     let snapshotQuery = supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market24Buy, error')
-      .gte('createdAt', windowStart)
+      .gte('createdAt', windowStartISO)
       .is('error', null)
       .or('market21Buy.not.is.null,market24Buy.not.is.null')
       .order('createdAt', { ascending: false })
@@ -161,7 +162,11 @@ export async function GET(request: Request) {
           continue;
         }
 
-        const createdAt = row.createdAt as number; // Already in epoch ms
+        // createdAt might be ISO string or number (epoch ms)
+        const createdAtRaw = row.createdAt;
+        const createdAt = typeof createdAtRaw === 'string' 
+          ? new Date(createdAtRaw).getTime() 
+          : (typeof createdAtRaw === 'number' ? createdAtRaw : 0);
         // Use 10-second buckets instead of 1-minute to preserve more granularity
         // This groups snapshots that are essentially duplicates (within 10 seconds)
         const timeBucket = Math.floor(createdAt / 10000) * 10000;

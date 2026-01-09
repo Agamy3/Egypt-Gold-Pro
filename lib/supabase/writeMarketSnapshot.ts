@@ -41,7 +41,10 @@ export async function writeEgyptSnapshotToSupabase(
 ): Promise<WriteResult> {
   try {
     const supabase = db.supabase;
-    const createdAt = params.createdAtMs; // Use epoch ms directly (createdAt is bigint)
+    // createdAt might be stored as timestamptz in Supabase, so convert epoch ms to ISO string
+    // If it's stored as bigint, Supabase will handle the conversion
+    // Try ISO string first (most common for timestamptz columns)
+    const createdAt = new Date(params.createdAtMs).toISOString();
 
     // Build ONE wide row with all karat prices
     const row: any = {
@@ -81,19 +84,22 @@ export async function writeEgyptSnapshotToSupabase(
     }
 
     // Insert ONE wide row
+    console.log('[Supabase] Writing snapshot:', { source: row.source, createdAt: row.createdAt, has21k: !!row.market21Buy, has24k: !!row.market24Buy });
     const { error, data: inserted } = await supabase
       .from('market_snapshots')
       .insert(row)
       .select('id');
 
     if (error) {
-      console.error('[Supabase] Write error:', error);
+      console.error('[Supabase] Write error:', error, 'Row attempted:', { source: row.source, createdAt: row.createdAt });
       return {
         ok: false,
         inserted: 0,
         error: error.message,
       };
     }
+
+    console.log('[Supabase] Successfully inserted snapshot:', { id: inserted?.[0]?.id, source: row.source });
 
     return {
       ok: true,

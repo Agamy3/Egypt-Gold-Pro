@@ -36,12 +36,16 @@ export async function getEgyptMarketMedians(
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
   const windowStart = Date.now() - windowMs;
+  // If createdAt is stored as timestamptz, convert to ISO string for comparison
+  // If it's bigint (epoch ms), Supabase PostgREST handles number conversion
+  const windowStartISO = new Date(windowStart).toISOString();
 
   // Query using wide schema: createdAt, market21Buy, market24Buy, etc.
+  // createdAt is likely stored as timestamptz, so use ISO string for comparison
   let query = supabase
     .from('market_snapshots')
     .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, market18Buy, market18Sell, market14Buy, market14Sell, error')
-    .gte('createdAt', windowStart)
+    .gte('createdAt', windowStartISO) // Use ISO string for timestamptz comparison
     .is('error', null);
 
   // For trusted mode, filter by source (goldbullioneg is trusted)
@@ -51,8 +55,30 @@ export async function getEgyptMarketMedians(
 
   const { data, error } = await query;
 
+  if (error) {
+    console.error('[getEgyptMarketMedians] Query error:', error);
+    // Try alternative query without error filter to see if there's any data
+    const { data: allData, error: allError } = await supabase
+      .from('market_snapshots')
+      .select('source, createdAt, market21Buy, market24Buy, error')
+      .limit(10);
+    console.log('[getEgyptMarketMedians] Sample data (without filters):', { count: allData?.length, error: allError?.message, sample: allData?.[0] });
+  }
+
   if (error || !data || data.length === 0) {
-    console.log('[getEgyptMarketMedians] No data found:', { error: error?.message, count: data?.length });
+    console.log('[getEgyptMarketMedians] No data found:', { 
+      error: error?.message, 
+      count: data?.length,
+      windowStart,
+      windowStartISO,
+      windowMinutes
+    });
+    // Try querying without time window to see if there's any data at all
+    const { data: anyData } = await supabase
+      .from('market_snapshots')
+      .select('source, createdAt, market21Buy, market24Buy')
+      .limit(5);
+    console.log('[getEgyptMarketMedians] Any data in table (no filters):', anyData?.length || 0, 'rows');
     return {
       prices: {
         market21Buy: null,
@@ -142,9 +168,19 @@ export async function getEgyptMarketMedians(
       sourcesUsed[karat.toString()] = karatSources;
       karatSources.forEach(s => contributingSources.add(s));
 
-      // Track latest timestamp (createdAt is in epoch ms)
-      const timestamps = validRows.map((row: any) => row.createdAt as number);
-      maxTimestamp = Math.max(maxTimestamp, ...timestamps);
+      // Track latest timestamp (createdAt might be ISO string or number)
+      const timestamps = validRows.map((row: any) => {
+        const ts = row.createdAt;
+        // If it's a string (ISO), convert to epoch ms
+        if (typeof ts === 'string') {
+          return new Date(ts).getTime();
+        }
+        // If it's already a number (epoch ms), use it directly
+        return typeof ts === 'number' ? ts : 0;
+      });
+      if (timestamps.length > 0) {
+        maxTimestamp = Math.max(maxTimestamp, ...timestamps);
+      }
     }
   }
 
@@ -152,7 +188,8 @@ export async function getEgyptMarketMedians(
     activeSourceCount: contributingSources.size, 
     lastUpdated: maxTimestamp,
     has21k: prices.market21Buy !== null,
-    has24k: prices.market24Buy !== null
+    has24k: prices.market24Buy !== null,
+    totalRows: data.length
   });
 
   return {
@@ -176,15 +213,16 @@ export async function getEgyptMarketSeries(
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
   const windowStart = Date.now() - windowMs;
+  const windowStartISO = new Date(windowStart).toISOString();
 
   // Determine which column to use based on karat
   const karatKey = karat === 21 ? 'market21Buy' : karat === 24 ? 'market24Buy' : karat === 18 ? 'market18Buy' : 'market14Buy';
 
-  // Query using wide schema
+  // Query using wide schema (createdAt is timestamptz, use ISO string for comparison)
   let query = supabase
     .from('market_snapshots')
     .select(`createdAt, ${karatKey}, error, source`)
-    .gte('createdAt', windowStart)
+    .gte('createdAt', windowStartISO)
     .is('error', null)
     .not(karatKey, 'is', null)
     .order('createdAt', { ascending: true });
@@ -204,11 +242,15 @@ export async function getEgyptMarketSeries(
   const timeBuckets = new Map<number, number[]>();
   
   for (const row of data) {
-    const price = (row as any)[karatKey] as number;
-    if (price !== null && price !== undefined && isFinite(Number(price)) && Number(price) > 0) {
-      const createdAt = row.createdAt as number; // Already in epoch ms
-      // Round to nearest minute for bucketing
-      const bucketKey = Math.floor(createdAt / 60000) * 60000;
+      const price = (row as any)[karatKey] as number;
+      if (price !== null && price !== undefined && isFinite(Number(price)) && Number(price) > 0) {
+        // createdAt might be ISO string or number (epoch ms)
+        const createdAtRaw = row.createdAt;
+        const createdAt = typeof createdAtRaw === 'string' 
+          ? new Date(createdAtRaw).getTime() 
+          : (typeof createdAtRaw === 'number' ? createdAtRaw : 0);
+        // Round to nearest minute for bucketing
+        const bucketKey = Math.floor(createdAt / 60000) * 60000;
       
       if (!timeBuckets.has(bucketKey)) {
         timeBuckets.set(bucketKey, []);
@@ -249,12 +291,13 @@ export async function getActiveSourceCount(
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
   const windowStart = Date.now() - windowMs;
+  const windowStartISO = new Date(windowStart).toISOString();
 
-  // Query using wide schema - count sources with valid prices
+  // Query using wide schema - count sources with valid prices (createdAt is timestamptz, use ISO string)
   let query = supabase
     .from('market_snapshots')
     .select('source, createdAt, market21Buy, market24Buy, error')
-    .gte('createdAt', windowStart)
+    .gte('createdAt', windowStartISO)
     .is('error', null)
     .or('market21Buy.not.is.null,market24Buy.not.is.null');
 

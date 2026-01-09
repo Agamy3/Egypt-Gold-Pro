@@ -122,12 +122,13 @@ export async function checkSupabaseWrite(): Promise<{
       };
     }
 
-    // Check for recent inserts (last 10 minutes) using createdAt (epoch ms)
+    // Check for recent inserts (last 10 minutes) using createdAt (timestamptz, use ISO string)
     const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    const tenMinutesAgoISO = new Date(tenMinutesAgo).toISOString();
     const { data: recent, error: recentError } = await supabase
       .from('market_snapshots')
       .select('createdAt')
-      .gte('createdAt', tenMinutesAgo)
+      .gte('createdAt', tenMinutesAgoISO)
       .is('error', null)
       .order('createdAt', { ascending: false })
       .limit(1)
@@ -136,7 +137,7 @@ export async function checkSupabaseWrite(): Promise<{
     return {
       ok: true,
       lastInsertOk: recent !== null && !recentError,
-      lastInsertTime: recent ? (recent.createdAt as number) : undefined,
+      lastInsertTime: recent ? (typeof recent.createdAt === 'string' ? new Date(recent.createdAt).getTime() : (recent.createdAt as number)) : undefined,
       lastError: recentError?.message,
     };
   } catch (error) {
