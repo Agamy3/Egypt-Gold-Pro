@@ -7,7 +7,6 @@
 
 import { NextResponse } from 'next/server';
 import { getServerClient } from '@/lib/supabase/server';
-import { NORMALIZED_SNAPSHOTS_TABLE } from '@/lib/supabase/queries';
 import { getGoldSpotHistory } from '@/lib/supabase/goldSpot';
 
 export const dynamic = 'force-dynamic';
@@ -99,26 +98,24 @@ export async function GET(request: Request) {
     
     console.log('[Forecast Series] Query limit:', snapshotLimit, 'for range:', effectiveRangeKey);
 
-    // Query using normalized schema: market, karat, price_egp, source, trusted, created_at
+    // Query using wide schema: createdAt, market21Buy, market24Buy, etc.
     const supabase = getServerClient();
     if (!supabase) {
       return NextResponse.json({ error: 'Database client unavailable' }, { status: 500 });
     }
-    const windowStartISO = new Date(windowStart).toISOString();
     
     let snapshotQuery = supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
-      .select('karat, price_egp, source, trusted, created_at')
-      .eq('market', 'egypt')
-      .in('karat', [21, 24]) // Only need 21k and 24k for chart
-      .gte('created_at', windowStartISO)
-      .not('price_egp', 'is', null)
-      .order('created_at', { ascending: false })
+      .from('market_snapshots')
+      .select('source, createdAt, market21Buy, market24Buy, error')
+      .gte('createdAt', windowStart)
+      .is('error', null)
+      .or('market21Buy.not.is.null,market24Buy.not.is.null')
+      .order('createdAt', { ascending: false })
       .limit(snapshotLimit);
 
-    // For trusted mode, filter by trusted flag
+    // For trusted mode, filter by source (goldbullioneg is trusted)
     if (EGYPT_TRUSTED_ONLY_MODE) {
-      snapshotQuery = snapshotQuery.eq('trusted', true);
+      snapshotQuery = snapshotQuery.eq('source', 'goldbullioneg');
     }
 
     const { data: snapshotRows, error: snapshotError } = await snapshotQuery;
@@ -129,16 +126,16 @@ export async function GET(request: Request) {
     }
     // Type guard for snapshot rows
     type SnapshotRow = {
-      karat: number;
-      price_egp: number;
       source: string;
-      trusted: boolean;
-      created_at: string;
+      createdAt: number;
+      market21Buy: number | null;
+      market24Buy: number | null;
+      error: string | null;
     };
     const typedRows: SnapshotRow[] = (snapshotRows || []) as SnapshotRow[];
 
     if (typedRows.length === 0) {
-      console.log('[Forecast Series] No snapshots found. Window start:', windowStartISO, 'Now:', now, 'Window ms:', windowMs, 'Trusted mode:', EGYPT_TRUSTED_ONLY_MODE);
+      console.log('[Forecast Series] No snapshots found. Window start:', windowStart, 'Now:', now, 'Window ms:', windowMs, 'Trusted mode:', EGYPT_TRUSTED_ONLY_MODE);
     } else {
       console.log('[Forecast Series] Found', typedRows.length, 'snapshots. First snapshot:', typedRows[0]);
     }
@@ -155,17 +152,19 @@ export async function GET(request: Request) {
     if (typedRows && typedRows.length > 0) {
       console.log('[Forecast Series] Processing', typedRows.length, 'raw snapshot rows');
       for (const row of typedRows) {
-        const price = row.price_egp as number;
-        const karat = row.karat as number;
+        const market21Buy = row.market21Buy as number | null;
+        const market24Buy = row.market24Buy as number | null;
         
-        // Skip if invalid price
-        if (!isFinite(price) || price <= 0) continue;
+        // Skip if no valid prices
+        if ((market21Buy === null || !isFinite(market21Buy) || market21Buy <= 0) &&
+            (market24Buy === null || !isFinite(market24Buy) || market24Buy <= 0)) {
+          continue;
+        }
 
-        const created_at = row.created_at as string;
-        const rowTimestamp = new Date(created_at).getTime(); // Convert ISO to epoch ms
+        const createdAt = row.createdAt as number; // Already in epoch ms
         // Use 10-second buckets instead of 1-minute to preserve more granularity
         // This groups snapshots that are essentially duplicates (within 10 seconds)
-        const timeBucket = Math.floor(rowTimestamp / 10000) * 10000;
+        const timeBucket = Math.floor(createdAt / 10000) * 10000;
         
         if (!snapshotsByTime.has(timeBucket)) {
           snapshotsByTime.set(timeBucket, {
@@ -180,20 +179,20 @@ export async function GET(request: Request) {
         
         // Set price for the appropriate karat (prefer 24k, fallback to 21k for local scope)
         // Use the latest value (or average if multiple in same bucket)
-        if (karat === 24) {
+        if (market24Buy !== null && isFinite(market24Buy) && market24Buy > 0) {
           if (snapshot.market24Buy === null) {
-            snapshot.market24Buy = price;
+            snapshot.market24Buy = market24Buy;
           } else {
             // Average if multiple values in same bucket
-            snapshot.market24Buy = (snapshot.market24Buy * (snapshot.count - 1) + price) / snapshot.count;
+            snapshot.market24Buy = (snapshot.market24Buy * (snapshot.count - 1) + market24Buy) / snapshot.count;
           }
-        } else if (karat === 21 && snapshot.market24Buy === null) {
+        } else if (market21Buy !== null && isFinite(market21Buy) && market21Buy > 0 && snapshot.market24Buy === null) {
           // Only use 21k if 24k is not available
           if (snapshot.market21Buy === null) {
-            snapshot.market21Buy = price;
+            snapshot.market21Buy = market21Buy;
           } else {
             // Average if multiple values in same bucket
-            snapshot.market21Buy = (snapshot.market21Buy * (snapshot.count - 1) + price) / snapshot.count;
+            snapshot.market21Buy = (snapshot.market21Buy * (snapshot.count - 1) + market21Buy) / snapshot.count;
           }
         }
       }

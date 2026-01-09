@@ -7,7 +7,6 @@
 
 import { NextResponse } from 'next/server';
 import db from '@/lib/supabase';
-import { NORMALIZED_SNAPSHOTS_TABLE } from '@/lib/supabase/queries';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -16,30 +15,30 @@ export async function GET() {
   try {
     const supabase = db.supabase;
 
-    const now = new Date();
-    const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
-    const sixtyMinutesAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+    const now = Date.now();
+    const tenMinutesAgo = now - 10 * 60 * 1000;
+    const sixtyMinutesAgo = now - 60 * 60 * 1000;
 
-    // Count rows in last 10 minutes
+    // Count rows in last 10 minutes (using createdAt in epoch ms)
     const { count: rowsLast10m, error: error10m } = await supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
+      .from('market_snapshots')
       .select('*', { count: 'exact', head: true })
-      .eq('market', 'egypt')
-      .gte('created_at', tenMinutesAgo);
+      .gte('createdAt', tenMinutesAgo)
+      .is('error', null);
 
     // Count rows in last 60 minutes
     const { count: rowsLast60m, error: error60m } = await supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
+      .from('market_snapshots')
       .select('*', { count: 'exact', head: true })
-      .eq('market', 'egypt')
-      .gte('created_at', sixtyMinutesAgo);
+      .gte('createdAt', sixtyMinutesAgo)
+      .is('error', null);
 
-    // Get latest created_at
+    // Get latest createdAt
     const { data: latest, error: latestError } = await supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
-      .select('created_at')
-      .eq('market', 'egypt')
-      .order('created_at', { ascending: false })
+      .from('market_snapshots')
+      .select('createdAt')
+      .is('error', null)
+      .order('createdAt', { ascending: false })
       .limit(1)
       .maybeSingle();
 
@@ -57,10 +56,10 @@ export async function GET() {
 
     // Get sample rows (latest 5)
     const { data: sampleRows, error: sampleError } = await supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
-      .select('market, karat, price_egp, source, trusted, created_at')
-      .eq('market', 'egypt')
-      .order('created_at', { ascending: false })
+      .from('market_snapshots')
+      .select('source, createdAt, market21Buy, market24Buy, market18Buy, market14Buy')
+      .is('error', null)
+      .order('createdAt', { ascending: false })
       .limit(5);
 
     if (sampleError) {
@@ -71,7 +70,7 @@ export async function GET() {
       ok: true,
       rowsLast10m: rowsLast10m || 0,
       rowsLast60m: rowsLast60m || 0,
-      latestCreatedAt: latest?.created_at || null,
+      latestCreatedAt: latest?.createdAt || null,
       sampleRows: sampleRows || [],
       timestamp: Date.now(),
     });

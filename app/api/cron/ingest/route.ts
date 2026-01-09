@@ -9,7 +9,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/supabase';
 import { fetchIsagha, fetchGoldBillion } from '@/lib/ingestion-adapters';
 import { writeEgyptSnapshotToSupabase } from '@/lib/supabase/writeMarketSnapshot';
-import { NORMALIZED_SNAPSHOTS_TABLE } from '@/lib/supabase/queries';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -100,15 +99,14 @@ export async function GET(request: NextRequest) {
       const rawHash = generateHash(isaghaResult.rawResponse);
       const now = Date.now();
       
-      // Check for duplicate (same hash in last 5 minutes) using normalized schema
-      const fiveMinutesAgoISO = new Date(now - 5 * 60 * 1000).toISOString();
+      // Check for duplicate (same hash in last 5 minutes) using wide schema
+      const fiveMinutesAgo = now - 5 * 60 * 1000;
       const { data: recentDuplicate } = await db.supabase
-        .from(NORMALIZED_SNAPSHOTS_TABLE)
+        .from('market_snapshots')
         .select('id')
-        .eq('market', 'egypt')
         .eq('source', 'isagha')
-        .eq('raw_hash', rawHash)
-        .gte('created_at', fiveMinutesAgoISO)
+        .eq('rawHash', rawHash)
+        .gte('createdAt', fiveMinutesAgo)
         .limit(1)
         .maybeSingle();
 
@@ -164,15 +162,14 @@ export async function GET(request: NextRequest) {
       const rawHash = generateHash(goldBillionResult.rawResponse);
       const now = Date.now();
       
-      // Check for duplicate (same hash in last 5 minutes) using normalized schema
-      const fiveMinutesAgoISO = new Date(now - 5 * 60 * 1000).toISOString();
+      // Check for duplicate (same hash in last 5 minutes) using wide schema
+      const fiveMinutesAgo = now - 5 * 60 * 1000;
       const { data: recentDuplicate } = await db.supabase
-        .from(NORMALIZED_SNAPSHOTS_TABLE)
+        .from('market_snapshots')
         .select('id')
-        .eq('market', 'egypt')
         .eq('source', 'goldbillion')
-        .eq('raw_hash', rawHash)
-        .gte('created_at', fiveMinutesAgoISO)
+        .eq('rawHash', rawHash)
+        .gte('createdAt', fiveMinutesAgo)
         .limit(1)
         .maybeSingle();
 

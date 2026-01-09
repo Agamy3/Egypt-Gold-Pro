@@ -6,7 +6,6 @@
  */
 
 import db from './supabase';
-import { NORMALIZED_SNAPSHOTS_TABLE } from './supabase/queries';
 import { getGoldSpotHistory } from './supabase/goldSpot';
 import { calculatePricing } from './pricing';
 
@@ -56,22 +55,20 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
   const windowStart = now - FORECAST_WINDOW_MS;
 
   try {
-    // Get snapshots from Supabase (normalized schema)
+    // Get snapshots from Supabase (wide schema)
     // Filter by trusted source if trusted-only mode is enabled
     const isTrustedMode = trustedMode || getTrustedModeFromEnv();
-    const windowStartISO = new Date(windowStart).toISOString();
 
     let snapshotQuery = db.supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
-      .select('karat, price_egp, source, trusted, created_at')
-      .eq('market', 'egypt')
-      .in('karat', [21, 24]) // Only need 21k and 24k for forecast
-      .gte('created_at', windowStartISO)
-      .not('price_egp', 'is', null);
+      .from('market_snapshots')
+      .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, error')
+      .gte('createdAt', windowStart)
+      .is('error', null)
+      .or('market21Buy.not.is.null,market24Buy.not.is.null');
 
-    // For trusted mode, filter by trusted flag
+    // For trusted mode, filter by source (goldbullioneg is trusted)
     if (isTrustedMode) {
-      snapshotQuery = snapshotQuery.eq('trusted', true);
+      snapshotQuery = snapshotQuery.eq('source', 'goldbullioneg');
     }
 
     const { data: snapshotRows, error: snapshotError } = await snapshotQuery;
@@ -89,16 +86,18 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
 
     if (!snapshotError && snapshotRows) {
       for (const row of snapshotRows) {
-        const price = row.price_egp as number;
-        const karat = row.karat as number;
+        const market21Buy = row.market21Buy as number | null;
+        const market24Buy = row.market24Buy as number | null;
         
-        // Skip if invalid price
-        if (!isFinite(price) || price <= 0) continue;
+        // Skip if no valid prices
+        if ((market21Buy === null || !isFinite(market21Buy) || market21Buy <= 0) &&
+            (market24Buy === null || !isFinite(market24Buy) || market24Buy <= 0)) {
+          continue;
+        }
 
-        const created_at = row.created_at as string;
-        const rowTimestamp = new Date(created_at).getTime(); // Convert ISO to epoch ms
+        const createdAt = row.createdAt as number; // Already in epoch ms
         // Round to nearest minute (60000 ms) for grouping
-        const timeBucket = Math.floor(rowTimestamp / 60000) * 60000;
+        const timeBucket = Math.floor(createdAt / 60000) * 60000;
         
         if (!snapshotsByTime.has(timeBucket)) {
           snapshotsByTime.set(timeBucket, {
@@ -112,20 +111,20 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
         }
         const snapshot = snapshotsByTime.get(timeBucket)!;
         
-        // Set price for the appropriate karat (normalized schema is buy-only)
-        if (karat === 21) {
+        // Set prices from wide schema (average if multiple values in same bucket)
+        if (market21Buy !== null && isFinite(market21Buy) && market21Buy > 0) {
           if (snapshot.market21Buy === null) {
-            snapshot.market21Buy = price;
+            snapshot.market21Buy = market21Buy;
           } else {
-            // Average if multiple values in same bucket
-            snapshot.market21Buy = (snapshot.market21Buy + price) / 2;
+            snapshot.market21Buy = (snapshot.market21Buy + market21Buy) / 2;
           }
-        } else if (karat === 24) {
+        }
+        
+        if (market24Buy !== null && isFinite(market24Buy) && market24Buy > 0) {
           if (snapshot.market24Buy === null) {
-            snapshot.market24Buy = price;
+            snapshot.market24Buy = market24Buy;
           } else {
-            // Average if multiple values in same bucket
-            snapshot.market24Buy = (snapshot.market24Buy + price) / 2;
+            snapshot.market24Buy = (snapshot.market24Buy + market24Buy) / 2;
           }
         }
       }

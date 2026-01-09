@@ -1,13 +1,12 @@
 /**
  * Write Egypt Market Snapshot to Supabase (Server-Only)
  * 
- * Writes normalized rows to Supabase market_snapshots table
- * One row per karat with buy price
+ * Writes ONE wide row to Supabase market_snapshots table
+ * Uses wide schema: createdAt, market21Buy, market24Buy, etc.
  */
 
 import 'server-only';
 import db from '../supabase';
-import { NORMALIZED_SNAPSHOTS_TABLE } from './queries';
 
 interface PriceData {
   buy?: number | null;
@@ -34,47 +33,57 @@ interface WriteResult {
 }
 
 /**
- * Write Egypt snapshot to Supabase in normalized format
- * Creates one row per karat with buy price
+ * Write Egypt snapshot to Supabase in wide format
+ * Creates ONE row with all karat prices in wide columns
  */
 export async function writeEgyptSnapshotToSupabase(
   params: WriteEgyptSnapshotParams
 ): Promise<WriteResult> {
   try {
     const supabase = db.supabase;
-    const createdAt = new Date(params.createdAtMs).toISOString();
-    const rows: any[] = [];
+    const createdAt = params.createdAtMs; // Use epoch ms directly (createdAt is bigint)
 
-    // Build rows: one per karat with valid buy price
+    // Build ONE wide row with all karat prices
+    const row: any = {
+      source: params.source,
+      createdAt: createdAt,
+      rawHash: params.rawHash || null,
+    };
+
+    // Add buy prices for each karat (only if valid)
     const karats: (14 | 18 | 21 | 24)[] = [14, 18, 21, 24];
-    
     for (const karat of karats) {
       const priceData = params.prices[karat];
       const buyPrice = priceData?.buy;
+      const sellPrice = priceData?.sell;
       
-      // Only insert if we have a valid buy price
-      if (buyPrice !== null && buyPrice !== undefined && isFinite(buyPrice) && buyPrice > 0) {
-        rows.push({
-          market: 'egypt',
-          karat,
-          price_egp: buyPrice,
-          source: params.source,
-          trusted: params.trusted,
-          created_at: createdAt,
-          raw_hash: params.rawHash || null,
-        });
+      if (karat === 21) {
+        row.market21Buy = (buyPrice !== null && buyPrice !== undefined && isFinite(buyPrice) && buyPrice > 0) ? buyPrice : null;
+        row.market21Sell = (sellPrice !== null && sellPrice !== undefined && isFinite(sellPrice) && sellPrice > 0) ? sellPrice : null;
+      } else if (karat === 24) {
+        row.market24Buy = (buyPrice !== null && buyPrice !== undefined && isFinite(buyPrice) && buyPrice > 0) ? buyPrice : null;
+        row.market24Sell = (sellPrice !== null && sellPrice !== undefined && isFinite(sellPrice) && sellPrice > 0) ? sellPrice : null;
+      } else if (karat === 18) {
+        row.market18Buy = (buyPrice !== null && buyPrice !== undefined && isFinite(buyPrice) && buyPrice > 0) ? buyPrice : null;
+        row.market18Sell = (sellPrice !== null && sellPrice !== undefined && isFinite(sellPrice) && sellPrice > 0) ? sellPrice : null;
+      } else if (karat === 14) {
+        row.market14Buy = (buyPrice !== null && buyPrice !== undefined && isFinite(buyPrice) && buyPrice > 0) ? buyPrice : null;
+        row.market14Sell = (sellPrice !== null && sellPrice !== undefined && isFinite(sellPrice) && sellPrice > 0) ? sellPrice : null;
       }
     }
 
-    // If no valid prices, return success with 0 inserted
-    if (rows.length === 0) {
+    // Check if we have at least one valid price
+    const hasValidPrice = row.market21Buy !== null || row.market24Buy !== null || 
+                          row.market18Buy !== null || row.market14Buy !== null;
+
+    if (!hasValidPrice) {
       return { ok: true, inserted: 0 };
     }
 
-    // Insert all rows in a batch
+    // Insert ONE wide row
     const { error, data: inserted } = await supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
-      .insert(rows)
+      .from('market_snapshots')
+      .insert(row)
       .select('id');
 
     if (error) {
@@ -86,10 +95,9 @@ export async function writeEgyptSnapshotToSupabase(
       };
     }
 
-    const insertedCount = inserted?.length || rows.length;
     return {
       ok: true,
-      inserted: insertedCount,
+      inserted: inserted?.length || 1,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

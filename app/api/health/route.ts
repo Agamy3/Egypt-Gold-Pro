@@ -7,7 +7,6 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/supabase';
 import { SOURCE_WEIGHTS } from '@/lib/gold-ingestion-config';
-import { NORMALIZED_SNAPSHOTS_TABLE } from '@/lib/supabase/queries';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -19,15 +18,14 @@ export async function GET() {
   try {
     // Count valid sources (sources with valid data in last 10 minutes)
     const windowStart = Date.now() - 10 * 60 * 1000;
-    const windowStartISO = new Date(windowStart).toISOString();
     
     // Query for sources with valid data using normalized schema
     const { data: validSources, error: queryError } = await db.supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
+      .from('market_snapshots')
       .select('source')
-      .eq('market', 'egypt')
-      .gte('created_at', windowStartISO)
-      .not('price_egp', 'is', null);
+      .gte('createdAt', windowStart)
+      .is('error', null)
+      .or('market21Buy.not.is.null,market24Buy.not.is.null');
 
     if (queryError) {
       throw new Error(`Query error: ${queryError.message}`);

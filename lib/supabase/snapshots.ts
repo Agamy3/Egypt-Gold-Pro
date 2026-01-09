@@ -2,22 +2,21 @@
  * Supabase Snapshot Writer
  * 
  * Helper functions for writing market snapshots to Supabase
- * Uses normalized schema: one row per source/karat combination
+ * Uses wide schema: one row per source snapshot with all karat prices
  */
 
 import db from '../supabase';
-import { NORMALIZED_SNAPSHOTS_TABLE } from './queries';
 
 /**
- * Insert market snapshot into Supabase (normalized schema)
- * Converts from wide SQLite format to normalized format
+ * Insert market snapshot into Supabase (wide schema)
+ * Inserts ONE wide row with all karat prices
  * 
- * @param data - Snapshot data in SQLite format (wide columns)
+ * @param data - Snapshot data in wide format
  * @returns Promise<{ success: boolean; insertedRows: number; error?: string }>
  */
 export async function insertMarketSnapshot(
   data: {
-    createdAt: number; // Integer ms timestamp
+    createdAt: number; // Integer ms timestamp (epoch ms)
     source: string;
     market21Buy?: number | null;
     market21Sell?: number | null;
@@ -34,49 +33,46 @@ export async function insertMarketSnapshot(
     httpStatus?: number | null;
     url?: string | null;
     rawResponseSnippet?: string | null;
-    trusted?: boolean; // Optional trusted flag
   }
 ): Promise<{ success: boolean; insertedRows: number; error?: string }> {
   try {
     const supabase = db.supabase;
-    const createdAt = new Date(data.createdAt).toISOString();
-    const rows: any[] = [];
+    const createdAt = data.createdAt; // Use epoch ms directly (createdAt is bigint)
 
-    // Normalize: create one row per karat with price data
-    const karats = [
-      { karat: 21, buy: data.market21Buy, sell: data.market21Sell },
-      { karat: 24, buy: data.market24Buy, sell: data.market24Sell },
-      { karat: 18, buy: data.market18Buy, sell: data.market18Sell },
-      { karat: 14, buy: data.market14Buy, sell: data.market14Sell },
-    ];
+    // Build ONE wide row
+    const row: any = {
+      source: data.source,
+      createdAt: createdAt,
+      rawHash: data.rawHash || null,
+      error: data.error || null,
+      httpStatus: data.httpStatus || null,
+      url: data.url || null,
+      rawResponseSnippet: data.rawResponseSnippet || null,
+      market21Buy: data.market21Buy || null,
+      market21Sell: data.market21Sell || null,
+      market24Buy: data.market24Buy || null,
+      market24Sell: data.market24Sell || null,
+      market18Buy: data.market18Buy || null,
+      market18Sell: data.market18Sell || null,
+      market14Buy: data.market14Buy || null,
+      market14Sell: data.market14Sell || null,
+      usdBuy: data.usdBuy || null,
+      usdSell: data.usdSell || null,
+    };
 
-    for (const { karat, buy, sell } of karats) {
-      // Only insert if we have at least a buy price
-      if (buy !== null && buy !== undefined && isFinite(buy) && buy > 0) {
-        rows.push({
-          market: 'egypt',
-          karat,
-          price_egp: buy,
-          source: data.source,
-          trusted: data.trusted ?? false,
-          created_at: createdAt,
-          raw_hash: data.rawHash || null,
-          // Note: new schema doesn't have separate sell column in normalized format
-          // If we need sell prices, we'd need to store them differently or add a sell_price_egp column
-        });
-      }
-    }
+    // Check if we have at least one valid price
+    const hasValidPrice = row.market21Buy !== null || row.market24Buy !== null || 
+                          row.market18Buy !== null || row.market14Buy !== null;
 
-    // If no valid prices, don't insert anything
-    if (rows.length === 0) {
+    if (!hasValidPrice) {
       return { success: true, insertedRows: 0 };
     }
 
-    // Insert all rows in a batch
+    // Insert ONE wide row
     const { error, data: inserted } = await supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
-      .insert(rows)
-      .select();
+      .from('market_snapshots')
+      .insert(row)
+      .select('id');
 
     if (error) {
       console.error('Supabase insert error:', error);
@@ -89,7 +85,7 @@ export async function insertMarketSnapshot(
 
     return {
       success: true,
-      insertedRows: inserted?.length || rows.length,
+      insertedRows: inserted?.length || 1,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -116,7 +112,7 @@ export async function checkSupabaseWrite(): Promise<{
     
     // Try a simple count query to verify access
     const { count, error } = await supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
+      .from('market_snapshots')
       .select('*', { count: 'exact', head: true });
 
     if (error) {
@@ -126,21 +122,21 @@ export async function checkSupabaseWrite(): Promise<{
       };
     }
 
-    // Check for recent inserts (last 10 minutes) for market='egypt'
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    // Check for recent inserts (last 10 minutes) using createdAt (epoch ms)
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
     const { data: recent, error: recentError } = await supabase
-      .from(NORMALIZED_SNAPSHOTS_TABLE)
-      .select('created_at')
-      .eq('market', 'egypt')
-      .gte('created_at', tenMinutesAgo)
-      .order('created_at', { ascending: false })
+      .from('market_snapshots')
+      .select('createdAt')
+      .gte('createdAt', tenMinutesAgo)
+      .is('error', null)
+      .order('createdAt', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     return {
       ok: true,
       lastInsertOk: recent !== null && !recentError,
-      lastInsertTime: recent ? new Date(recent.created_at).getTime() : undefined,
+      lastInsertTime: recent ? (recent.createdAt as number) : undefined,
       lastError: recentError?.message,
     };
   } catch (error) {
