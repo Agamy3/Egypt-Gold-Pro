@@ -20,24 +20,28 @@ export async function GET() {
     const sixtyMinutesAgo = now - 60 * 60 * 1000;
 
     // Count rows in last 10 minutes (createdAt is bigint, use number)
+    // Only count local market sources (same as forecast query)
     const { count: rowsLast10m, error: error10m } = await supabase
       .from('market_snapshots')
       .select('*', { count: 'exact', head: true })
       .gte('createdAt', tenMinutesAgo)
-      .is('error', null);
+      .is('error', null)
+      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
 
-    // Count rows in last 60 minutes
+    // Count rows in last 60 minutes (only local market sources)
     const { count: rowsLast60m, error: error60m } = await supabase
       .from('market_snapshots')
       .select('*', { count: 'exact', head: true })
       .gte('createdAt', sixtyMinutesAgo)
-      .is('error', null);
+      .is('error', null)
+      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
 
-    // Get latest createdAt
+    // Get latest createdAt (only local market sources)
     const { data: latest, error: latestError } = await supabase
       .from('market_snapshots')
       .select('createdAt')
       .is('error', null)
+      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
       .order('createdAt', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -67,12 +71,18 @@ export async function GET() {
       console.error('Error fetching sample rows:', sampleError);
     }
 
+    const latestCreatedAtMs = latest?.createdAt ? (typeof latest.createdAt === 'number' ? latest.createdAt : new Date(latest.createdAt).getTime()) : null;
+    const minutesAgo = latestCreatedAtMs ? (now - latestCreatedAtMs) / (60 * 1000) : null;
+
     return NextResponse.json({
       ok: true,
       rowsLast10m: rowsLast10m || 0,
       rowsLast60m: rowsLast60m || 0,
-      latestCreatedAt: latest?.createdAt || null,
+      latestCreatedAt: latestCreatedAtMs,
+      latestCreatedAtISO: latestCreatedAtMs ? new Date(latestCreatedAtMs).toISOString() : null,
+      minutesAgo: minutesAgo,
       sampleRows: sampleRows || [],
+      hasAggregated: sampleRows?.some(row => row.source === 'aggregated') || false,
       timestamp: Date.now(),
     });
   } catch (error) {
