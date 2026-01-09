@@ -1,0 +1,22 @@
+{
+  "name": "EgyptGold Pro",
+  "short_name": "EgyptGold Pro",
+  "description": "Educational decision-support for the Egyptian gold market",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#b8860b",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+

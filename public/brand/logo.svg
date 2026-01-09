@@ -1,0 +1,68 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffd700;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#ffed4e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#daa520;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="goldGradientDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#daa520;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#b8860b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b6914;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="200" height="200" fill="#000033"/>
+  
+  <!-- Gold Bar 1 (Bottom Left - G) -->
+  <g transform="translate(30, 120)">
+    <rect x="0" y="0" width="40" height="50" rx="3" fill="url(#goldGradient)" filter="url(#glow)"/>
+    <rect x="2" y="2" width="36" height="46" rx="2" fill="url(#goldGradientDark)" opacity="0.3"/>
+    <!-- Highlight -->
+    <rect x="5" y="5" width="15" height="20" rx="2" fill="#ffed4e" opacity="0.4"/>
+    <!-- Letter G -->
+    <text x="20" y="32" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#1a1a1a" text-anchor="middle" dominant-baseline="central">G</text>
+  </g>
+  
+  <!-- Gold Bar 2 (Top Center - E) -->
+  <g transform="translate(80, 70)">
+    <rect x="0" y="0" width="40" height="50" rx="3" fill="url(#goldGradient)" filter="url(#glow)"/>
+    <rect x="2" y="2" width="36" height="46" rx="2" fill="url(#goldGradientDark)" opacity="0.3"/>
+    <!-- Highlight -->
+    <rect x="5" y="5" width="15" height="20" rx="2" fill="#ffed4e" opacity="0.4"/>
+    <!-- Letter E -->
+    <text x="20" y="32" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#1a1a1a" text-anchor="middle" dominant-baseline="central">E</text>
+  </g>
+  
+  <!-- Gold Bar 3 (Bottom Right - P) -->
+  <g transform="translate(130, 120)">
+    <rect x="0" y="0" width="40" height="50" rx="3" fill="url(#goldGradient)" filter="url(#glow)"/>
+    <rect x="2" y="2" width="36" height="46" rx="2" fill="url(#goldGradientDark)" opacity="0.3"/>
+    <!-- Highlight -->
+    <rect x="5" y="5" width="15" height="20" rx="2" fill="#ffed4e" opacity="0.4"/>
+    <!-- Letter P -->
+    <text x="20" y="32" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#1a1a1a" text-anchor="middle" dominant-baseline="central">P</text>
+  </g>
+  
+  <!-- Diamond Labels -->
+  <g transform="translate(120, 30)">
+    <!-- Egypt Label -->
+    <polygon points="0,5 8,0 16,5 8,10" fill="url(#goldGradient)" stroke="#daa520" stroke-width="0.5"/>
+    <text x="8" y="6" font-family="Arial, sans-serif" font-size="5" font-weight="bold" fill="#1a1a1a" text-anchor="middle" dominant-baseline="central">EGYPT</text>
+  </g>
+  
+  <g transform="translate(140, 45)">
+    <!-- Gold Label -->
+    <polygon points="0,5 8,0 16,5 8,10" fill="url(#goldGradient)" stroke="#daa520" stroke-width="0.5"/>
+    <text x="8" y="6" font-family="Arial, sans-serif" font-size="5" font-weight="bold" fill="#1a1a1a" text-anchor="middle" dominant-baseline="central">GOLD</text>
+  </g>
+</svg>
+
