@@ -108,11 +108,10 @@ export async function GET() {
     let recentSnapshotCount = 0;
     try {
       const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
-      const tenMinutesAgoISO = new Date(tenMinutesAgo).toISOString();
       const { count, error: countError } = await supabase
         .from('market_snapshots')
         .select('*', { count: 'exact', head: true })
-        .gte('createdAt', tenMinutesAgoISO)
+        .gte('createdAt', tenMinutesAgo) // createdAt is bigint, use epoch ms number
         .is('error', null);
       
       if (!countError && count !== null) {

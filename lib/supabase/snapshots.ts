@@ -122,13 +122,12 @@ export async function checkSupabaseWrite(): Promise<{
       };
     }
 
-    // Check for recent inserts (last 10 minutes) using createdAt (timestamptz, use ISO string)
+    // Check for recent inserts (last 10 minutes) using createdAt (bigint, use epoch ms number)
     const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
-    const tenMinutesAgoISO = new Date(tenMinutesAgo).toISOString();
     const { data: recent, error: recentError } = await supabase
       .from('market_snapshots')
       .select('createdAt')
-      .gte('createdAt', tenMinutesAgoISO)
+      .gte('createdAt', tenMinutesAgo) // createdAt is bigint, use epoch ms number
       .is('error', null)
       .order('createdAt', { ascending: false })
       .limit(1)
