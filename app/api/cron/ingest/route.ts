@@ -57,16 +57,21 @@ export async function GET(request: NextRequest) {
     console.log('[Cron] Starting local market data ingestion...');
     const ingestionResult = await runIngestionCycle();
     
-    // Count how many sources were successfully ingested
+    // Count how many sources were successfully ingested AND written to DB
+    // Check the breakdown to see which sources have valid data
     const sourcesWithData = Object.values(ingestionResult.breakdown).flatMap(karatData => 
-      Object.keys(karatData).filter(source => karatData[source].valid)
+      Object.keys(karatData).filter(source => karatData[source].valid && karatData[source].buy !== null)
     );
     const uniqueSources = new Set(sourcesWithData);
     
+    // Also check if aggregated data exists (should always be written)
+    const hasAggregatedData = ingestionResult.our_price_buy && Object.values(ingestionResult.our_price_buy).some(price => price !== null);
+    
     const results = {
-      inserted: uniqueSources.size,
+      inserted: uniqueSources.size + (hasAggregatedData ? 1 : 0), // Count individual sources + aggregated
       sourcesProcessed: uniqueSources.size,
       sourcesUsed: Array.from(uniqueSources),
+      hasAggregated: hasAggregatedData,
       numSourcesOk: ingestionResult.num_sources_ok,
       numSourcesErrors: ingestionResult.num_sources_errors,
       errors: ingestionResult.errors.map(err => ({ source: 'ingestion', error: err })),
