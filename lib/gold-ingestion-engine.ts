@@ -317,34 +317,47 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
   // IMPORTANT: Also write the aggregated weighted average as 'aggregated' source
   // This ensures we always have data even if individual sources fail
   // result.our_price_buy uses string keys like '14', '18', '21', '24'
+  let aggregatedWritten = false;
   if (result.our_price_buy && Object.keys(result.our_price_buy).length > 0) {
     try {
       const aggregatedHash = Buffer.from(JSON.stringify(result)).toString('base64').substring(0, 32);
-      // Extract prices from result.our_price_buy (keys are strings)
-      const price14 = result.our_price_buy['14'] || result.our_price_buy[14] || null;
-      const price18 = result.our_price_buy['18'] || result.our_price_buy[18] || null;
-      const price21 = result.our_price_buy['21'] || result.our_price_buy[21] || null;
-      const price24 = result.our_price_buy['24'] || result.our_price_buy[24] || null;
+      // Extract prices from result.our_price_buy (keys are strings like '14', '18', '21', '24')
+      const price14 = result.our_price_buy['14'] ?? result.our_price_buy[14] ?? null;
+      const price18 = result.our_price_buy['18'] ?? result.our_price_buy[18] ?? null;
+      const price21 = result.our_price_buy['21'] ?? result.our_price_buy[21] ?? null;
+      const price24 = result.our_price_buy['24'] ?? result.our_price_buy[24] ?? null;
       
-      const aggregatedResult = await writeEgyptSnapshotToSupabase({
-        source: 'aggregated',
-        trusted: false, // Aggregated is not a single trusted source
-        createdAtMs: now,
-        rawHash: aggregatedHash,
-        prices: {
-          14: { buy: price14 },
-          18: { buy: price18 },
-          21: { buy: price21 },
-          24: { buy: price24 },
-        },
-      });
-      if (aggregatedResult.ok && aggregatedResult.inserted && aggregatedResult.inserted > 0) {
-        console.log(`[Ingestion] Wrote aggregated snapshot: ${aggregatedResult.inserted} row(s)`, {
-          prices24: price24,
-          prices21: price21,
+      console.log(`[Ingestion] Attempting to write aggregated snapshot:`, { price14, price18, price21, price24 });
+      
+      // Only write if we have at least one valid price
+      if (price14 !== null || price18 !== null || price21 !== null || price24 !== null) {
+        const aggregatedResult = await writeEgyptSnapshotToSupabase({
+          source: 'aggregated',
+          trusted: false, // Aggregated is not a single trusted source
+          createdAtMs: now,
+          rawHash: aggregatedHash,
+          prices: {
+            14: { buy: price14 },
+            18: { buy: price18 },
+            21: { buy: price21 },
+            24: { buy: price24 },
+          },
         });
+        if (aggregatedResult.ok && aggregatedResult.inserted && aggregatedResult.inserted > 0) {
+          aggregatedWritten = true;
+          console.log(`[Ingestion] ✓ Wrote aggregated snapshot: ${aggregatedResult.inserted} row(s)`, {
+            prices24: price24,
+            prices21: price21,
+            prices18: price18,
+            prices14: price14,
+          });
+        } else {
+          console.error(`[Ingestion] ✗ Failed to write aggregated snapshot:`, aggregatedResult.error, {
+            attempted: { price14, price18, price21, price24 }
+          });
+        }
       } else {
-        console.error(`[Ingestion] Failed to write aggregated snapshot:`, aggregatedResult.error);
+        console.warn('[Ingestion] Skipping aggregated snapshot write: all prices are null', result.our_price_buy);
       }
     } catch (aggregatedError) {
       console.error(`[Ingestion] Exception writing aggregated snapshot:`, aggregatedError);
@@ -353,7 +366,7 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
     console.warn('[Ingestion] No aggregated prices to write:', result.our_price_buy);
   }
 
-  console.log(`[Ingestion] Completed: ${sourcesWritten} individual sources written, aggregated snapshot written`);
+  console.log(`[Ingestion] Completed: ${sourcesWritten} individual sources written, aggregated: ${aggregatedWritten ? 'YES' : 'NO'}`);
   return result;
 }
 
