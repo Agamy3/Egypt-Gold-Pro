@@ -292,29 +292,41 @@ export async function runIngestionCycle(): Promise<IngestionResult> {
 
   // IMPORTANT: Also write the aggregated weighted average as 'aggregated' source
   // This ensures we always have data even if individual sources fail
+  // result.our_price_buy uses string keys like '14', '18', '21', '24'
   if (result.our_price_buy && Object.keys(result.our_price_buy).length > 0) {
     try {
       const aggregatedHash = Buffer.from(JSON.stringify(result)).toString('base64').substring(0, 32);
+      // Extract prices from result.our_price_buy (keys are strings)
+      const price14 = result.our_price_buy['14'] || result.our_price_buy[14] || null;
+      const price18 = result.our_price_buy['18'] || result.our_price_buy[18] || null;
+      const price21 = result.our_price_buy['21'] || result.our_price_buy[21] || null;
+      const price24 = result.our_price_buy['24'] || result.our_price_buy[24] || null;
+      
       const aggregatedResult = await writeEgyptSnapshotToSupabase({
         source: 'aggregated',
         trusted: false, // Aggregated is not a single trusted source
         createdAtMs: now,
         rawHash: aggregatedHash,
         prices: {
-          14: { buy: result.our_price_buy['14'] || null },
-          18: { buy: result.our_price_buy['18'] || null },
-          21: { buy: result.our_price_buy['21'] || null },
-          24: { buy: result.our_price_buy['24'] || null },
+          14: { buy: price14 },
+          18: { buy: price18 },
+          21: { buy: price21 },
+          24: { buy: price24 },
         },
       });
       if (aggregatedResult.ok && aggregatedResult.inserted && aggregatedResult.inserted > 0) {
-        console.log(`[Ingestion] Wrote aggregated snapshot: ${aggregatedResult.inserted} row(s)`);
+        console.log(`[Ingestion] Wrote aggregated snapshot: ${aggregatedResult.inserted} row(s)`, {
+          prices24: price24,
+          prices21: price21,
+        });
       } else {
         console.error(`[Ingestion] Failed to write aggregated snapshot:`, aggregatedResult.error);
       }
     } catch (aggregatedError) {
       console.error(`[Ingestion] Exception writing aggregated snapshot:`, aggregatedError);
     }
+  } else {
+    console.warn('[Ingestion] No aggregated prices to write:', result.our_price_buy);
   }
 
   console.log(`[Ingestion] Completed: ${sourcesWritten} individual sources written, aggregated snapshot written`);
