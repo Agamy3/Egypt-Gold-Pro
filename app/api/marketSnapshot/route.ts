@@ -321,7 +321,23 @@ export async function GET(request: Request) {
         usdPerGram21: pricing.usdPerGram21,
         usdEgpGold: pricing.usdLocalRate, // Map to usdEgpGold for backward compatibility (but it's actually canonical currency rate)
         localMarketParity: pricing.localMarketParity,
-        fairValue: pricing.fairValue,
+        // Convert fair values to selected currency if different from canonical
+        fairValue: (currency !== canonicalCurrency && fxRates) ? {
+          fair24: pricing.fairValue.fair24 !== null 
+            ? convertMoney(pricing.fairValue.fair24, canonicalCurrency, currency, {
+                usd_egp: fxRates.usd_egp,
+                usd_aed: fxRates.usd_aed,
+                usd_sar: fxRates.usd_sar,
+              })
+            : null,
+          fair21: pricing.fairValue.fair21 !== null
+            ? convertMoney(pricing.fairValue.fair21, canonicalCurrency, currency, {
+                usd_egp: fxRates.usd_egp,
+                usd_aed: fxRates.usd_aed,
+                usd_sar: fxRates.usd_sar,
+              })
+            : null,
+        } : pricing.fairValue,
         // Map premiumLocal to premiumEGP for backward compatibility, but it's actually in canonical currency
         variance: {
           variancePct: pricing.variance.variancePct,
