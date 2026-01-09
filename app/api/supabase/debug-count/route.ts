@@ -54,13 +54,14 @@ export async function GET() {
       );
     }
 
-    // Get sample rows (latest 5)
+    // Get sample rows (latest 10) - include aggregated source
     const { data: sampleRows, error: sampleError } = await supabase
       .from('market_snapshots')
       .select('source, createdAt, market21Buy, market24Buy, market18Buy, market14Buy')
       .is('error', null)
+      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
       .order('createdAt', { ascending: false })
-      .limit(5);
+      .limit(10);
 
     if (sampleError) {
       console.error('Error fetching sample rows:', sampleError);
