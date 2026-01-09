@@ -74,6 +74,28 @@ export async function GET() {
     const latestCreatedAtMs = latest?.createdAt ? (typeof latest.createdAt === 'number' ? latest.createdAt : new Date(latest.createdAt).getTime()) : null;
     const minutesAgo = latestCreatedAtMs ? (now - latestCreatedAtMs) / (60 * 1000) : null;
 
+    // Count unique time buckets (10-second buckets) in last 7 days to match forecast
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const { data: allRecentRows, error: recentError } = await supabase
+      .from('market_snapshots')
+      .select('createdAt')
+      .gte('createdAt', sevenDaysAgo)
+      .is('error', null)
+      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
+      .or('market21Buy.not.is.null,market24Buy.not.is.null');
+    
+    let uniqueBuckets = 0;
+    if (!recentError && allRecentRows) {
+      // Group by 10-second buckets (same as forecast)
+      const buckets = new Set<number>();
+      for (const row of allRecentRows) {
+        const createdAt = typeof row.createdAt === 'number' ? row.createdAt : new Date(row.createdAt).getTime();
+        const bucket = Math.floor(createdAt / 10000) * 10000; // 10-second bucket
+        buckets.add(bucket);
+      }
+      uniqueBuckets = buckets.size;
+    }
+
     return NextResponse.json({
       ok: true,
       rowsLast10m: rowsLast10m || 0,
@@ -83,6 +105,9 @@ export async function GET() {
       minutesAgo: minutesAgo,
       sampleRows: sampleRows || [],
       hasAggregated: sampleRows?.some(row => row.source === 'aggregated') || false,
+      // Forecast-equivalent count: unique 10-second buckets in last 7 days
+      forecastDataPoints: uniqueBuckets,
+      totalRowsLast7Days: allRecentRows?.length || 0,
       timestamp: Date.now(),
     });
   } catch (error) {
