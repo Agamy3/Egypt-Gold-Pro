@@ -7,6 +7,7 @@
 
 import 'server-only';
 import db from '../supabase';
+import { NORMALIZED_SNAPSHOTS_TABLE } from './queries';
 
 interface PriceData {
   buy?: number | null;
@@ -72,7 +73,7 @@ export async function writeEgyptSnapshotToSupabase(
 
     // Insert all rows in a batch
     const { error, data: inserted } = await supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .insert(rows)
       .select('id');
 

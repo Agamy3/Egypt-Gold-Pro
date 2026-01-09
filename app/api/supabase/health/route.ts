@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/supabase';
 import { checkSupabaseWrite } from '@/lib/supabase/snapshots';
+import { NORMALIZED_SNAPSHOTS_TABLE } from '@/lib/supabase/queries';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -26,9 +27,9 @@ export async function GET() {
 
     const errors: Record<string, string> = {};
 
-    // Check market_snapshots - validate table exists with correct schema
+    // Check normalized market_snapshots table - validate table exists with correct schema
     const { error: msError, data: msData } = await supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .select('id, market, karat, price_egp, source, trusted, created_at, raw_hash')
       .limit(1)
       .maybeSingle();
@@ -108,8 +109,9 @@ export async function GET() {
     try {
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const { count, error: countError } = await supabase
-        .from('market_snapshots')
+        .from(NORMALIZED_SNAPSHOTS_TABLE)
         .select('*', { count: 'exact', head: true })
+        .eq('market', 'egypt')
         .gte('created_at', tenMinutesAgo);
       
       if (!countError && count !== null) {

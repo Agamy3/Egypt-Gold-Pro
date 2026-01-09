@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import db from '@/lib/supabase';
+import { NORMALIZED_SNAPSHOTS_TABLE } from '@/lib/supabase/queries';
 import { fetchImpliedOunce, fetchGoldApiOunceUsd } from '@/lib/implied-ounce';
 import { fetchIsagha, fetchGoldBillion } from '@/lib/ingestion-adapters';
 import { processSource } from '@/lib/gold-sources-adapters';
@@ -79,25 +80,40 @@ export async function GET() {
     };
 
     try {
-      // Get latest snapshot from DB using Supabase
-      const { data: snapshot } = await db.supabase
-        .from('market_snapshots')
-        .select('createdAt, market21Buy, market21Sell, market24Buy, market24Sell, error')
+      // Get latest snapshots from normalized table (one row per karat)
+      const { data: snapshots } = await db.supabase
+        .from(NORMALIZED_SNAPSHOTS_TABLE)
+        .select('karat, price_egp, created_at, source')
+        .eq('market', 'egypt')
         .eq('source', 'isagha')
-        .order('createdAt', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order('created_at', { ascending: false })
+        .limit(10); // Get recent rows to aggregate
 
-      if (snapshot) {
-        isaghaData.lastIngested = snapshot.createdAt;
-        isaghaData.prices = {
-          market21Buy: snapshot.market21Buy,
-          market21Sell: snapshot.market21Sell,
-          market24Buy: snapshot.market24Buy,
-          market24Sell: snapshot.market24Sell,
+      if (snapshots && snapshots.length > 0) {
+        // Group by created_at to find the latest snapshot group
+        const latestTimestamp = snapshots[0].created_at;
+        const latestSnapshots = snapshots.filter(s => s.created_at === latestTimestamp);
+        
+        // Aggregate prices by karat
+        const prices: { market21Buy: number | null; market21Sell: number | null; market24Buy: number | null; market24Sell: number | null } = {
+          market21Buy: null,
+          market21Sell: null,
+          market24Buy: null,
+          market24Sell: null,
         };
-        isaghaData.lastError = snapshot.error;
-        isaghaData.status = snapshot.error ? 'ERROR' : 'OK';
+        
+        for (const snap of latestSnapshots) {
+          const karat = snap.karat as number;
+          const price = snap.price_egp as number;
+          if (karat === 21) prices.market21Buy = price;
+          if (karat === 24) prices.market24Buy = price;
+          // Normalized schema doesn't have sell prices
+        }
+        
+        isaghaData.lastIngested = new Date(latestTimestamp).getTime();
+        isaghaData.prices = prices;
+        isaghaData.status = (prices.market21Buy || prices.market24Buy) ? 'OK' : 'ERROR';
+        isaghaData.lastError = (prices.market21Buy || prices.market24Buy) ? null : 'No valid prices';
       } else {
         isaghaData.status = 'UNKNOWN';
         isaghaData.lastError = 'No snapshots found';
@@ -196,24 +212,40 @@ export async function GET() {
     };
 
     try {
-      const { data: snapshot } = await db.supabase
-        .from('market_snapshots')
-        .select('createdAt, market21Buy, market21Sell, market24Buy, market24Sell, error')
+      // Get latest snapshots from normalized table (one row per karat)
+      const { data: snapshots } = await db.supabase
+        .from(NORMALIZED_SNAPSHOTS_TABLE)
+        .select('karat, price_egp, created_at, source')
+        .eq('market', 'egypt')
         .eq('source', 'goldbillion')
-        .order('createdAt', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order('created_at', { ascending: false })
+        .limit(10); // Get recent rows to aggregate
 
-      if (snapshot) {
-        goldBillionData.status = snapshot.error ? 'ERROR' : 'OK';
-        goldBillionData.lastIngested = snapshot.createdAt;
-        goldBillionData.prices = {
-          market21Buy: snapshot.market21Buy,
-          market21Sell: snapshot.market21Sell,
-          market24Buy: snapshot.market24Buy,
-          market24Sell: snapshot.market24Sell,
+      if (snapshots && snapshots.length > 0) {
+        // Group by created_at to find the latest snapshot group
+        const latestTimestamp = snapshots[0].created_at;
+        const latestSnapshots = snapshots.filter(s => s.created_at === latestTimestamp);
+        
+        // Aggregate prices by karat
+        const prices: { market21Buy: number | null; market21Sell: number | null; market24Buy: number | null; market24Sell: number | null } = {
+          market21Buy: null,
+          market21Sell: null,
+          market24Buy: null,
+          market24Sell: null,
         };
-        goldBillionData.lastError = snapshot.error;
+        
+        for (const snap of latestSnapshots) {
+          const karat = snap.karat as number;
+          const price = snap.price_egp as number;
+          if (karat === 21) prices.market21Buy = price;
+          if (karat === 24) prices.market24Buy = price;
+          // Normalized schema doesn't have sell prices
+        }
+        
+        goldBillionData.status = (prices.market21Buy || prices.market24Buy) ? 'OK' : 'ERROR';
+        goldBillionData.lastIngested = new Date(latestTimestamp).getTime();
+        goldBillionData.prices = prices;
+        goldBillionData.lastError = (prices.market21Buy || prices.market24Buy) ? null : 'No valid prices';
       } else {
         goldBillionData.status = 'UNKNOWN';
         goldBillionData.lastIngested = null;

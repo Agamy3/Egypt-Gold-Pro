@@ -7,6 +7,9 @@
 
 import db from '../supabase';
 
+// Normalized table name constant
+export const NORMALIZED_SNAPSHOTS_TABLE = 'market_snapshots_long';
+
 export interface EgyptMarketPrices {
   market21Buy: number | null;
   market21Sell: number | null;
@@ -38,7 +41,7 @@ export async function getEgyptMarketMedians(
 
   // Query using normalized schema: market, karat, price_egp, source, trusted, created_at
   let query = supabase
-    .from('market_snapshots')
+    .from(NORMALIZED_SNAPSHOTS_TABLE)
     .select('karat, price_egp, source, trusted, created_at')
     .eq('market', 'egypt')
     .gte('created_at', windowStartISO);
@@ -161,7 +164,7 @@ export async function getEgyptMarketSeries(
 
   // Query using normalized schema
   let query = supabase
-    .from('market_snapshots')
+    .from(NORMALIZED_SNAPSHOTS_TABLE)
     .select('karat, price_egp, created_at')
     .eq('market', 'egypt')
     .eq('karat', karat)
@@ -231,7 +234,7 @@ export async function getActiveSourceCount(
 
   // Query using normalized schema
   let query = supabase
-    .from('market_snapshots')
+    .from(NORMALIZED_SNAPSHOTS_TABLE)
     .select('source, trusted, created_at')
     .eq('market', 'egypt')
     .gte('created_at', windowStartISO)

@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { getServerClient } from '@/lib/supabase/server';
+import { NORMALIZED_SNAPSHOTS_TABLE } from '@/lib/supabase/queries';
 import { getGoldSpotHistory } from '@/lib/supabase/goldSpot';
 
 export const dynamic = 'force-dynamic';
@@ -106,7 +107,7 @@ export async function GET(request: Request) {
     const windowStartISO = new Date(windowStart).toISOString();
     
     let snapshotQuery = supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .select('karat, price_egp, source, trusted, created_at')
       .eq('market', 'egypt')
       .in('karat', [21, 24]) // Only need 21k and 24k for chart

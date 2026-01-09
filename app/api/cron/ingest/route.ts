@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/supabase';
 import { fetchIsagha, fetchGoldBillion } from '@/lib/ingestion-adapters';
 import { writeEgyptSnapshotToSupabase } from '@/lib/supabase/writeMarketSnapshot';
+import { NORMALIZED_SNAPSHOTS_TABLE } from '@/lib/supabase/queries';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
       // Check for duplicate (same hash in last 5 minutes) using normalized schema
       const fiveMinutesAgoISO = new Date(now - 5 * 60 * 1000).toISOString();
       const { data: recentDuplicate } = await db.supabase
-        .from('market_snapshots')
+        .from(NORMALIZED_SNAPSHOTS_TABLE)
         .select('id')
         .eq('market', 'egypt')
         .eq('source', 'isagha')
@@ -166,7 +167,7 @@ export async function GET(request: NextRequest) {
       // Check for duplicate (same hash in last 5 minutes) using normalized schema
       const fiveMinutesAgoISO = new Date(now - 5 * 60 * 1000).toISOString();
       const { data: recentDuplicate } = await db.supabase
-        .from('market_snapshots')
+        .from(NORMALIZED_SNAPSHOTS_TABLE)
         .select('id')
         .eq('market', 'egypt')
         .eq('source', 'goldbillion')

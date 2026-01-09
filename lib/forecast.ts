@@ -6,6 +6,7 @@
  */
 
 import db from './supabase';
+import { NORMALIZED_SNAPSHOTS_TABLE } from './supabase/queries';
 import { getGoldSpotHistory } from './supabase/goldSpot';
 import { calculatePricing } from './pricing';
 
@@ -61,7 +62,7 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
     const windowStartISO = new Date(windowStart).toISOString();
 
     let snapshotQuery = db.supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .select('karat, price_egp, source, trusted, created_at')
       .eq('market', 'egypt')
       .in('karat', [21, 24]) // Only need 21k and 24k for forecast

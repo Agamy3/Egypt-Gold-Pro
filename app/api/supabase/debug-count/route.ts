@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import db from '@/lib/supabase';
+import { NORMALIZED_SNAPSHOTS_TABLE } from '@/lib/supabase/queries';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -21,21 +22,21 @@ export async function GET() {
 
     // Count rows in last 10 minutes
     const { count: rowsLast10m, error: error10m } = await supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .select('*', { count: 'exact', head: true })
       .eq('market', 'egypt')
       .gte('created_at', tenMinutesAgo);
 
     // Count rows in last 60 minutes
     const { count: rowsLast60m, error: error60m } = await supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .select('*', { count: 'exact', head: true })
       .eq('market', 'egypt')
       .gte('created_at', sixtyMinutesAgo);
 
     // Get latest created_at
     const { data: latest, error: latestError } = await supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .select('created_at')
       .eq('market', 'egypt')
       .order('created_at', { ascending: false })
@@ -56,7 +57,7 @@ export async function GET() {
 
     // Get sample rows (latest 5)
     const { data: sampleRows, error: sampleError } = await supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .select('market, karat, price_egp, source, trusted, created_at')
       .eq('market', 'egypt')
       .order('created_at', { ascending: false })

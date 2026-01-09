@@ -6,6 +6,7 @@
  */
 
 import db from '../supabase';
+import { NORMALIZED_SNAPSHOTS_TABLE } from './queries';
 
 /**
  * Insert market snapshot into Supabase (normalized schema)
@@ -73,7 +74,7 @@ export async function insertMarketSnapshot(
 
     // Insert all rows in a batch
     const { error, data: inserted } = await supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .insert(rows)
       .select();
 
@@ -115,7 +116,7 @@ export async function checkSupabaseWrite(): Promise<{
     
     // Try a simple count query to verify access
     const { count, error } = await supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .select('*', { count: 'exact', head: true });
 
     if (error) {
@@ -128,7 +129,7 @@ export async function checkSupabaseWrite(): Promise<{
     // Check for recent inserts (last 10 minutes) for market='egypt'
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const { data: recent, error: recentError } = await supabase
-      .from('market_snapshots')
+      .from(NORMALIZED_SNAPSHOTS_TABLE)
       .select('created_at')
       .eq('market', 'egypt')
       .gte('created_at', tenMinutesAgo)
