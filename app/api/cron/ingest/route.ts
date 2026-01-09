@@ -76,88 +76,45 @@ export async function GET(request: NextRequest) {
     // Process iSagha result
     try {
       const rawHash = generateHash(isaghaResult.rawResponse);
+      const now = Date.now();
       
-      // Check for duplicate (same hash in last 5 minutes)
+      // Check for duplicate (same hash in last 5 minutes) using normalized schema
+      const fiveMinutesAgoISO = new Date(now - 5 * 60 * 1000).toISOString();
       const { data: recentDuplicate } = await db.supabase
         .from('market_snapshots')
         .select('id')
+        .eq('market', 'egypt')
         .eq('source', 'isagha')
-        .eq('rawHash', rawHash)
-        .gt('createdAt', Date.now() - 5 * 60 * 1000)
+        .eq('raw_hash', rawHash)
+        .gte('created_at', fiveMinutesAgoISO)
         .limit(1)
         .maybeSingle();
 
-      if (!recentDuplicate) {
-        const now = Date.now();
-        
-        // Insert into market_snapshots table using Supabase
+      if (!recentDuplicate && !isaghaResult.error && (isaghaResult.market21Buy || isaghaResult.market24Buy || isaghaResult.market18Buy || isaghaResult.market14Buy)) {
+        // Write to normalized Supabase schema only
         try {
-          const { error: insertError } = await db.supabase
-            .from('market_snapshots')
-            .insert({
-              createdAt: now,
-              source: 'isagha',
-              market21Buy: isaghaResult.market21Buy,
-              market21Sell: isaghaResult.market21Sell,
-              market24Buy: isaghaResult.market24Buy,
-              market24Sell: isaghaResult.market24Sell,
-              usdBuy: isaghaResult.usdBuy,
-              usdSell: isaghaResult.usdSell,
-              rawHash: rawHash,
-              error: isaghaResult.error,
-              httpStatus: isaghaResult.httpStatus || null,
-              url: isaghaResult.url || null,
-              rawResponseSnippet: isaghaResult.rawResponse?.substring(0, 1200) || null,
-            });
-          
-          if (insertError) {
-            // Fallback: INSERT without optional columns if they don't exist
-            const { error: fallbackError } = await db.supabase
-              .from('market_snapshots')
-              .insert({
-                createdAt: now,
-                source: 'isagha',
-                market21Buy: isaghaResult.market21Buy,
-                market21Sell: isaghaResult.market21Sell,
-                market24Buy: isaghaResult.market24Buy,
-                market24Sell: isaghaResult.market24Sell,
-                usdBuy: isaghaResult.usdBuy,
-                usdSell: isaghaResult.usdSell,
-                rawHash: rawHash,
-                error: isaghaResult.error,
-              });
-            
-            if (fallbackError) {
-              console.error(`Failed to insert isagha snapshot:`, fallbackError.message);
-            }
+          const supabaseResult = await writeEgyptSnapshotToSupabase({
+            source: 'isagha',
+            trusted: false,
+            createdAtMs: now,
+            rawHash,
+            prices: {
+              14: { buy: isaghaResult.market14Buy || null },
+              18: { buy: isaghaResult.market18Buy || null },
+              21: { buy: isaghaResult.market21Buy || null },
+              24: { buy: isaghaResult.market24Buy || null },
+            },
+          });
+          if (supabaseResult.ok && supabaseResult.inserted && supabaseResult.inserted > 0) {
+            results.inserted++;
+            console.log(`[Cron] Inserted ${supabaseResult.inserted} rows for isagha`);
+          } else {
+            console.error('[Cron] Write failed for isagha:', supabaseResult.error);
           }
-        } catch (dbError: any) {
-          console.error(`Failed to insert isagha snapshot:`, dbError.message);
+        } catch (supabaseError) {
+          // Non-fatal: log and continue
+          console.error('[Cron] Write exception for isagha:', supabaseError);
         }
-        
-        // Also write to Supabase (non-fatal)
-        if (!isaghaResult.error && (isaghaResult.market21Buy || isaghaResult.market24Buy)) {
-          try {
-            const supabaseResult = await writeEgyptSnapshotToSupabase({
-              source: 'isagha',
-              trusted: false,
-              createdAtMs: now,
-              rawHash,
-              prices: {
-                21: { buy: isaghaResult.market21Buy || null },
-                24: { buy: isaghaResult.market24Buy || null },
-              },
-            });
-            if (!supabaseResult.ok) {
-              console.error('[Supabase] Write failed for isagha:', supabaseResult.error);
-            }
-          } catch (supabaseError) {
-            // Non-fatal: log and continue
-            console.error('[Supabase] Write exception for isagha:', supabaseError);
-          }
-        }
-        
-        results.inserted++;
       }
       
       // Add fetch errors to results
@@ -176,88 +133,45 @@ export async function GET(request: NextRequest) {
     // Process GoldBillion result
     try {
       const rawHash = generateHash(goldBillionResult.rawResponse);
+      const now = Date.now();
       
-      // Check for duplicate (same hash in last 5 minutes)
+      // Check for duplicate (same hash in last 5 minutes) using normalized schema
+      const fiveMinutesAgoISO = new Date(now - 5 * 60 * 1000).toISOString();
       const { data: recentDuplicate } = await db.supabase
         .from('market_snapshots')
         .select('id')
+        .eq('market', 'egypt')
         .eq('source', 'goldbillion')
-        .eq('rawHash', rawHash)
-        .gt('createdAt', Date.now() - 5 * 60 * 1000)
+        .eq('raw_hash', rawHash)
+        .gte('created_at', fiveMinutesAgoISO)
         .limit(1)
         .maybeSingle();
 
-      if (!recentDuplicate) {
-        const now = Date.now();
-        
-        // Insert into market_snapshots table using Supabase
+      if (!recentDuplicate && !goldBillionResult.error && (goldBillionResult.market21Buy || goldBillionResult.market24Buy || goldBillionResult.market18Buy || goldBillionResult.market14Buy)) {
+        // Write to normalized Supabase schema only
         try {
-          const { error: insertError } = await db.supabase
-            .from('market_snapshots')
-            .insert({
-              createdAt: now,
-              source: 'goldbillion',
-              market21Buy: goldBillionResult.market21Buy,
-              market21Sell: goldBillionResult.market21Sell,
-              market24Buy: goldBillionResult.market24Buy,
-              market24Sell: goldBillionResult.market24Sell,
-              usdBuy: goldBillionResult.usdBuy,
-              usdSell: goldBillionResult.usdSell,
-              rawHash: rawHash,
-              error: goldBillionResult.error,
-              httpStatus: goldBillionResult.httpStatus || null,
-              url: goldBillionResult.url || null,
-              rawResponseSnippet: goldBillionResult.rawResponse?.substring(0, 1200) || null,
-            });
-          
-          if (insertError) {
-            // Fallback: INSERT without optional columns if they don't exist
-            const { error: fallbackError } = await db.supabase
-              .from('market_snapshots')
-              .insert({
-                createdAt: now,
-                source: 'goldbillion',
-                market21Buy: goldBillionResult.market21Buy,
-                market21Sell: goldBillionResult.market21Sell,
-                market24Buy: goldBillionResult.market24Buy,
-                market24Sell: goldBillionResult.market24Sell,
-                usdBuy: goldBillionResult.usdBuy,
-                usdSell: goldBillionResult.usdSell,
-                rawHash: rawHash,
-                error: goldBillionResult.error,
-              });
-            
-            if (fallbackError) {
-              console.error(`Failed to insert goldbillion snapshot:`, fallbackError.message);
-            }
+          const supabaseResult = await writeEgyptSnapshotToSupabase({
+            source: 'goldbillion',
+            trusted: false,
+            createdAtMs: now,
+            rawHash,
+            prices: {
+              14: { buy: goldBillionResult.market14Buy || null },
+              18: { buy: goldBillionResult.market18Buy || null },
+              21: { buy: goldBillionResult.market21Buy || null },
+              24: { buy: goldBillionResult.market24Buy || null },
+            },
+          });
+          if (supabaseResult.ok && supabaseResult.inserted && supabaseResult.inserted > 0) {
+            results.inserted++;
+            console.log(`[Cron] Inserted ${supabaseResult.inserted} rows for goldbillion`);
+          } else {
+            console.error('[Cron] Write failed for goldbillion:', supabaseResult.error);
           }
-        } catch (dbError: any) {
-          console.error(`Failed to insert goldbillion snapshot:`, dbError.message);
+        } catch (supabaseError) {
+          // Non-fatal: log and continue
+          console.error('[Cron] Write exception for goldbillion:', supabaseError);
         }
-        
-        // Also write to Supabase (non-fatal)
-        if (!goldBillionResult.error && (goldBillionResult.market21Buy || goldBillionResult.market24Buy)) {
-          try {
-            const supabaseResult = await writeEgyptSnapshotToSupabase({
-              source: 'goldbillion',
-              trusted: false,
-              createdAtMs: now,
-              rawHash,
-              prices: {
-                21: { buy: goldBillionResult.market21Buy || null },
-                24: { buy: goldBillionResult.market24Buy || null },
-              },
-            });
-            if (!supabaseResult.ok) {
-              console.error('[Supabase] Write failed for goldbillion:', supabaseResult.error);
-            }
-          } catch (supabaseError) {
-            // Non-fatal: log and continue
-            console.error('[Supabase] Write exception for goldbillion:', supabaseError);
-          }
-        }
-        
-        results.inserted++;
       }
       
       // Add fetch errors to results
