@@ -1,46 +1,16 @@
 /**
  * Cron Ingestion Endpoint
  * 
- * Fetches Egypt gold prices from iSagha and GoldBillion
- * and stores snapshots in the database
+ * Fetches Egypt gold prices from local market sources:
+ * - banklive, gold_era, dokangold, goldrate24, goldbullioneg
+ * Uses weighted averages and stores snapshots in Supabase
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import db from '@/lib/supabase';
-import { fetchIsagha, fetchGoldBillion } from '@/lib/ingestion-adapters';
-import { writeEgyptSnapshotToSupabase } from '@/lib/supabase/writeMarketSnapshot';
-import crypto from 'crypto';
+import { runIngestionCycle } from '@/lib/gold-ingestion-engine';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-
-/**
- * Generate hash from raw response for deduplication
- */
-function generateHash(content: string): string {
-  return crypto.createHash('sha256').update(content).digest('hex').substring(0, 32);
-}
-
-/**
- * Type-safe check if IngestionResult has any valid buy prices
- * Checks both direct fields (market21Buy, market24Buy) and prices map if available
- */
-function hasValidBuyPrices(result: { market21Buy?: number | null; market24Buy?: number | null; prices?: Record<string, { buy?: number | null }> }): boolean {
-  // Check prices map first (if available)
-  if (result.prices && typeof result.prices === 'object') {
-    const prices = Object.values(result.prices);
-    return prices.some(price => {
-      const buyPrice = typeof price === 'object' && price !== null ? price.buy : null;
-      return typeof buyPrice === 'number' && isFinite(buyPrice) && buyPrice > 0;
-    });
-  }
-  
-  // Fallback to direct fields (for backward compatibility)
-  return (
-    (typeof result.market21Buy === 'number' && isFinite(result.market21Buy) && result.market21Buy > 0) ||
-    (typeof result.market24Buy === 'number' && isFinite(result.market24Buy) && result.market24Buy > 0)
-  );
-}
 
 export async function GET(request: NextRequest) {
   // Guard: Check CRON_SECRET (with dev mode exception)
@@ -81,146 +51,35 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const results = {
-    inserted: 0,
-    errors: [] as Array<{ source: string; error: string }>,
-    timestamp: Date.now(),
-  };
-
   try {
-    // Fetch all sources in parallel
-    const [isaghaResult, goldBillionResult] = await Promise.all([
-      fetchIsagha(),
-      fetchGoldBillion(),
-    ]);
+    // Use the local market data ingestion engine instead of outdated iSagha/GoldBillion
+    // This uses sources: banklive, gold_era, dokangold, goldrate24, goldbullioneg
+    console.log('[Cron] Starting local market data ingestion...');
+    const ingestionResult = await runIngestionCycle();
+    
+    // Count how many sources were successfully ingested
+    const sourcesWithData = Object.values(ingestionResult.breakdown).flatMap(karatData => 
+      Object.keys(karatData).filter(source => karatData[source].valid)
+    );
+    const uniqueSources = new Set(sourcesWithData);
+    
+    const results = {
+      inserted: uniqueSources.size,
+      sourcesProcessed: uniqueSources.size,
+      sourcesUsed: Array.from(uniqueSources),
+      numSourcesOk: ingestionResult.num_sources_ok,
+      numSourcesErrors: ingestionResult.num_sources_errors,
+      errors: ingestionResult.errors.map(err => ({ source: 'ingestion', error: err })),
+      timestamp: Date.now(),
+      confidence: ingestionResult.confidence,
+      prices: ingestionResult.our_price_buy,
+    };
 
-    // Process iSagha result
-    try {
-      const rawHash = generateHash(isaghaResult.rawResponse);
-      const now = Date.now();
-      
-      // Check for duplicate (same hash in last 5 minutes) using wide schema
-      const fiveMinutesAgo = now - 5 * 60 * 1000;
-      const fiveMinutesAgoISO = new Date(fiveMinutesAgo).toISOString();
-      const { data: recentDuplicate } = await db.supabase
-        .from('market_snapshots')
-        .select('id')
-        .eq('source', 'isagha')
-        .eq('rawHash', rawHash)
-        .gte('createdAt', fiveMinutesAgoISO)
-        .limit(1)
-        .maybeSingle();
-
-      if (!recentDuplicate && !isaghaResult.error && hasValidBuyPrices(isaghaResult)) {
-        // Write to normalized Supabase schema only
-        // Extract prices from prices map if available, otherwise use direct fields
-        const pricesMap = (isaghaResult as any).prices;
-        const buy21 = pricesMap?.[21]?.buy ?? isaghaResult.market21Buy ?? null;
-        const buy24 = pricesMap?.[24]?.buy ?? isaghaResult.market24Buy ?? null;
-        const buy18 = pricesMap?.[18]?.buy ?? null;
-        const buy14 = pricesMap?.[14]?.buy ?? null;
-        
-        try {
-          const supabaseResult = await writeEgyptSnapshotToSupabase({
-            source: 'isagha',
-            trusted: false,
-            createdAtMs: now,
-            rawHash,
-            prices: {
-              14: { buy: buy14 },
-              18: { buy: buy18 },
-              21: { buy: buy21 },
-              24: { buy: buy24 },
-            },
-          });
-          if (supabaseResult.ok && supabaseResult.inserted && supabaseResult.inserted > 0) {
-            results.inserted++;
-            console.log(`[Cron] Inserted ${supabaseResult.inserted} rows for isagha`);
-          } else {
-            console.error('[Cron] Write failed for isagha:', supabaseResult.error);
-          }
-        } catch (supabaseError) {
-          // Non-fatal: log and continue
-          console.error('[Cron] Write exception for isagha:', supabaseError);
-        }
-      }
-      
-      // Add fetch errors to results
-      if (isaghaResult.error) {
-        results.errors.push({ source: 'isagha', error: isaghaResult.error });
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      results.errors.push({ source: 'isagha', error: `DB insert failed: ${errorMessage}` });
-      // Also add original fetch error if any
-      if (isaghaResult.error) {
-        results.errors.push({ source: 'isagha', error: isaghaResult.error });
-      }
-    }
-
-    // Process GoldBillion result
-    try {
-      const rawHash = generateHash(goldBillionResult.rawResponse);
-      const now = Date.now();
-      
-      // Check for duplicate (same hash in last 5 minutes) using wide schema
-      const fiveMinutesAgo = now - 5 * 60 * 1000;
-      const fiveMinutesAgoISO = new Date(fiveMinutesAgo).toISOString();
-      const { data: recentDuplicate } = await db.supabase
-        .from('market_snapshots')
-        .select('id')
-        .eq('source', 'goldbillion')
-        .eq('rawHash', rawHash)
-        .gte('createdAt', fiveMinutesAgoISO)
-        .limit(1)
-        .maybeSingle();
-
-      if (!recentDuplicate && !goldBillionResult.error && hasValidBuyPrices(goldBillionResult)) {
-        // Write to normalized Supabase schema only
-        // Extract prices from prices map if available, otherwise use direct fields
-        const pricesMap = (goldBillionResult as any).prices;
-        const buy21 = pricesMap?.[21]?.buy ?? goldBillionResult.market21Buy ?? null;
-        const buy24 = pricesMap?.[24]?.buy ?? goldBillionResult.market24Buy ?? null;
-        const buy18 = pricesMap?.[18]?.buy ?? null;
-        const buy14 = pricesMap?.[14]?.buy ?? null;
-        
-        try {
-          const supabaseResult = await writeEgyptSnapshotToSupabase({
-            source: 'goldbillion',
-            trusted: false,
-            createdAtMs: now,
-            rawHash,
-            prices: {
-              14: { buy: buy14 },
-              18: { buy: buy18 },
-              21: { buy: buy21 },
-              24: { buy: buy24 },
-            },
-          });
-          if (supabaseResult.ok && supabaseResult.inserted && supabaseResult.inserted > 0) {
-            results.inserted++;
-            console.log(`[Cron] Inserted ${supabaseResult.inserted} rows for goldbillion`);
-          } else {
-            console.error('[Cron] Write failed for goldbillion:', supabaseResult.error);
-          }
-        } catch (supabaseError) {
-          // Non-fatal: log and continue
-          console.error('[Cron] Write exception for goldbillion:', supabaseError);
-        }
-      }
-      
-      // Add fetch errors to results
-      if (goldBillionResult.error) {
-        results.errors.push({ source: 'goldbillion', error: goldBillionResult.error });
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      results.errors.push({ source: 'goldbillion', error: `DB insert failed: ${errorMessage}` });
-      // Also add original fetch error if any
-      if (goldBillionResult.error) {
-        results.errors.push({ source: 'goldbillion', error: goldBillionResult.error });
-      }
-    }
+    console.log('[Cron] Ingestion complete:', {
+      sourcesOk: ingestionResult.num_sources_ok,
+      sourcesErrors: ingestionResult.num_sources_errors,
+      uniqueSources: Array.from(uniqueSources),
+    });
 
     return NextResponse.json(results, { status: 200 });
 
@@ -230,8 +89,13 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json(
       {
-        ...results,
-        errors: [...results.errors, { source: 'system', error: errorMessage }],
+        inserted: 0,
+        sourcesProcessed: 0,
+        sourcesUsed: [],
+        numSourcesOk: 0,
+        numSourcesErrors: 0,
+        errors: [{ source: 'system', error: errorMessage }],
+        timestamp: Date.now(),
       },
       { status: 500 }
     );
