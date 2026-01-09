@@ -11,33 +11,8 @@ import { calculatePricing } from '@/lib/pricing';
 import { getUsdEgpRate } from '@/lib/fx';
 import { getEgyptMarketMedians, getActiveSourceCount } from '@/lib/supabase/queries';
 
-// Trusted source configuration (safe defaults, no undefined errors)
-function getTrustedMode(request: Request): boolean {
-  // Check for client override in header or query param
-  const url = new URL(request.url);
-  const queryOverride = url.searchParams.get('trustedMode');
-  if (queryOverride !== null) {
-    return queryOverride === 'true';
-  }
-  
-  // Check header override
-  const headerOverride = request.headers.get('x-trusted-mode');
-  if (headerOverride !== null) {
-    return headerOverride === 'true';
-  }
-  
-  // Fall back to environment variables
-  return (
-    process.env.EGYPT_TRUSTED_ONLY_MODE === 'true' ||
-    process.env.NEXT_PUBLIC_EGYPT_TRUSTED_ONLY_MODE === 'true'
-  );
-}
-
-const TRUSTED_EGYPT_SOURCES = new Set(['goldbullioneg']);
-const isTrustedEgyptSource = (sourceKey: string, trustedMode: boolean): boolean => {
-  if (!trustedMode) return true; // If mode is off, all sources are trusted
-  return TRUSTED_EGYPT_SOURCES.has(sourceKey);
-};
+// Always use all sources (trusted mode toggle removed from UI)
+const USE_ALL_SOURCES = false; // Always false to use all sources
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -45,8 +20,8 @@ export const revalidate = 0;
 export async function GET(request: Request) {
   const errors: Array<{ source: string; message: string }> = [];
   
-  // Get trusted mode (check for client override)
-  const EGYPT_TRUSTED_ONLY_MODE = getTrustedMode(request);
+  // Always use all sources (trusted mode toggle removed)
+  const EGYPT_TRUSTED_ONLY_MODE = false;
   
   try {
     // Fetch Egypt Market Implied Ounce with individual error handling
@@ -113,9 +88,10 @@ export async function GET(request: Request) {
     const fxUnavailable = usdEgp === null || !Number.isFinite(usdEgp) || usdEgp <= 0;
 
     // Fetch Egypt market prices from Supabase (new normalized schema)
+    // Always use all sources (trustedMode=false) since we removed the toggle
     let egyptMarketData;
     try {
-      egyptMarketData = await getEgyptMarketMedians(EGYPT_TRUSTED_ONLY_MODE, 60);
+      egyptMarketData = await getEgyptMarketMedians(false, 60);
       
       // If no data in Supabase, trigger ingestion (but don't wait for it)
       if (egyptMarketData.activeSourceCount === 0 && egyptMarketData.lastUpdated === 0) {
@@ -150,10 +126,10 @@ export async function GET(request: Request) {
       };
     }
 
-    // Get active source count from Supabase
+    // Get active source count from Supabase (all sources, not trusted-only)
     let activeSources = egyptMarketData.activeSourceCount;
     try {
-      activeSources = await getActiveSourceCount(EGYPT_TRUSTED_ONLY_MODE, 60);
+      activeSources = await getActiveSourceCount(false, 60);
     } catch (error) {
       console.error('Market snapshot error: Failed to get active source count -', error);
       // Use the count from egyptMarketData as fallback
@@ -286,12 +262,8 @@ export async function GET(request: Request) {
         ],
         activeSourceCount: activeSources, // Only counts trusted sources
         activeUnderlyingSourceCount: activeUnderlyingSourceCount,
-        activeUnderlyingSources: activeUnderlyingSources,
+        activeUnderlyingSources: activeUnderlyingSourceCount,
         sourcesUsed: sourcesUsed,
-        trusted: {
-          mode: EGYPT_TRUSTED_ONLY_MODE ? 'SINGLE_SOURCE' : 'ALL_SOURCES',
-          source: EGYPT_TRUSTED_ONLY_MODE ? 'goldbullioneg' : null,
-        },
       },
       pricing: pricing ? {
         ...pricing,

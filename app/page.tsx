@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Dashboard from '@/components/Dashboard';
-import SourceAuditPanel from '@/components/SourceAuditPanel';
 import ForecastCard from '@/components/ForecastCard';
-import TrustedModeToggle from '@/components/TrustedModeToggle';
 import LanguageToggle from '@/components/LanguageToggle';
 import { useLang } from '@/components/LanguageProvider';
 import { t } from '@/lib/i18n';
@@ -68,18 +66,10 @@ export default function Home() {
   const [forecast, setForecast] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
 
   const fetchSnapshot = async () => {
     try {
-      // Get trusted mode preference from localStorage
-      const trustedMode = localStorage.getItem('egyptTrustedOnlyMode') === 'true';
-      const url = `/api/marketSnapshot${trustedMode ? '?trustedMode=true' : ''}`;
-      
-      const res = await fetch(url, {
-        headers: {
-          'x-trusted-mode': trustedMode ? 'true' : 'false',
-        },
+      const res = await fetch('/api/marketSnapshot', {
         cache: 'no-store', // Ensure fresh data on every fetch
       });
       if (!res.ok) {
@@ -100,14 +90,7 @@ export default function Home() {
 
   const fetchForecast = async () => {
     try {
-      // Get trusted mode preference from localStorage
-      const trustedMode = localStorage.getItem('egyptTrustedOnlyMode') === 'true';
-      const url = `/api/forecast${trustedMode ? '?trustedMode=true' : ''}`;
-      
-      const res = await fetch(url, {
-        headers: {
-          'x-trusted-mode': trustedMode ? 'true' : 'false',
-        },
+      const res = await fetch('/api/forecast', {
         cache: 'no-store', // Ensure fresh data on every fetch
       });
       if (res.ok) {
@@ -120,11 +103,6 @@ export default function Home() {
     }
   };
 
-  const handleTrustedModeToggle = (enabled: boolean) => {
-    // Refresh data when mode changes
-    fetchSnapshot();
-    fetchForecast();
-  };
 
   useEffect(() => {
     fetchSnapshot();
@@ -176,13 +154,6 @@ export default function Home() {
             </div>
             <div className={`flex items-center gap-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               <LanguageToggle />
-              <TrustedModeToggle onToggle={handleTrustedModeToggle} />
-              <button
-                onClick={() => setShowDebug(!showDebug)}
-                className="px-4 py-2 text-sm bg-gray-800 text-gray-200 rounded hover:bg-gray-700"
-              >
-                {showDebug ? (lang === 'ar' ? 'إخفاء' : 'Hide') : t(lang, 'showSourceAudit')}
-              </button>
             </div>
           </div>
         </div>
@@ -200,7 +171,6 @@ export default function Home() {
                 />
               </div>
             )}
-            {showDebug && <SourceAuditPanel />}
           </>
         )}
       </main>
