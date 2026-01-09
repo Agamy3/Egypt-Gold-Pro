@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import HoverTip from './ui/HoverTip';
 import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
@@ -143,6 +144,7 @@ function getCountryMarketLabel(country: string | undefined, karat: '21' | '24', 
 
 export default function Dashboard({ snapshot }: DashboardProps) {
   const { lang } = useLang();
+  const [expandedCard, setExpandedCard] = React.useState<string | null>(null);
   
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -205,7 +207,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
       {/* Main Dashboard Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Global Spot Gold Price */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gold-600`}>
+        <div 
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gold-600 transition-all duration-300 cursor-pointer ${
+            expandedCard === 'global' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
+          }`}
+          onMouseEnter={() => setExpandedCard('global')}
+          onMouseLeave={() => setExpandedCard(null)}
+          onClick={() => setExpandedCard(expandedCard === 'global' ? null : 'global')}
+        >
           <HoverTip text={lang === 'ar' ? 'سعر الذهب العالمي الفوري لكل أونصة تروي (XAUUSD). يُستخدم كمرجع لحسابات القيمة العادلة.' : "Global spot gold price per troy ounce (XAUUSD). Used as the reference for fair-value calculations."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {lang === 'ar' ? 'السعر الفوري العالمي للذهب' : 'Global Spot Gold (USD)'}
@@ -240,7 +249,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* Market 21k */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600`}>
+        <div 
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600 transition-all duration-300 cursor-pointer ${
+            expandedCard === '21k' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
+          }`}
+          onMouseEnter={() => setExpandedCard('21k')}
+          onMouseLeave={() => setExpandedCard(null)}
+          onClick={() => setExpandedCard(expandedCard === '21k' ? null : '21k')}
+        >
           <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 21k المتاحة من المصادر النشطة.' : "Median of available 21k buy prices from active sources."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {getCountryMarketLabel(snapshot.country, '21', lang)}
@@ -283,7 +299,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* Market 24k */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-purple-600`}>
+        <div 
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-purple-600 transition-all duration-300 cursor-pointer ${
+            expandedCard === '24k' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
+          }`}
+          onMouseEnter={() => setExpandedCard('24k')}
+          onMouseLeave={() => setExpandedCard(null)}
+          onClick={() => setExpandedCard(expandedCard === '24k' ? null : '24k')}
+        >
           <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 24k المتاحة من المصادر النشطة.' : "Median of available 24k buy prices from active sources."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {getCountryMarketLabel(snapshot.country, '24', lang)}
@@ -326,12 +349,19 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* USD Exchange Rate */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-green-600`}>
+        <div 
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-green-600 transition-all duration-300 cursor-pointer ${
+            expandedCard === 'fx' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
+          }`}
+          onMouseEnter={() => setExpandedCard('fx')}
+          onMouseLeave={() => setExpandedCard(null)}
+          onClick={() => setExpandedCard(expandedCard === 'fx' ? null : 'fx')}
+        >
           <HoverTip text={lang === 'ar' ? 'سعر الصرف الفوري للدولار المستخدم لتحويل أسعار الذهب العالمية إلى القيمة المحلية.' : "Live USD exchange rate used to convert global gold prices into local fair value."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {(() => {
-                // Determine currency from canonicalCurrency or fallback to country
-                const curr = snapshot.canonicalCurrency || 
+                // Use selected currency (or canonical currency as fallback, then country)
+                const curr = snapshot.currency || snapshot.canonicalCurrency || 
                             (snapshot.country === 'EG' ? 'EGP' :
                              snapshot.country === 'AE' ? 'AED' :
                              snapshot.country === 'SA' ? 'SAR' :
@@ -339,6 +369,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                 return curr === 'EGP' ? (t(lang, 'usdEgp') || 'USD/EGP') :
                        curr === 'AED' ? 'USD/AED' :
                        curr === 'SAR' ? 'USD/SAR' :
+                       curr === 'USD' ? 'USD Rate' :
                        'USD Rate';
               })()}
               <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
@@ -347,8 +378,8 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             </h2>
           </HoverTip>
           {(() => {
-            // Determine currency from canonicalCurrency or fallback to country
-            const curr = snapshot.canonicalCurrency || 
+            // Use selected currency (or canonical currency as fallback, then country)
+            const curr = snapshot.currency || snapshot.canonicalCurrency || 
                         (snapshot.country === 'EG' ? 'EGP' :
                          snapshot.country === 'AE' ? 'AED' :
                          snapshot.country === 'SA' ? 'SAR' :
@@ -356,6 +387,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             const rate = curr === 'EGP' ? snapshot.pricing.fx?.usdEgp :
                         curr === 'AED' ? snapshot.pricing.fx?.usdAed :
                         curr === 'SAR' ? snapshot.pricing.fx?.usdSar :
+                        curr === 'USD' ? 1.0 :
                         snapshot.pricing.fx?.usdEgp;
             return rate !== null && rate !== undefined ? (
               <>
@@ -391,7 +423,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* Over/Under Pricing */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-indigo-600`}>
+        <div 
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-indigo-600 transition-all duration-300 cursor-pointer ${
+            expandedCard === 'variance' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
+          }`}
+          onMouseEnter={() => setExpandedCard('variance')}
+          onMouseLeave={() => setExpandedCard(null)}
+          onClick={() => setExpandedCard(expandedCard === 'variance' ? null : 'variance')}
+        >
           <HoverTip text={lang === 'ar' ? 'الفرق بين وسيط السوق المحلي والقيمة العادلة المحسوبة. يوضح العلاوة/الخصم والتصنيف.' : "Difference between local market median and computed fair value. Shows premium/discount and classification."}>
             <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               {t(lang, 'marketVariance')}
@@ -442,7 +481,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
 
         {/* Pricing Details */}
-        <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-600`}>
+        <div 
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-600 transition-all duration-300 cursor-pointer ${
+            expandedCard === 'pricing' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
+          }`}
+          onMouseEnter={() => setExpandedCard('pricing')}
+          onMouseLeave={() => setExpandedCard(null)}
+          onClick={() => setExpandedCard(expandedCard === 'pricing' ? null : 'pricing')}
+        >
           <HoverTip text={(() => {
             const currencyLabel = snapshot.canonicalCurrency === 'EGP' ? 'USD/EGP' :
                                  snapshot.canonicalCurrency === 'AED' ? 'USD/AED' :
