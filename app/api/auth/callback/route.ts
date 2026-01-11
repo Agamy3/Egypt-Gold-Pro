@@ -14,9 +14,27 @@ export async function GET(request: NextRequest) {
   try {
     const requestUrl = new URL(request.url);
     const code = requestUrl.searchParams.get('code');
+    const error = requestUrl.searchParams.get('error');
+    const errorDescription = requestUrl.searchParams.get('error_description');
     const next = requestUrl.searchParams.get('next') || '/';
 
+    // Check for OAuth errors first
+    if (error) {
+      console.error('OAuth error in callback:', {
+        error,
+        errorDescription,
+        url: request.url,
+      });
+      const errorUrl = new URL('/auth/auth-code-error', request.url);
+      errorUrl.searchParams.set('error', error);
+      if (errorDescription) {
+        errorUrl.searchParams.set('message', decodeURIComponent(errorDescription));
+      }
+      return NextResponse.redirect(errorUrl);
+    }
+
     if (!code) {
+      console.error('No code parameter in callback URL:', request.url);
       return NextResponse.redirect(new URL('/auth/auth-code-error', request.url));
     }
 
@@ -68,8 +86,22 @@ export async function GET(request: NextRequest) {
     const { data: { session }, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
     
     if (exchangeError) {
-      console.error('Error exchanging code for session:', exchangeError);
-      return NextResponse.redirect(new URL('/auth/auth-code-error', request.url));
+      console.error('Error exchanging code for session:', {
+        error: exchangeError.message,
+        code: exchangeError.code,
+        status: exchangeError.status,
+        fullError: exchangeError,
+      });
+      const errorUrl = new URL('/auth/auth-code-error', request.url);
+      errorUrl.searchParams.set('error', exchangeError.message || 'unknown_error');
+      return NextResponse.redirect(errorUrl);
+    }
+
+    if (!session) {
+      console.error('No session returned after code exchange');
+      const errorUrl = new URL('/auth/auth-code-error', request.url);
+      errorUrl.searchParams.set('error', 'no_session');
+      return NextResponse.redirect(errorUrl);
     }
     
     // Create profile if user was created (OAuth sign-in)
