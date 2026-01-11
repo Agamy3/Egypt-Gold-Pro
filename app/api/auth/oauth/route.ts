@@ -25,8 +25,8 @@ export async function POST(request: NextRequest) {
 
     if (!supabaseUrl || !supabaseAnonKey) {
       return NextResponse.json(
-        { error: 'Supabase configuration missing' },
-        { status: 500 }
+        { error: 'Authentication service is not configured. Please contact support.' },
+        { status: 503 }
       );
     }
 
