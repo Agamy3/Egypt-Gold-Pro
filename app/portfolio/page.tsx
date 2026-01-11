@@ -7,6 +7,7 @@ import { useLang } from '@/components/LanguageProvider';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import LanguageToggle from '@/components/LanguageToggle';
 import AccountMenu from '@/components/AccountMenu';
+import PortfolioTable from '@/components/PortfolioTable';
 import Image from 'next/image';
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';
@@ -76,41 +77,40 @@ function PortfolioContent() {
   const [portfolio, setPortfolio] = useState<PortfolioData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
 
   const country = (searchParams.get('country') || 'EG') as Country;
   const currency = (searchParams.get('currency') || (country === 'EG' ? 'EGP' : country === 'AE' ? 'AED' : country === 'SA' ? 'SAR' : 'USD')) as Currency;
 
-  useEffect(() => {
-    const fetchPortfolio = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(`/api/portfolio?country=${country}&currency=${currency}`, {
-          cache: 'no-store',
-        });
+  const fetchPortfolio = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/portfolio?country=${country}&currency=${currency}`, {
+        cache: 'no-store',
+      });
 
-        if (res.status === 401) {
-          // Not authenticated - redirect to sign in
-          router.push('/auth/signin');
-          return;
-        }
-
-        if (!res.ok) {
-          const data = await res.json();
-          setError(data.error || 'Failed to fetch portfolio');
-          return;
-        }
-
-        const data = await res.json();
-        setPortfolio(data);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setLoading(false);
+      if (res.status === 401) {
+        // Not authenticated - redirect to sign in
+        router.push('/auth/signin');
+        return;
       }
-    };
 
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || 'Failed to fetch portfolio');
+        return;
+      }
+
+      const data = await res.json();
+      setPortfolio(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchPortfolio();
   }, [country, currency, router]);
 
@@ -277,80 +277,13 @@ function PortfolioContent() {
             </div>
 
             {/* Holdings Table */}
-            <div className="bg-gray-900 rounded-lg shadow-md p-4 sm:p-6">
-              <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-                <h2 className={`text-lg font-semibold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>
-                  {lang === 'ar' ? 'الاستثمارات' : 'Holdings'}
-                </h2>
-                <button
-                  onClick={() => setShowAddForm(!showAddForm)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors"
-                >
-                  {lang === 'ar' ? '+ إضافة' : '+ Add'}
-                </button>
-              </div>
-
-              {portfolio.holdings.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  {lang === 'ar' ? 'لا توجد استثمارات. ابدأ بإضافة استثمار جديد.' : 'No holdings. Start by adding a new holding.'}
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-700">
-                        <th className={`text-left py-3 px-4 text-sm font-semibold text-gray-300 ${lang === 'ar' ? 'text-right' : ''}`}>
-                          {lang === 'ar' ? 'العيار' : 'Karat'}
-                        </th>
-                        <th className={`text-left py-3 px-4 text-sm font-semibold text-gray-300 ${lang === 'ar' ? 'text-right' : ''}`}>
-                          {lang === 'ar' ? 'الجرامات' : 'Grams'}
-                        </th>
-                        <th className={`text-left py-3 px-4 text-sm font-semibold text-gray-300 ${lang === 'ar' ? 'text-right' : ''}`}>
-                          {lang === 'ar' ? 'سعر الشراء' : 'Buy Price'}
-                        </th>
-                        <th className={`text-left py-3 px-4 text-sm font-semibold text-gray-300 ${lang === 'ar' ? 'text-right' : ''}`}>
-                          {lang === 'ar' ? 'القيمة الحالية' : 'Current Value'}
-                        </th>
-                        <th className={`text-left py-3 px-4 text-sm font-semibold text-gray-300 ${lang === 'ar' ? 'text-right' : ''}`}>
-                          {lang === 'ar' ? 'ربح/خسارة' : 'P/L'}
-                        </th>
-                        <th className={`text-left py-3 px-4 text-sm font-semibold text-gray-300 ${lang === 'ar' ? 'text-right' : ''}`}>
-                          {lang === 'ar' ? 'الإجراءات' : 'Actions'}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {portfolio.holdings.map((holding) => (
-                        <tr key={holding.id} className="border-b border-gray-800 hover:bg-gray-800">
-                          <td className="py-3 px-4 text-sm text-gray-300">{holding.karat}k</td>
-                          <td className="py-3 px-4 text-sm text-gray-300">{formatNumber(holding.grams, 2)}</td>
-                          <td className="py-3 px-4 text-sm text-gray-300">
-                            {formatCurrency(holding.purchase_price_per_gram, holding.purchase_currency)} / {lang === 'ar' ? 'جرام' : 'gram'}
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-300">
-                            {formatCurrency(holding.current_value_selected, currency)}
-                          </td>
-                          <td className={`py-3 px-4 text-sm font-medium ${
-                            holding.status === 'WIN' ? 'text-green-400' :
-                            holding.status === 'LOSS' ? 'text-red-400' : 'text-gray-300'
-                          }`}>
-                            {formatCurrency(holding.pnl, currency)} ({formatNumber(holding.pnl_pct * 100, 2)}%)
-                          </td>
-                          <td className="py-3 px-4">
-                            <button className="text-blue-400 hover:text-blue-300 text-sm mr-3">
-                              {lang === 'ar' ? 'تعديل' : 'Edit'}
-                            </button>
-                            <button className="text-red-400 hover:text-red-300 text-sm">
-                              {lang === 'ar' ? 'حذف' : 'Delete'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <PortfolioTable
+              holdings={portfolio.holdings}
+              currency={portfolio.currency}
+              country={portfolio.country}
+              lang={lang}
+              onRefresh={fetchPortfolio}
+            />
           </div>
         )}
       </main>
