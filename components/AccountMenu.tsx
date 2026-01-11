@@ -20,13 +20,12 @@ export default function AccountMenu() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
-  const [authAvailable, setAuthAvailable] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Check if environment variables are available
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      setAuthAvailable(false);
+      // If env vars are missing, just show sign in button (auth won't work but UI is visible)
       setLoading(false);
       return;
     }
@@ -51,7 +50,6 @@ export default function AccountMenu() {
       return () => subscription.unsubscribe();
     } catch (error) {
       console.error('Error initializing Supabase client:', error);
-      setAuthAvailable(false);
       setLoading(false);
     }
   }, []);
@@ -80,11 +78,6 @@ export default function AccountMenu() {
       console.error('Error signing out:', error);
     }
   };
-
-  // If auth is not available, don't render anything
-  if (!authAvailable) {
-    return null;
-  }
 
   if (loading) {
     return (
