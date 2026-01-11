@@ -6,6 +6,8 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -18,10 +20,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json(
+        { error: 'Supabase configuration missing' },
+        { status: 500 }
+      );
+    }
+
     const response = NextResponse.json({});
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      supabaseUrl,
+      supabaseAnonKey,
       {
         cookies: {
           get(name: string) {
@@ -55,7 +67,7 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || request.headers.get('origin') || 'http://localhost:3000';
     const redirectUrl = `${siteUrl}/api/auth/callback?next=/`;
 
     const { data, error } = await supabase.auth.signInWithOAuth({
@@ -70,9 +82,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
+      console.error('OAuth sign-in error:', error);
       return NextResponse.json(
         { error: error.message },
         { status: 400 }
+      );
+    }
+
+    if (!data || !data.url) {
+      console.error('OAuth data missing:', data);
+      return NextResponse.json(
+        { error: 'Failed to generate OAuth URL' },
+        { status: 500 }
       );
     }
 
@@ -81,7 +102,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('OAuth error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
