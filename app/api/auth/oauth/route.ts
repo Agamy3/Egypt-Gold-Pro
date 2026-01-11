@@ -47,7 +47,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Create response that we can modify
     const response = NextResponse.json({});
+    
     const supabase = createServerClient(
       supabaseUrl,
       supabaseAnonKey,
@@ -57,6 +59,7 @@ export async function POST(request: NextRequest) {
             return request.cookies.get(name)?.value;
           },
           set(name: string, value: string, options: CookieOptions) {
+            // Set cookie in both request and response
             request.cookies.set({
               name,
               value,
@@ -69,6 +72,7 @@ export async function POST(request: NextRequest) {
             });
           },
           remove(name: string, options: CookieOptions) {
+            // Remove cookie from both request and response
             request.cookies.set({
               name,
               value: '',
@@ -87,6 +91,7 @@ export async function POST(request: NextRequest) {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || request.headers.get('origin') || 'http://localhost:3000';
     const redirectUrl = `${siteUrl}/api/auth/callback?next=/`;
 
+    // Initiate OAuth flow - this will store PKCE code verifier in cookies
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: provider as 'google' | 'apple',
       options: {
@@ -112,8 +117,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Return the OAuth URL for the client to redirect to
-    return NextResponse.json({ url: data.url });
+    // Return the OAuth URL with the response that has cookies set
+    // The PKCE code verifier is now stored in cookies via the supabase client above
+    return NextResponse.json({ url: data.url }, {
+      headers: response.headers,
+    });
   } catch (error) {
     console.error('OAuth error:', error);
     return NextResponse.json(

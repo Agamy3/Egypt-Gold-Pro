@@ -46,16 +46,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/auth/auth-code-error', request.url));
     }
 
+    // Create redirect response that we can modify
     const response = NextResponse.redirect(new URL(next, request.url));
+    
+    // Create Supabase client that reads PKCE code verifier from cookies
     const supabase = createServerClient(
       supabaseUrl,
       supabaseAnonKey,
       {
         cookies: {
           get(name: string) {
+            // Read cookie from request - this includes PKCE code verifier
             return request.cookies.get(name)?.value;
           },
           set(name: string, value: string, options: CookieOptions) {
+            // Set cookie in both request and response
             request.cookies.set({
               name,
               value,
@@ -68,6 +73,7 @@ export async function GET(request: NextRequest) {
             });
           },
           remove(name: string, options: CookieOptions) {
+            // Remove cookie from both request and response
             request.cookies.set({
               name,
               value: '',
