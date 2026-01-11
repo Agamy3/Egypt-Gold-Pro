@@ -141,6 +141,15 @@ export default function AccountMenu() {
             <button
               onClick={() => {
                 setShowMenu(false);
+                router.push('/portfolio');
+              }}
+              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+            >
+              {lang === 'ar' ? 'المحفظة' : 'Portfolio'}
+            </button>
+            <button
+              onClick={() => {
+                setShowMenu(false);
                 router.push('/account/profile');
               }}
               className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
