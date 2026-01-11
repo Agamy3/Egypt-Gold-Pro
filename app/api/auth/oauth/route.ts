@@ -91,10 +91,8 @@ export async function POST(request: NextRequest) {
       provider: provider as 'google' | 'apple',
       options: {
         redirectTo: redirectUrl,
-        queryParams: provider === 'google' ? {
-          access_type: 'offline',
-          prompt: 'consent',
-        } : undefined,
+        // Don't override queryParams for Google - let Supabase handle it
+        // Supabase will use its own redirect_uri that matches the Google OAuth config
       },
     });
 
