@@ -20,10 +20,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check environment variables - use explicit undefined check
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!supabaseUrl || !supabaseAnonKey) {
+    // Log for debugging (only in non-production or if explicitly enabled)
+    if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_AUTH) {
+      console.log('OAuth route - Env check:', {
+        hasUrl: !!supabaseUrl,
+        hasKey: !!supabaseAnonKey,
+        urlLength: supabaseUrl?.length || 0,
+        keyLength: supabaseAnonKey?.length || 0,
+      });
+    }
+
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.trim() === '' || supabaseAnonKey.trim() === '') {
+      console.error('OAuth route - Missing environment variables:', {
+        hasUrl: !!supabaseUrl,
+        hasKey: !!supabaseAnonKey,
+        urlEmpty: !supabaseUrl || supabaseUrl.trim() === '',
+        keyEmpty: !supabaseAnonKey || supabaseAnonKey.trim() === '',
+      });
       return NextResponse.json(
         { error: 'Authentication service is not configured. Please contact support.' },
         { status: 503 }

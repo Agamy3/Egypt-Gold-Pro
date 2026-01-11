@@ -24,7 +24,12 @@ export default function AccountMenu() {
 
   useEffect(() => {
     // Check if environment variables are available
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    // In client components, env vars starting with NEXT_PUBLIC_ are available at build time
+    // If they're not set, they'll be undefined
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.trim() === '' || supabaseAnonKey.trim() === '') {
       // If env vars are missing, just show sign in button (auth won't work but UI is visible)
       setLoading(false);
       return;

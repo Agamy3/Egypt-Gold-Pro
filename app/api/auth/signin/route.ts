@@ -23,7 +23,13 @@ export async function POST(request: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!supabaseUrl || !supabaseAnonKey) {
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.trim() === '' || supabaseAnonKey.trim() === '') {
+      console.error('Signin route - Missing environment variables:', {
+        hasUrl: !!supabaseUrl,
+        hasKey: !!supabaseAnonKey,
+        urlEmpty: !supabaseUrl || supabaseUrl.trim() === '',
+        keyEmpty: !supabaseAnonKey || supabaseAnonKey.trim() === '',
+      });
       return NextResponse.json(
         { error: 'Authentication service is not configured. Please contact support.' },
         { status: 503 }
