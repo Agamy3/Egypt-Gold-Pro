@@ -31,6 +31,7 @@ interface ForecastCardProps {
   forecast: ForecastData | null;
   insufficientData?: boolean;
   country?: 'EG' | 'AE' | 'SA' | 'US';
+  title?: string; // Optional custom title
 }
 
 interface SeriesPoint {
@@ -58,12 +59,14 @@ const TIME_RANGE_MAP: Record<TimeRange, number> = {
   yoy: 525600,      // 365 days
 };
 
-export default function ForecastCard({ forecast, insufficientData, country = 'EG' }: ForecastCardProps) {
+export default function ForecastCard({ forecast, insufficientData, country = 'EG', title }: ForecastCardProps) {
   const { lang } = useLang();
   const [timeRange, setTimeRange] = useState<TimeRange>('daily');
   const [scope, setScope] = useState<ForecastScope>('local');
   const [seriesData, setSeriesData] = useState<SeriesResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  const displayTitle = title || t(lang, 'marketForecast');
 
   // Fetch series data when dropdowns change
   useEffect(() => {
@@ -158,7 +161,7 @@ export default function ForecastCard({ forecast, insufficientData, country = 'EG
     return (
       <div className={`bg-gray-900 rounded-lg shadow p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-400`}>
         <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-          <h3 className={`text-lg font-semibold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'marketForecast')}</h3>
+          <h3 className={`text-lg font-semibold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>{displayTitle}</h3>
           <span className="text-xs text-gray-400">{t(lang, 'next120')}</span>
         </div>
         <div className="text-center py-4">
@@ -232,7 +235,7 @@ export default function ForecastCard({ forecast, insufficientData, country = 'EG
   return (
     <div className={`bg-gray-900 rounded-lg shadow p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} ${directionColors[forecast.direction]}`}>
       <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-        <h3 className={`text-lg font-semibold text-gray-800 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'marketForecast')}</h3>
+        <h3 className={`text-lg font-semibold text-gray-800 ${lang === 'ar' ? 'text-right' : ''}`}>{displayTitle}</h3>
         <span className="text-xs text-gray-500">{t(lang, 'next120')}</span>
       </div>
 

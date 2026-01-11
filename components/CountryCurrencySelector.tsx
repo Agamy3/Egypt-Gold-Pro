@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useLang } from './LanguageProvider';
 import { useEffect, useState, Suspense } from 'react';
 
@@ -24,41 +24,55 @@ const CURRENCY_LABELS: Record<Currency, string> = {
 function CountryCurrencySelectorContent() {
   const { lang } = useLang();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const isRTL = lang === 'ar';
   
+  // Determine current country from pathname or URL params
+  const isUSPage = pathname === '/us';
+  const urlCountry = isUSPage ? 'US' : (searchParams.get('country') as Country);
+  
   // Get initial values from URL params or use defaults
   const [country, setCountry] = useState<Country>(
-    (searchParams.get('country') as Country) || 'EG'
+    (urlCountry && ['EG', 'AE', 'SA', 'US'].includes(urlCountry)) ? urlCountry : 'EG'
   );
   const [currency, setCurrency] = useState<Currency>(
-    (searchParams.get('currency') as Currency) || 'EGP'
+    (searchParams.get('currency') as Currency) || (isUSPage ? 'USD' : 'EGP')
   );
 
   // Sync with URL params on mount
   useEffect(() => {
-    const urlCountry = searchParams.get('country') as Country;
+    const currentCountry = isUSPage ? 'US' : (searchParams.get('country') as Country);
     const urlCurrency = searchParams.get('currency') as Currency;
     
-    if (urlCountry && ['EG', 'AE', 'SA', 'US'].includes(urlCountry)) {
-      setCountry(urlCountry);
+    if (currentCountry && ['EG', 'AE', 'SA', 'US'].includes(currentCountry)) {
+      setCountry(currentCountry);
     }
     if (urlCurrency && ['EGP', 'USD', 'AED', 'SAR'].includes(urlCurrency)) {
       setCurrency(urlCurrency);
+    } else if (isUSPage && !urlCurrency) {
+      setCurrency('USD');
     }
-  }, [searchParams]);
+  }, [searchParams, isUSPage]);
 
   const handleCountryChange = (newCountry: Country) => {
     setCountry(newCountry);
-    // Update URL without page reload
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('country', newCountry);
-    // Optionally set default currency for country
-    if (newCountry === 'EG') params.set('currency', currency === 'AED' || currency === 'SAR' ? 'EGP' : currency);
-    else if (newCountry === 'AE') params.set('currency', currency === 'EGP' || currency === 'SAR' ? 'AED' : currency);
-    else if (newCountry === 'SA') params.set('currency', currency === 'EGP' || currency === 'AED' ? 'SAR' : currency);
-    else if (newCountry === 'US') params.set('currency', 'USD');
-    router.replace(`/?${params.toString()}`, { scroll: false });
+    
+    if (newCountry === 'US') {
+      // Navigate to /us page
+      const params = new URLSearchParams();
+      params.set('currency', 'USD');
+      router.push(`/us?${params.toString()}`, { scroll: false });
+    } else {
+      // Navigate to main dashboard with country param
+      const params = new URLSearchParams();
+      params.set('country', newCountry);
+      // Set default currency for country
+      if (newCountry === 'EG') params.set('currency', 'EGP');
+      else if (newCountry === 'AE') params.set('currency', 'AED');
+      else if (newCountry === 'SA') params.set('currency', 'SAR');
+      router.push(`/?${params.toString()}`, { scroll: false });
+    }
   };
 
   const handleCurrencyChange = (newCurrency: Currency) => {
@@ -66,7 +80,12 @@ function CountryCurrencySelectorContent() {
     // Update URL without page reload
     const params = new URLSearchParams(searchParams.toString());
     params.set('currency', newCurrency);
-    router.replace(`/?${params.toString()}`, { scroll: false });
+    
+    if (isUSPage) {
+      router.replace(`/us?${params.toString()}`, { scroll: false });
+    } else {
+      router.replace(`/?${params.toString()}`, { scroll: false });
+    }
   };
 
   return (

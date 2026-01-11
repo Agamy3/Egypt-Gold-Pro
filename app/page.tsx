@@ -7,6 +7,7 @@ import Dashboard from '@/components/Dashboard';
 import ForecastCard from '@/components/ForecastCard';
 import LanguageToggle from '@/components/LanguageToggle';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
+import AccountMenu from '@/components/AccountMenu';
 import { useLang } from '@/components/LanguageProvider';
 import { t } from '@/lib/i18n';
 import { useSearchParams } from 'next/navigation';
@@ -212,6 +213,7 @@ function HomeContent() {
             <div className={`flex items-center gap-2 sm:gap-4 w-full sm:w-auto ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
               <CountryCurrencySelector />
               <LanguageToggle />
+              <AccountMenu />
             </div>
           </div>
         </div>
