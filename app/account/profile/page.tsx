@@ -139,7 +139,7 @@ export default function ProfilePage() {
       }
 
       // Update language if changed
-      if (formData.preferred_language && formData.preferred_language !== lang) {
+      if (formData.preferred_language && formData.preferred_language.toLowerCase() !== lang) {
         setLang(formData.preferred_language.toLowerCase() as 'en' | 'ar');
       }
 
