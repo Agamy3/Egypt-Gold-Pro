@@ -65,6 +65,7 @@ function ResetPasswordContent() {
         router.push('/');
       }, 2000);
     } catch (err) {
+      console.error('Error updating password:', err);
       setError('An error occurred. Please try again.');
     } finally {
       setLoading(false);

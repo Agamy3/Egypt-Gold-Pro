@@ -23,20 +23,28 @@ export default function AccountMenu() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const supabase = createClientSupabaseClient();
+    try {
+      const supabase = createClientSupabaseClient();
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+      // Get initial session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setUser(session?.user ?? null);
+        setLoading(false);
+      }).catch((err) => {
+        console.error('Error getting session:', err);
+        setLoading(false);
+      });
+
+      // Listen for auth changes
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null);
+      });
+
+      return () => subscription.unsubscribe();
+    } catch (error) {
+      console.error('Error initializing Supabase client:', error);
       setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
+    }
   }, []);
 
   // Close menu when clicking outside
