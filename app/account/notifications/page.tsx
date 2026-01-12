@@ -178,15 +178,35 @@ export default function NotificationsPage() {
   };
 
   const handleEnablePush = async () => {
+    // Check HTTPS (or localhost for development)
+    if (typeof window !== 'undefined') {
+      const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+      if (!isSecure) {
+        alert(lang === 'ar' ? 'الإشعارات الفورية تتطلب HTTPS. يرجى الوصول إلى الموقع عبر HTTPS.' : 'Push notifications require HTTPS. Please access the site via HTTPS.');
+        return;
+      }
+    }
+
     if (!pushSupported) {
-      alert(lang === 'ar' ? 'الإشعارات الفورية غير مدعومة في هذا المتصفح' : 'Push notifications are not supported in this browser');
+      // Check if Safari (which has limited push support)
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      if (isSafari) {
+        alert(lang === 'ar' ? 'Safari يدعم الإشعارات الفورية فقط عند تثبيت التطبيق كـ PWA. يرجى تثبيت التطبيق أولاً.' : 'Safari only supports push notifications when installed as a PWA. Please install the app first.');
+      } else {
+        alert(lang === 'ar' ? 'الإشعارات الفورية غير مدعومة في هذا المتصفح' : 'Push notifications are not supported in this browser');
+      }
       return;
     }
 
     try {
+      // Request permission first
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        alert(lang === 'ar' ? 'تم رفض الإذن' : 'Permission denied');
+        if (permission === 'denied') {
+          alert(lang === 'ar' ? 'تم رفض الإذن. يرجى السماح بالإشعارات في إعدادات المتصفح.' : 'Permission denied. Please allow notifications in browser settings.');
+        } else {
+          alert(lang === 'ar' ? 'تم رفض الإذن' : 'Permission denied');
+        }
         return;
       }
 
@@ -194,6 +214,7 @@ export default function NotificationsPage() {
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!vapidPublicKey) {
         alert(lang === 'ar' ? 'إعدادات الإشعارات الفورية غير مكتملة. يرجى الاتصال بالدعم.' : 'Push notification settings are incomplete. Please contact support.');
+        console.error('NEXT_PUBLIC_VAPID_PUBLIC_KEY is not configured');
         return;
       }
 
@@ -214,42 +235,67 @@ export default function NotificationsPage() {
       // Register service worker
       let registration;
       try {
-        registration = await navigator.serviceWorker.register('/sw.js');
+        registration = await navigator.serviceWorker.register('/sw.js', {
+          scope: '/',
+        });
         await registration.update();
+        console.log('Service worker registered:', registration);
       } catch (swError) {
         console.error('Service worker registration error:', swError);
-        alert(lang === 'ar' ? 'فشل تسجيل خدمة العامل. تأكد من أن الموقع يعمل على HTTPS.' : 'Failed to register service worker. Make sure the site is running on HTTPS.');
+        const errorMsg = swError instanceof Error ? swError.message : 'Unknown error';
+        alert(lang === 'ar' ? `فشل تسجيل خدمة العامل: ${errorMsg}. تأكد من أن الموقع يعمل على HTTPS.` : `Failed to register service worker: ${errorMsg}. Make sure the site is running on HTTPS.`);
         return;
       }
 
+      // Wait for service worker to be ready
+      await navigator.serviceWorker.ready;
+
       // Subscribe to push
       const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: applicationServerKey,
-      });
+      let subscription;
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey,
+        });
+        console.log('Push subscription created:', subscription);
+      } catch (subError) {
+        console.error('Push subscription error:', subError);
+        const errorMsg = subError instanceof Error ? subError.message : 'Unknown error';
+        alert(lang === 'ar' ? `فشل الاشتراك في الإشعارات: ${errorMsg}` : `Failed to subscribe to push: ${errorMsg}`);
+        return;
+      }
 
-      // Convert keys to base64 for storage
+      // Convert ArrayBuffer keys to base64 strings for JSON serialization
+      const getBase64FromArrayBuffer = (buffer: ArrayBuffer): string => {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+      };
+
       const p256dhKey = subscription.getKey('p256dh');
       const authKey = subscription.getKey('auth');
-      
+
       if (!p256dhKey || !authKey) {
         throw new Error('Failed to get subscription keys');
       }
 
-      const p256dh = btoa(String.fromCharCode(...new Uint8Array(p256dhKey)));
-      const auth = btoa(String.fromCharCode(...new Uint8Array(authKey)));
+      const subscriptionData = {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: getBase64FromArrayBuffer(p256dhKey),
+          auth: getBase64FromArrayBuffer(authKey),
+        },
+      };
 
-      const res = await fetch('/api/push/subscribe', {
+      // Send subscription data
+      const res = await fetch('/api/notifications/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          endpoint: subscription.endpoint,
-          keys: {
-            p256dh: p256dh,
-            auth: auth,
-          },
-        }),
+        body: JSON.stringify(subscriptionData),
       });
 
       if (!res.ok) {
@@ -272,7 +318,7 @@ export default function NotificationsPage() {
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         await subscription.unsubscribe();
-        await fetch('/api/push/unsubscribe', {
+        await fetch('/api/notifications/push/unsubscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ endpoint: subscription.endpoint }),
