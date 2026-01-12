@@ -11,7 +11,7 @@ const privacyPolicyEn = {
   sections: {
     whoWeAre: {
       title: 'Who We Are',
-      content: 'EgyptGold Pro is an educational platform providing gold market analysis and portfolio tracking. For questions about this privacy policy, contact us at: privacy@egyptgoldpro.com',
+      content: 'EgyptGold Pro is an educational platform providing gold market analysis and portfolio tracking. For questions about this privacy policy, contact us at: support@egyptgoldpro.com',
     },
     dataCollection: {
       title: 'What Data We Collect',
@@ -206,7 +206,7 @@ export default function PrivacyPolicyContent() {
   const content = lang === 'ar' ? privacyPolicyAr : privacyPolicyEn;
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="min-h-screen bg-black flex flex-col">
       <header className="bg-gray-900 shadow-sm border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className={`flex flex-col sm:flex-row items-start sm:items-center ${lang === 'ar' ? 'sm:flex-row-reverse' : ''} gap-3 sm:gap-4 justify-between`}>
