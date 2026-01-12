@@ -2,15 +2,26 @@
  * Resend Email Service
  * 
  * Sends emails using Resend API
+ * Compatible with Vercel Resend Integration
  * FROM: EgyptGold Pro <notification@egyptgoldpro.com>
+ * 
+ * When connected via Vercel Integration:
+ * - RESEND_API_KEY is automatically set by Vercel
+ * - Ensure your domain is verified in Resend dashboard
+ * - The "from" email must use a verified domain
  */
 
 import 'server-only';
+import { Resend } from 'resend';
 
+// Vercel Resend Integration automatically sets RESEND_API_KEY
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const NOTIF_FROM_EMAIL = process.env.NOTIF_FROM_EMAIL || 'notification@egyptgoldpro.com';
 const NOTIF_FROM_NAME = process.env.NOTIF_FROM_NAME || 'EgyptGold Pro';
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com';
+
+// Initialize Resend client (using SDK for better integration support)
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 export interface EmailOptions {
   to: string;
@@ -25,10 +36,12 @@ export interface EmailOptions {
 export async function sendNotificationEmail(
   options: EmailOptions
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  if (!RESEND_API_KEY) {
+  // Check if Resend is configured (via Vercel Integration or manual setup)
+  if (!RESEND_API_KEY || !resend) {
     const errorMsg = 'RESEND_API_KEY not configured. Email sending disabled.';
     console.error('[EMAIL]', errorMsg);
-    console.error('[EMAIL] Please set RESEND_API_KEY in your environment variables.');
+    console.error('[EMAIL] If using Vercel Resend Integration, ensure it is connected in Vercel dashboard.');
+    console.error('[EMAIL] Otherwise, set RESEND_API_KEY in your environment variables.');
     return {
       success: false,
       error: errorMsg,
@@ -44,51 +57,45 @@ export async function sendNotificationEmail(
     };
   }
 
-  console.log('[EMAIL] Attempting to send email:', {
+  const fromAddress = `${NOTIF_FROM_NAME} <${NOTIF_FROM_EMAIL}>`;
+
+  console.log('[EMAIL] Attempting to send email via Resend:', {
     to: options.to,
     subject: options.subject,
-    from: `${NOTIF_FROM_NAME} <${NOTIF_FROM_EMAIL}>`,
+    from: fromAddress,
+    integration: RESEND_API_KEY ? 'Vercel Resend Integration detected' : 'Manual configuration',
   });
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: `${NOTIF_FROM_NAME} <${NOTIF_FROM_EMAIL}>`,
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-        text: options.text || options.html.replace(/<[^>]*>/g, ''), // Strip HTML for text fallback
-      }),
+    // Use Resend SDK (better integration with Vercel)
+    const { data, error } = await resend.emails.send({
+      from: fromAddress,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      text: options.text || options.html.replace(/<[^>]*>/g, ''), // Strip HTML for text fallback
     });
 
-    const responseText = await response.text();
-    let errorData: any = { message: 'Unknown error' };
-    
-    try {
-      errorData = JSON.parse(responseText);
-    } catch {
-      errorData = { message: responseText || `HTTP ${response.status}: ${response.statusText}` };
-    }
-
-    if (!response.ok) {
+    if (error) {
       console.error('[EMAIL] Resend API error:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorData,
-        responseBody: responseText,
+        error,
+        to: options.to,
+        subject: options.subject,
       });
       return {
         success: false,
-        error: errorData.message || errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`,
+        error: error.message || JSON.stringify(error),
       };
     }
 
-    const data = JSON.parse(responseText);
+    if (!data || !data.id) {
+      console.error('[EMAIL] Resend API returned no data:', { data });
+      return {
+        success: false,
+        error: 'No message ID returned from Resend',
+      };
+    }
+
     console.log('[EMAIL] Email sent successfully via Resend:', {
       messageId: data.id,
       to: options.to,
