@@ -66,7 +66,7 @@ CREATE POLICY "Users can delete own notification rules"
 -- NOTIFICATION DELIVERIES TABLE
 -- ============================================
 
--- Check if table exists, if not create it
+-- Check if table exists and its structure
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -74,6 +74,7 @@ BEGIN
     WHERE table_schema = 'public' 
     AND table_name = 'notification_deliveries'
   ) THEN
+    -- Create new table with new structure
     CREATE TABLE public.notification_deliveries (
       id BIGSERIAL PRIMARY KEY,
       rule_id BIGINT NOT NULL REFERENCES public.user_notification_rules(id) ON DELETE CASCADE,
@@ -85,34 +86,155 @@ BEGIN
       dedupe_key TEXT NOT NULL,
       UNIQUE(rule_id, dedupe_key)
     );
+  ELSE
+    -- Table exists - check if it has old structure (notification_id) or new structure (rule_id)
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'notification_deliveries' 
+      AND column_name = 'notification_id'
+    ) THEN
+      -- Old structure exists - we need to migrate or add new columns
+      -- For now, add new columns alongside old ones
+      -- Note: Old table references user_notifications, new one references user_notification_rules
+      
+      -- Add rule_id if missing
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'rule_id'
+      ) THEN
+        ALTER TABLE public.notification_deliveries ADD COLUMN rule_id BIGINT REFERENCES public.user_notification_rules(id) ON DELETE CASCADE;
+      END IF;
+
+      -- Add user_id if missing (old table might not have it)
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'user_id'
+      ) THEN
+        ALTER TABLE public.notification_deliveries ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+      END IF;
+
+      -- Add channel if missing (old table might have different structure)
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'channel'
+      ) THEN
+        ALTER TABLE public.notification_deliveries ADD COLUMN channel TEXT CHECK (channel IN ('email', 'push'));
+      END IF;
+
+      -- Update channel to have default if it's nullable
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'channel'
+        AND is_nullable = 'YES'
+      ) THEN
+        ALTER TABLE public.notification_deliveries ALTER COLUMN channel SET DEFAULT 'email';
+        ALTER TABLE public.notification_deliveries ALTER COLUMN channel SET NOT NULL;
+      END IF;
+
+      -- Rename last_sent_at to sent_at if needed
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'last_sent_at'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'sent_at'
+      ) THEN
+        ALTER TABLE public.notification_deliveries RENAME COLUMN last_sent_at TO sent_at;
+      END IF;
+
+      -- Add sent_at if missing
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'sent_at'
+      ) THEN
+        ALTER TABLE public.notification_deliveries ADD COLUMN sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+      END IF;
+
+      -- Rename last_error to error if needed
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'last_error'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'error'
+      ) THEN
+        ALTER TABLE public.notification_deliveries RENAME COLUMN last_error TO error;
+      END IF;
+
+      -- Add error if missing
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'error'
+      ) THEN
+        ALTER TABLE public.notification_deliveries ADD COLUMN error TEXT NULL;
+      END IF;
+
+      -- Add dedupe_key if missing
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'dedupe_key'
+      ) THEN
+        ALTER TABLE public.notification_deliveries ADD COLUMN dedupe_key TEXT;
+      END IF;
+    ELSE
+      -- New structure already exists - just ensure all columns are present
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'user_id'
+      ) THEN
+        ALTER TABLE public.notification_deliveries ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_deliveries' 
+        AND column_name = 'dedupe_key'
+      ) THEN
+        ALTER TABLE public.notification_deliveries ADD COLUMN dedupe_key TEXT;
+      END IF;
+    END IF;
   END IF;
 END $$;
 
--- Add columns if they don't exist (for existing table)
+-- Add unique constraint for dedupe_key if it doesn't exist
 DO $$
 BEGIN
-  -- Check and add rule_id if missing
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns 
-    WHERE table_schema = 'public' 
-    AND table_name = 'notification_deliveries' 
-    AND column_name = 'rule_id'
+    SELECT 1 FROM pg_constraint 
+    WHERE conname = 'notification_deliveries_rule_id_dedupe_key_key'
   ) THEN
-    ALTER TABLE public.notification_deliveries ADD COLUMN rule_id BIGINT REFERENCES public.user_notification_rules(id) ON DELETE CASCADE;
-  END IF;
-
-  -- Check and add dedupe_key if missing
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns 
-    WHERE table_schema = 'public' 
-    AND table_name = 'notification_deliveries' 
-    AND column_name = 'dedupe_key'
-  ) THEN
-    ALTER TABLE public.notification_deliveries ADD COLUMN dedupe_key TEXT;
-    -- Add unique constraint if not exists
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_constraint 
-      WHERE conname = 'notification_deliveries_rule_id_dedupe_key_key'
+    -- Only add if rule_id column exists
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'notification_deliveries' 
+      AND column_name = 'rule_id'
     ) THEN
       ALTER TABLE public.notification_deliveries ADD CONSTRAINT notification_deliveries_rule_id_dedupe_key_key UNIQUE(rule_id, dedupe_key);
     END IF;
