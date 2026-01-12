@@ -16,49 +16,70 @@ interface HoverTipProps {
 
 export default function HoverTip({ text, children, side = 'bottom' }: HoverTipProps) {
   const [isVisible, setIsVisible] = useState(false);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLButtonElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
+  // Track mouse position
+  const handleMouseMove = (e: MouseEvent) => {
+    setMousePosition({ x: e.clientX, y: e.clientY });
+  };
+
   useEffect(() => {
-    if (isVisible && containerRef.current && tooltipRef.current) {
-      const container = containerRef.current.getBoundingClientRect();
-      
-      // Position tooltip based on side
+    if (isVisible) {
+      window.addEventListener('mousemove', handleMouseMove);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+      };
+    }
+  }, [isVisible]);
+
+  useEffect(() => {
+    if (isVisible && tooltipRef.current) {
       const tooltipEl = tooltipRef.current;
       tooltipEl.style.position = 'fixed';
       tooltipEl.style.zIndex = '9999';
       
-      // Simple positioning - show below by default, adjust if needed
-      tooltipEl.style.top = `${container.bottom + 8}px`;
-      tooltipEl.style.left = `${container.left}px`;
-      tooltipEl.style.transform = 'none';
+      // Position tooltip near cursor with offset
+      const offset = 12; // Distance from cursor
+      let tooltipX = mousePosition.x + offset;
+      let tooltipY = mousePosition.y + offset;
       
       // Measure tooltip to adjust positioning
       setTimeout(() => {
         const tooltipRect = tooltipEl.getBoundingClientRect();
         
         // Adjust if it would go off screen right
-        if (tooltipRect.right > window.innerWidth - 10) {
-          tooltipEl.style.left = `${window.innerWidth - tooltipRect.width - 10}px`;
+        if (tooltipX + tooltipRect.width > window.innerWidth - 10) {
+          tooltipX = mousePosition.x - tooltipRect.width - offset;
         }
         
         // Adjust if it would go off screen bottom
-        if (tooltipRect.bottom > window.innerHeight - 10) {
-          // Show above instead
-          tooltipEl.style.top = `${container.top - tooltipRect.height - 8}px`;
+        if (tooltipY + tooltipRect.height > window.innerHeight - 10) {
+          tooltipY = mousePosition.y - tooltipRect.height - offset;
         }
         
         // Adjust if it would go off screen left
-        if (tooltipRect.left < 10) {
-          tooltipEl.style.left = '10px';
+        if (tooltipX < 10) {
+          tooltipX = 10;
         }
+        
+        // Adjust if it would go off screen top
+        if (tooltipY < 10) {
+          tooltipY = 10;
+        }
+        
+        tooltipEl.style.left = `${tooltipX}px`;
+        tooltipEl.style.top = `${tooltipY}px`;
       }, 0);
     }
-  }, [isVisible, side]);
+  }, [isVisible, mousePosition, side]);
 
   // Handle mobile touch events - show tooltip on tap for 3 seconds
   const handleTouchStart = (e: React.TouchEvent) => {
     e.preventDefault();
+    const touch = e.touches[0];
+    setMousePosition({ x: touch.clientX, y: touch.clientY });
     setIsVisible(true);
     // Hide after 3 seconds on mobile
     setTimeout(() => setIsVisible(false), 3000);
@@ -71,7 +92,13 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent card onClick from firing
+    setMousePosition({ x: e.clientX, y: e.clientY });
     setIsVisible(!isVisible);
+  };
+
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    setMousePosition({ x: e.clientX, y: e.clientY });
+    setIsVisible(true);
   };
 
   return (
@@ -80,7 +107,8 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
         type="button"
         ref={containerRef}
         className="inline-flex items-center gap-1 cursor-help focus:outline-none pointer-events-auto z-20"
-        onMouseEnter={() => setIsVisible(true)}
+        onMouseEnter={handleMouseEnter}
+        onMouseMove={(e) => setMousePosition({ x: e.clientX, y: e.clientY })}
         onMouseLeave={() => setIsVisible(false)}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
