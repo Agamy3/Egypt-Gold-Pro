@@ -14,7 +14,9 @@ type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Karat = 14 | 18 | 21 | 22 | 24;
 
 const PRICE_CHANGE_THRESHOLD = 0.005; // 0.5%
-const RULE_COOLDOWN_HOURS = 6;
+// One-time notification: rule triggers once when threshold is crossed
+// Resets when price moves back across threshold
+const RULE_COOLDOWN_HOURS = 0; // No cooldown - one-time trigger per threshold crossing
 
 interface PriceChangeState {
   country: Country;
@@ -246,66 +248,71 @@ export async function evaluateUserRules(): Promise<UserRuleTrigger[]> {
 
       // Evaluate each rule in this group
       for (const rule of groupRules) {
-        // Get rule state (cooldown check)
+        // Get rule state to check if already triggered
         const { data: ruleState } = await supabase
           .from('user_rule_state')
           .select('*')
           .eq('rule_id', rule.id)
           .single();
 
-        const now = new Date();
-        const cooldownMs = RULE_COOLDOWN_HOURS * 60 * 60 * 1000;
+        // Convert threshold to canonical currency
+        const thresholdInCanonical = await convertThresholdToCanonical(
+          rule.threshold_price,
+          rule.currency as Currency,
+          canonicalCurrency,
+          fxRates
+        );
 
+        if (thresholdInCanonical === null) {
+          continue; // Cannot convert
+        }
+
+        // One-time trigger logic: only trigger when price crosses threshold
+        // Reset when price moves back across threshold
         if (ruleState) {
-          const lastTriggered = new Date(ruleState.last_triggered_at);
-          const timeSinceLastTrigger = now.getTime() - lastTriggered.getTime();
-
-          // Check cooldown
-          if (timeSinceLastTrigger < cooldownMs) {
-            continue; // Still in cooldown
-          }
-
-          // Check if price moved back across threshold (reset boundary)
           const lastPrice = ruleState.last_triggered_price;
-          const thresholdInCanonical = await convertThresholdToCanonical(
-            rule.threshold_price,
-            rule.currency as Currency,
-            canonicalCurrency,
-            fxRates
-          );
-
-          if (thresholdInCanonical === null) {
-            continue; // Cannot convert
-          }
-
-          // Reset boundary: price must have moved back across threshold
+          
           if (rule.direction === 'above') {
             // Rule triggers when price goes above threshold
-            // Reset if price went back below threshold
-            if (lastPrice >= thresholdInCanonical && currentPrice < thresholdInCanonical) {
-              // Price went back below, reset state
-              await supabase
-                .from('user_rule_state')
-                .upsert({
-                  rule_id: rule.id,
-                  last_triggered_at: now.toISOString(),
-                  last_triggered_price: currentPrice,
-                });
-              continue; // Don't trigger, just reset
+            // If already triggered (lastPrice >= threshold), don't trigger again
+            if (lastPrice >= thresholdInCanonical) {
+              // Already triggered - only reset if price goes back below
+              if (currentPrice < thresholdInCanonical) {
+                // Price went back below, reset state so it can trigger again
+                await supabase
+                  .from('user_rule_state')
+                  .upsert({
+                    rule_id: rule.id,
+                    last_triggered_at: new Date().toISOString(),
+                    last_triggered_price: currentPrice,
+                  });
+              }
+              continue; // Don't trigger, already triggered or just reset
+            }
+            // Not triggered yet - check if price now crosses above threshold
+            if (currentPrice < thresholdInCanonical) {
+              continue; // Price still below threshold, no trigger
             }
           } else {
             // Rule triggers when price goes below threshold
-            // Reset if price went back above threshold
-            if (lastPrice <= thresholdInCanonical && currentPrice > thresholdInCanonical) {
-              // Price went back above, reset state
-              await supabase
-                .from('user_rule_state')
-                .upsert({
-                  rule_id: rule.id,
-                  last_triggered_at: now.toISOString(),
-                  last_triggered_price: currentPrice,
-                });
-              continue; // Don't trigger, just reset
+            // If already triggered (lastPrice <= threshold), don't trigger again
+            if (lastPrice <= thresholdInCanonical) {
+              // Already triggered - only reset if price goes back above
+              if (currentPrice > thresholdInCanonical) {
+                // Price went back above, reset state so it can trigger again
+                await supabase
+                  .from('user_rule_state')
+                  .upsert({
+                    rule_id: rule.id,
+                    last_triggered_at: new Date().toISOString(),
+                    last_triggered_price: currentPrice,
+                  });
+              }
+              continue; // Don't trigger, already triggered or just reset
+            }
+            // Not triggered yet - check if price now crosses below threshold
+            if (currentPrice > thresholdInCanonical) {
+              continue; // Price still above threshold, no trigger
             }
           }
         }
