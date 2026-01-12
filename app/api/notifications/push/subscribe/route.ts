@@ -32,6 +32,9 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createServerSupabaseClient();
     
+    console.log('[PUSH] Saving subscription for user:', user.id);
+    console.log('[PUSH] Endpoint:', endpoint.substring(0, 50) + '...');
+    
     // Store subscription in push_subscriptions table (used by price change cron)
     const { data, error } = await supabase
       .from('push_subscriptions')
@@ -49,10 +52,11 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      console.error('Error saving push subscription:', error);
+      console.error('[PUSH] Error saving push subscription:', error);
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    console.log('[PUSH] Subscription saved successfully, ID:', data?.id);
     return NextResponse.json({ success: true, subscription: data });
   } catch (error) {
     console.error('Push subscribe error:', error);
