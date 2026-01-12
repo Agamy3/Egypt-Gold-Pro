@@ -10,7 +10,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getServerClient } from '@/lib/supabase/server';
 import { getMarketMedians } from '@/lib/supabase/queries-norm';
 import { getMultiCurrencyRates, convertMoney, getCountryCurrency } from '@/lib/fx-multi';
-import { sendEmail, formatNotificationEmail } from '@/lib/email';
+import { sendEmail } from '@/lib/email/mailer';
+import { formatNotificationEmail } from '@/lib/email';
 import { sendPushNotification } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
