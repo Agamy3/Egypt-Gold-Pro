@@ -8,6 +8,7 @@ import { useLang } from '@/components/LanguageProvider';
 import AccountMenu from '@/components/AccountMenu';
 import LanguageToggle from '@/components/LanguageToggle';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
+import Footer from '@/components/Footer';
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
