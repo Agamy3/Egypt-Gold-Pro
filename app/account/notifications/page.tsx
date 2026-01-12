@@ -14,35 +14,36 @@ import Modal from '@/components/ui/Modal';
 type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
 
-interface NotificationRule {
+interface PriceAlertRule {
   id: number;
   country: Country;
   karat: number;
-  side: 'buy' | 'sell';
-  currency: Currency;
   direction: 'above' | 'below';
-  threshold: number;
-  cooldown_minutes: number;
+  threshold_price: number;
+  currency: Currency;
   enabled: boolean;
   created_at: string;
-  updated_at: string;
 }
 
 interface Delivery {
   id: number;
-  rule_id: number;
+  country: Country;
+  karat: number;
   channel: 'email' | 'push';
   status: 'sent' | 'failed' | 'skipped';
+  direction: 'UP' | 'DOWN';
+  price_change_pct: number;
+  price: number;
+  currency: Currency;
   sent_at: string;
   error: string | null;
-  user_notification_rules: NotificationRule;
 }
 
 export default function NotificationsPage() {
   const { lang } = useLang();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [rules, setRules] = useState<NotificationRule[]>([]);
+  const [rules, setRules] = useState<PriceAlertRule[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
@@ -51,11 +52,9 @@ export default function NotificationsPage() {
   const [formData, setFormData] = useState({
     country: 'EG' as Country,
     karat: 24,
-    side: 'buy' as 'buy' | 'sell',
-    currency: 'EGP' as Currency,
     direction: 'above' as 'above' | 'below',
-    threshold: '',
-    cooldown_minutes: 180,
+    threshold_price: '',
+    currency: 'EGP' as Currency,
   });
 
   useEffect(() => {
@@ -84,7 +83,7 @@ export default function NotificationsPage() {
 
   const fetchRules = async () => {
     try {
-      const res = await fetch('/api/notifications/rules');
+      const res = await fetch('/api/notifications/price-alerts');
       if (res.status === 401) {
         router.push('/auth/signin');
         return;
@@ -92,7 +91,7 @@ export default function NotificationsPage() {
       const data = await res.json();
       setRules(data.rules || []);
     } catch (err) {
-      console.error('Error fetching rules:', err);
+      console.error('Error fetching price alert rules:', err);
     } finally {
       setLoading(false);
     }
@@ -100,6 +99,7 @@ export default function NotificationsPage() {
 
   const fetchDeliveries = async () => {
     try {
+      // Fetch from notification_deliveries_log via a new endpoint or reuse existing
       const res = await fetch('/api/notifications/deliveries?limit=20');
       if (res.ok) {
         const data = await res.json();
@@ -112,12 +112,12 @@ export default function NotificationsPage() {
 
   const handleCreateRule = async () => {
     try {
-      const res = await fetch('/api/notifications/rules', {
+      const res = await fetch('/api/notifications/price-alerts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          threshold: parseFloat(formData.threshold),
+          threshold_price: parseFloat(formData.threshold_price),
         }),
       });
 
@@ -132,11 +132,9 @@ export default function NotificationsPage() {
       setFormData({
         country: 'EG',
         karat: 24,
-        side: 'buy',
-        currency: 'EGP',
         direction: 'above',
-        threshold: '',
-        cooldown_minutes: 180,
+        threshold_price: '',
+        currency: 'EGP',
       });
     } catch (err) {
       alert('Error creating rule');
@@ -145,7 +143,7 @@ export default function NotificationsPage() {
 
   const handleToggleRule = async (id: number, enabled: boolean) => {
     try {
-      const res = await fetch(`/api/notifications/rules/${id}`, {
+      const res = await fetch(`/api/notifications/price-alerts/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !enabled }),
@@ -165,7 +163,7 @@ export default function NotificationsPage() {
     }
 
     try {
-      const res = await fetch(`/api/notifications/rules/${id}`, {
+      const res = await fetch(`/api/notifications/price-alerts/${id}`, {
         method: 'DELETE',
       });
 
@@ -398,11 +396,11 @@ export default function NotificationsPage() {
           </div>
         )}
 
-        {/* Rules Section */}
+        {/* Price Alert Rules Section */}
         <div className="bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 mb-6">
           <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             <h2 className={`text-lg font-semibold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>
-              {lang === 'ar' ? 'قواعد الإشعارات' : 'Notification Rules'}
+              {lang === 'ar' ? 'قواعد تنبيهات الأسعار' : 'Price Alert Rules'}
             </h2>
             <button
               onClick={() => setShowAddModal(true)}
@@ -423,14 +421,14 @@ export default function NotificationsPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-semibold text-gray-200">
-                        {rule.country} {rule.karat}k {rule.side} {rule.direction} {rule.currency} {rule.threshold}
+                        {rule.country} {rule.karat}k {rule.direction === 'above' ? (lang === 'ar' ? 'فوق' : 'Above') : (lang === 'ar' ? 'تحت' : 'Below')} {rule.currency} {rule.threshold_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       <span className={`px-2 py-1 rounded text-xs ${rule.enabled ? 'bg-green-600' : 'bg-gray-600'}`}>
                         {rule.enabled ? (lang === 'ar' ? 'مفعل' : 'Enabled') : (lang === 'ar' ? 'معطل' : 'Disabled')}
                       </span>
                     </div>
                     <p className="text-xs text-gray-400">
-                      {lang === 'ar' ? 'فترة التهدئة' : 'Cooldown'}: {rule.cooldown_minutes} {lang === 'ar' ? 'دقيقة' : 'minutes'}
+                      {new Date(rule.created_at).toLocaleDateString()}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -468,7 +466,7 @@ export default function NotificationsPage() {
                 <div key={delivery.id} className="bg-gray-800 rounded p-3 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-gray-300">
-                      {delivery.user_notification_rules.country} {delivery.user_notification_rules.karat}k
+                      {delivery.country} {delivery.karat}k {delivery.direction} {(delivery.price_change_pct * 100).toFixed(2)}%
                     </span>
                     <span className={`px-2 py-1 rounded text-xs ${
                       delivery.status === 'sent' ? 'bg-green-600' :
@@ -478,7 +476,7 @@ export default function NotificationsPage() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-400 mt-1">
-                    {new Date(delivery.sent_at).toLocaleString()}
+                    {new Date(delivery.sent_at).toLocaleString()} • {delivery.channel} • {delivery.currency} {delivery.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
               ))}
@@ -491,7 +489,7 @@ export default function NotificationsPage() {
       <Modal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
-        title={lang === 'ar' ? 'إضافة قاعدة إشعار' : 'Add Notification Rule'}
+        title={lang === 'ar' ? 'إضافة قاعدة تنبيه سعر' : 'Add Price Alert Rule'}
       >
         <div className="space-y-4">
           <div>
@@ -526,15 +524,15 @@ export default function NotificationsPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">
-              {lang === 'ar' ? 'الجانب' : 'Side'}
+              {lang === 'ar' ? 'الاتجاه' : 'Direction'}
             </label>
             <select
-              value={formData.side}
-              onChange={(e) => setFormData({ ...formData, side: e.target.value as 'buy' | 'sell' })}
+              value={formData.direction}
+              onChange={(e) => setFormData({ ...formData, direction: e.target.value as 'above' | 'below' })}
               className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-3 py-2"
             >
-              <option value="buy">{lang === 'ar' ? 'شراء' : 'Buy'}</option>
-              <option value="sell">{lang === 'ar' ? 'بيع' : 'Sell'}</option>
+              <option value="above">{lang === 'ar' ? 'فوق' : 'Above'}</option>
+              <option value="below">{lang === 'ar' ? 'تحت' : 'Below'}</option>
             </select>
           </div>
           <div>
@@ -554,38 +552,15 @@ export default function NotificationsPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">
-              {lang === 'ar' ? 'الاتجاه' : 'Direction'}
-            </label>
-            <select
-              value={formData.direction}
-              onChange={(e) => setFormData({ ...formData, direction: e.target.value as 'above' | 'below' })}
-              className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-3 py-2"
-            >
-              <option value="above">{lang === 'ar' ? 'فوق' : 'Above'}</option>
-              <option value="below">{lang === 'ar' ? 'تحت' : 'Below'}</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
-              {lang === 'ar' ? 'الحد الأدنى' : 'Threshold'}
+              {lang === 'ar' ? 'الحد الأدنى للسعر' : 'Threshold Price'}
             </label>
             <input
               type="number"
               step="0.01"
-              value={formData.threshold}
-              onChange={(e) => setFormData({ ...formData, threshold: e.target.value })}
+              value={formData.threshold_price}
+              onChange={(e) => setFormData({ ...formData, threshold_price: e.target.value })}
               className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
-              {lang === 'ar' ? 'فترة التهدئة (دقائق)' : 'Cooldown (minutes)'}
-            </label>
-            <input
-              type="number"
-              value={formData.cooldown_minutes}
-              onChange={(e) => setFormData({ ...formData, cooldown_minutes: parseInt(e.target.value) || 180 })}
-              className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-3 py-2"
+              placeholder={lang === 'ar' ? 'أدخل السعر' : 'Enter price'}
             />
           </div>
           <div className="flex gap-3 pt-4">
@@ -607,4 +582,3 @@ export default function NotificationsPage() {
     </div>
   );
 }
-

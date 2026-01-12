@@ -1,7 +1,7 @@
 /**
  * Notification Deliveries API
  * 
- * GET: Get recent delivery history for user's rules
+ * GET: Get recent delivery history from notification_deliveries_log
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -22,18 +22,16 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createServerSupabaseClient();
     
-    // Get deliveries for user's rules
+    // Get deliveries from notification_deliveries_log for this user
     const { data: deliveries, error } = await supabase
-      .from('notification_deliveries')
-      .select(`
-        *,
-        user_notification_rules!inner(user_id, country, karat, side, currency, direction, threshold)
-      `)
-      .eq('user_notification_rules.user_id', user.id)
-      .order('sent_at', { ascending: false })
+      .from('notification_deliveries_log')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) {
+      console.error('Error fetching deliveries:', error);
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
@@ -43,4 +41,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-
