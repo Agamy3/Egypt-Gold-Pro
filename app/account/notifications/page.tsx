@@ -210,12 +210,14 @@ export default function NotificationsPage() {
       }
 
       // Check if VAPID public key is configured
+      // In Next.js, NEXT_PUBLIC_ variables are available in the client bundle
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!vapidPublicKey) {
+        console.error('[PUSH] NEXT_PUBLIC_VAPID_PUBLIC_KEY is not configured');
         alert(lang === 'ar' ? 'إعدادات الإشعارات الفورية غير مكتملة. يرجى الاتصال بالدعم.' : 'Push notification settings are incomplete. Please contact support.');
-        console.error('NEXT_PUBLIC_VAPID_PUBLIC_KEY is not configured');
         return;
       }
+      console.log('[PUSH] VAPID public key found:', vapidPublicKey.substring(0, 20) + '...');
 
       // Convert VAPID key from base64 URL-safe to Uint8Array
       const urlBase64ToUint8Array = (base64String: string) => {
@@ -237,17 +239,28 @@ export default function NotificationsPage() {
         registration = await navigator.serviceWorker.register('/sw.js', {
           scope: '/',
         });
-        await registration.update();
-        console.log('Service worker registered:', registration);
+        console.log('[PUSH] Service worker registered:', registration.scope);
+        
+        // Wait for service worker to be ready
+        await navigator.serviceWorker.ready;
+        console.log('[PUSH] Service worker ready');
+        
+        // Update service worker if available
+        if (registration.update) {
+          await registration.update();
+        }
       } catch (swError) {
-        console.error('Service worker registration error:', swError);
+        console.error('[PUSH] Service worker registration error:', swError);
         const errorMsg = swError instanceof Error ? swError.message : 'Unknown error';
         alert(lang === 'ar' ? `فشل تسجيل خدمة العامل: ${errorMsg}. تأكد من أن الموقع يعمل على HTTPS.` : `Failed to register service worker: ${errorMsg}. Make sure the site is running on HTTPS.`);
         return;
       }
 
-      // Wait for service worker to be ready
-      await navigator.serviceWorker.ready;
+      // Get the active registration
+      registration = await navigator.serviceWorker.ready;
+      if (!registration) {
+        throw new Error('Service worker registration not available');
+      }
 
       // Subscribe to push
       const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
@@ -290,7 +303,8 @@ export default function NotificationsPage() {
         },
       };
 
-      // Send subscription data
+      // Send subscription data to server
+      console.log('[PUSH] Sending subscription to server:', subscriptionData.endpoint.substring(0, 50) + '...');
       const res = await fetch('/api/notifications/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -299,9 +313,13 @@ export default function NotificationsPage() {
 
       if (!res.ok) {
         const data = await res.json();
+        console.error('[PUSH] Server error:', data);
         throw new Error(data.error || 'Failed to save subscription');
       }
 
+      const result = await res.json();
+      console.log('[PUSH] Subscription saved successfully:', result);
+      
       setPushEnabled(true);
       alert(lang === 'ar' ? 'تم تفعيل الإشعارات الفورية بنجاح' : 'Push notifications enabled successfully');
     } catch (err) {
