@@ -268,20 +268,26 @@ export default function ProfilePage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 sm:py-8 lg:py-10">
         {/* Navigation */}
-        <div className="mb-6 flex flex-wrap gap-3">
+        <div className="mb-8 flex flex-wrap gap-3">
           <Link
             href="/"
-            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md text-sm transition-colors"
+            className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md text-sm font-medium transition-colors"
           >
             {lang === 'ar' ? '← العودة للرئيسية' : '← Back to Dashboard'}
           </Link>
           <Link
             href="/portfolio"
-            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md text-sm transition-colors"
+            className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md text-sm font-medium transition-colors"
           >
             {lang === 'ar' ? 'المحفظة' : 'Portfolio'}
+          </Link>
+          <Link
+            href="/account/notifications"
+            className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md text-sm font-medium transition-colors"
+          >
+            {lang === 'ar' ? 'الإشعارات' : 'Notifications'}
           </Link>
         </div>
 
@@ -297,75 +303,75 @@ export default function ProfilePage() {
           </div>
         )}
 
-        <div className="space-y-6">
+        <div className="space-y-8">
           {/* Account Information */}
-          <section className="bg-gray-900 rounded-lg shadow-md p-4 sm:p-6">
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
+          <section className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8">
+            <h2 className={`text-xl font-semibold text-gray-100 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
               {lang === 'ar' ? 'معلومات الحساب' : 'Account Information'}
             </h2>
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   {lang === 'ar' ? 'البريد الإلكتروني' : 'Email'}
                 </label>
                 <input
                   type="email"
                   value={profileData.email}
                   disabled
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-400 rounded-md px-3 py-2 cursor-not-allowed"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-400 rounded-md px-4 py-2.5 cursor-not-allowed"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   {lang === 'ar' ? 'اسم العرض' : 'Display Name'}
                 </label>
                 <input
                   type="text"
                   value={formData.display_name}
                   onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder={lang === 'ar' ? 'اسم العرض (اختياري)' : 'Display name (optional)'}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   {lang === 'ar' ? 'طريقة تسجيل الدخول' : 'Auth Provider'}
                 </label>
                 <input
                   type="text"
                   value={profileData.provider === 'google' ? 'Google' : profileData.provider === 'apple' ? 'Apple' : 'Email/Password'}
                   disabled
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-400 rounded-md px-3 py-2 cursor-not-allowed"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-400 rounded-md px-4 py-2.5 cursor-not-allowed"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   {lang === 'ar' ? 'تاريخ إنشاء الحساب' : 'Account Created'}
                 </label>
                 <input
                   type="text"
                   value={formatDate(profileData.created_at)}
                   disabled
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-400 rounded-md px-3 py-2 cursor-not-allowed"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-400 rounded-md px-4 py-2.5 cursor-not-allowed"
                 />
               </div>
             </div>
           </section>
 
           {/* Preferences */}
-          <section className="bg-gray-900 rounded-lg shadow-md p-4 sm:p-6">
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
+          <section className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8">
+            <h2 className={`text-xl font-semibold text-gray-100 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
               {lang === 'ar' ? 'التفضيلات' : 'Preferences'}
             </h2>
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   {lang === 'ar' ? 'البلد الافتراضي' : 'Default Country'}
                 </label>
                 <select
                   value={formData.preferred_country}
                   onChange={(e) => setFormData({ ...formData, preferred_country: e.target.value as Country | '' })}
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">{lang === 'ar' ? 'بدون افتراضي' : 'No default'}</option>
                   <option value="EG">Egypt (EG)</option>
@@ -375,13 +381,13 @@ export default function ProfilePage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   {lang === 'ar' ? 'العملة الافتراضية' : 'Default Currency'}
                 </label>
                 <select
                   value={formData.preferred_currency}
                   onChange={(e) => setFormData({ ...formData, preferred_currency: e.target.value as Currency | '' })}
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">{lang === 'ar' ? 'بدون افتراضي' : 'No default'}</option>
                   <option value="EGP">EGP</option>
@@ -391,13 +397,13 @@ export default function ProfilePage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   {lang === 'ar' ? 'اللغة الافتراضية' : 'Default Language'}
                 </label>
                 <select
                   value={formData.preferred_language}
                   onChange={(e) => setFormData({ ...formData, preferred_language: e.target.value as Language | '' })}
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-md px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">{lang === 'ar' ? 'بدون افتراضي' : 'No default'}</option>
                   <option value="EN">English (EN)</option>
@@ -408,11 +414,11 @@ export default function ProfilePage() {
           </section>
 
           {/* Notification Preferences */}
-          <section className="bg-gray-900 rounded-lg shadow-md p-4 sm:p-6">
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
+          <section className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8">
+            <h2 className={`text-xl font-semibold text-gray-100 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
               {lang === 'ar' ? 'تفضيلات الإشعارات' : 'Notification Preferences'}
             </h2>
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <label className="text-sm font-medium text-gray-300">
@@ -463,32 +469,32 @@ export default function ProfilePage() {
           </section>
 
           {/* Security */}
-          <section className="bg-gray-900 rounded-lg shadow-md p-4 sm:p-6">
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
+          <section className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8">
+            <h2 className={`text-xl font-semibold text-gray-100 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
               {lang === 'ar' ? 'الأمان' : 'Security'}
             </h2>
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-2">
                   {lang === 'ar' ? 'الجلسة النشطة' : 'Active Session'}
                 </label>
                 <input
                   type="text"
                   value={profileData.provider === 'google' ? 'Google' : profileData.provider === 'apple' ? 'Apple' : 'Email/Password'}
                   disabled
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-400 rounded-md px-3 py-2 cursor-not-allowed"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-400 rounded-md px-4 py-2.5 cursor-not-allowed"
                 />
               </div>
-              <div className="flex flex-wrap gap-3 pt-2">
+              <div className="flex flex-wrap gap-4 pt-2">
                 <button
                   onClick={handleSignOutAll}
-                  className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md text-sm transition-colors"
+                  className="px-5 py-2.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md text-sm font-medium transition-colors"
                 >
                   {lang === 'ar' ? 'تسجيل الخروج من جميع الجلسات' : 'Sign Out from All Sessions'}
                 </button>
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm transition-colors"
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors"
                 >
                   {lang === 'ar' ? 'حذف الحساب' : 'Delete My Account'}
                 </button>
@@ -497,11 +503,11 @@ export default function ProfilePage() {
           </section>
 
           {/* Save Button */}
-          <div className="flex justify-end">
+          <div className="flex justify-end pt-4">
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-base font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving
                 ? (lang === 'ar' ? 'جاري الحفظ...' : 'Saving...')

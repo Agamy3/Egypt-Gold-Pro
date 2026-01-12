@@ -173,7 +173,7 @@ function PortfolioContent() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 sm:py-8 lg:py-10">
         {portfolio && (
           <div className="space-y-6">
             {/* Summary Cards */}
