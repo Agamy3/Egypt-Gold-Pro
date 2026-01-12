@@ -317,61 +317,29 @@ export async function evaluateUserRules(): Promise<UserRuleTrigger[]> {
           }
         }
 
-        // Convert threshold to canonical currency
-        const thresholdInCanonical = await convertThresholdToCanonical(
-          rule.threshold_price,
-          rule.currency as Currency,
-          canonicalCurrency,
-          fxRates
-        );
-
-        if (thresholdInCanonical === null) {
-          continue; // Cannot convert
-        }
-
-        // Check if rule should trigger
-        let shouldTrigger = false;
-        let direction: 'UP' | 'DOWN' = 'UP';
-
-        if (rule.direction === 'above') {
-          // Trigger if current price >= threshold and last price < threshold
-          if (currentPrice >= thresholdInCanonical) {
-            if (!ruleState || ruleState.last_triggered_price < thresholdInCanonical) {
-              shouldTrigger = true;
-              direction = 'UP';
-            }
-          }
-        } else {
-          // Trigger if current price <= threshold and last price > threshold
-          if (currentPrice <= thresholdInCanonical) {
-            if (!ruleState || ruleState.last_triggered_price > thresholdInCanonical) {
-              shouldTrigger = true;
-              direction = 'DOWN';
-            }
-          }
-        }
-
-        if (shouldTrigger) {
-          // Update rule state
-          await supabase
-            .from('user_rule_state')
-            .upsert({
-              rule_id: rule.id,
-              last_triggered_at: now.toISOString(),
-              last_triggered_price: currentPrice,
-            });
-
-          triggers.push({
-            ruleId: rule.id,
-            userId: rule.user_id,
-            country: countryCode,
-            karat,
-            direction,
-            thresholdPrice: thresholdInCanonical,
-            currentPrice,
-            currency: canonicalCurrency,
+        // At this point, we know the rule should trigger (one-time)
+        // Price has crossed the threshold and hasn't been triggered yet
+        const direction: 'UP' | 'DOWN' = rule.direction === 'above' ? 'UP' : 'DOWN';
+        
+        // Update rule state to mark as triggered (one-time)
+        await supabase
+          .from('user_rule_state')
+          .upsert({
+            rule_id: rule.id,
+            last_triggered_at: new Date().toISOString(),
+            last_triggered_price: currentPrice,
           });
-        }
+
+        triggers.push({
+          ruleId: rule.id,
+          userId: rule.user_id,
+          country: countryCode,
+          karat,
+          direction,
+          thresholdPrice: thresholdInCanonical,
+          currentPrice,
+          currency: canonicalCurrency,
+        });
       }
     }
   } catch (error) {
