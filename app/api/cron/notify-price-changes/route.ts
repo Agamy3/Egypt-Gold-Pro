@@ -384,7 +384,27 @@ export async function GET(request: NextRequest) {
         const pctChange = Math.abs((trigger.currentPrice - trigger.thresholdPrice) / trigger.thresholdPrice);
 
         // Send email if enabled
-        if (emailEnabled && profile.email) {
+        if (emailEnabled) {
+          if (!profile.email) {
+            console.warn(`User ${profile.id} has email notifications enabled but no email address (rule ${trigger.ruleId})`);
+            await logDelivery(
+              profile.id,
+              trigger.country,
+              trigger.karat,
+              'email',
+              'skipped',
+              pctChange,
+              trigger.currentPrice,
+              trigger.currency,
+              trigger.direction,
+              'No email address in profile',
+              { ruleId: trigger.ruleId }
+            );
+            continue;
+          }
+
+          console.log(`Sending email to ${profile.email} for rule ${trigger.ruleId} (${trigger.country} ${trigger.karat}k)`);
+          
           const { subject, html, text } = formatPriceChangeEmail(
             trigger.country,
             trigger.karat,
@@ -418,9 +438,12 @@ export async function GET(request: NextRequest) {
 
           if (emailResult.success) {
             results.notificationsSent++;
+            console.log(`Email sent successfully to ${profile.email} for rule ${trigger.ruleId}`);
           } else {
             results.notificationsFailed++;
-            results.errors.push(`Email failed for user ${profile.id}: ${emailResult.error}`);
+            const errorMsg = `Email failed for user ${profile.id} (${profile.email}, rule ${trigger.ruleId}): ${emailResult.error}`;
+            console.error(errorMsg);
+            results.errors.push(errorMsg);
           }
         }
 
