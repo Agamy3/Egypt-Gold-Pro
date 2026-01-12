@@ -358,7 +358,7 @@ export default function NotificationsPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 sm:py-8 lg:py-10">
         <div className="mb-6">
           <Link href="/account/profile" className="text-blue-400 hover:text-blue-300 text-sm">
             {lang === 'ar' ? '← العودة للملف الشخصي' : '← Back to Profile'}
@@ -367,7 +367,7 @@ export default function NotificationsPage() {
 
         {/* Push Notifications Toggle */}
         {pushSupported && (
-          <div className="bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 mb-6">
+          <div className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8 mb-8">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-gray-100 mb-1">
@@ -397,9 +397,9 @@ export default function NotificationsPage() {
         )}
 
         {/* Price Alert Rules Section */}
-        <div className="bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 mb-6">
-          <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-            <h2 className={`text-lg font-semibold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>
+        <div className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8 mb-8">
+          <div className={`flex items-center justify-between mb-6 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            <h2 className={`text-xl font-semibold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>
               {lang === 'ar' ? 'قواعد تنبيهات الأسعار' : 'Price Alert Rules'}
             </h2>
             <button
@@ -452,8 +452,8 @@ export default function NotificationsPage() {
         </div>
 
         {/* Recent Deliveries */}
-        <div className="bg-gray-900 rounded-lg shadow-md p-4 sm:p-6">
-          <h2 className={`text-lg font-semibold text-gray-100 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
+        <div className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8">
+          <h2 className={`text-xl font-semibold text-gray-100 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
             {lang === 'ar' ? 'التسليمات الأخيرة' : 'Recent Deliveries'}
           </h2>
           {deliveries.length === 0 ? (
