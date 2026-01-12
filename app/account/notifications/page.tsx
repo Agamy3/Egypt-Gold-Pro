@@ -358,53 +358,55 @@ export default function NotificationsPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 sm:py-8 lg:py-10">
-        <div className="mb-6">
-          <Link href="/account/profile" className="text-blue-400 hover:text-blue-300 text-sm">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-5 sm:py-6 lg:py-8">
+        <div className="mb-5 sm:mb-6">
+          <Link href="/account/profile" className="text-blue-400 hover:text-blue-300 text-sm font-medium inline-flex items-center gap-1">
             {lang === 'ar' ? '← العودة للملف الشخصي' : '← Back to Profile'}
           </Link>
         </div>
 
         {/* Push Notifications Toggle */}
         {pushSupported && (
-          <div className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8 mb-8">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-100 mb-1">
+          <div className="bg-gray-900 rounded-lg shadow-md p-5 sm:p-6 lg:p-8 mb-6 sm:mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex-1">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-100 mb-1.5">
                   {lang === 'ar' ? 'الإشعارات الفورية' : 'Push Notifications'}
                 </h3>
                 <p className="text-sm text-gray-400">
                   {lang === 'ar' ? 'تلقي إشعارات على سطح المكتب والهاتف' : 'Receive notifications on desktop and mobile'}
                 </p>
               </div>
-              {pushEnabled ? (
-                <button
-                  onClick={handleDisablePush}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm"
-                >
-                  {lang === 'ar' ? 'تعطيل' : 'Disable'}
-                </button>
-              ) : (
-                <button
-                  onClick={handleEnablePush}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm"
-                >
-                  {lang === 'ar' ? 'تفعيل' : 'Enable'}
-                </button>
-              )}
+              <div className="sm:flex-shrink-0">
+                {pushEnabled ? (
+                  <button
+                    onClick={handleDisablePush}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors"
+                  >
+                    {lang === 'ar' ? 'تعطيل' : 'Disable'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleEnablePush}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors"
+                  >
+                    {lang === 'ar' ? 'تفعيل' : 'Enable'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {/* Price Alert Rules Section */}
-        <div className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8 mb-8">
-          <div className={`flex items-center justify-between mb-6 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-            <h2 className={`text-xl font-semibold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>
+        <div className="bg-gray-900 rounded-lg shadow-md p-5 sm:p-6 lg:p-8 mb-6 sm:mb-8">
+          <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 ${lang === 'ar' ? 'sm:flex-row-reverse' : ''}`}>
+            <h2 className={`text-lg sm:text-xl font-semibold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>
               {lang === 'ar' ? 'قواعد تنبيهات الأسعار' : 'Price Alert Rules'}
             </h2>
             <button
               onClick={() => setShowAddModal(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md"
+              className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors"
             >
               {lang === 'ar' ? '+ إضافة قاعدة' : '+ Add Rule'}
             </button>
@@ -415,35 +417,37 @@ export default function NotificationsPage() {
               {lang === 'ar' ? 'لا توجد قواعد. ابدأ بإضافة قاعدة جديدة.' : 'No rules. Start by adding a new rule.'}
             </p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {rules.map((rule) => (
-                <div key={rule.id} className="bg-gray-800 rounded-lg p-4 flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-semibold text-gray-200">
-                        {rule.country} {rule.karat}k {rule.direction === 'above' ? (lang === 'ar' ? 'فوق' : 'Above') : (lang === 'ar' ? 'تحت' : 'Below')} {rule.currency} {rule.threshold_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      <span className={`px-2 py-1 rounded text-xs ${rule.enabled ? 'bg-green-600' : 'bg-gray-600'}`}>
-                        {rule.enabled ? (lang === 'ar' ? 'مفعل' : 'Enabled') : (lang === 'ar' ? 'معطل' : 'Disabled')}
-                      </span>
+                <div key={rule.id} className="bg-gray-800 rounded-lg p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="font-semibold text-gray-200 text-sm sm:text-base break-words">
+                          {rule.country} {rule.karat}k {rule.direction === 'above' ? (lang === 'ar' ? 'فوق' : 'Above') : (lang === 'ar' ? 'تحت' : 'Below')} {rule.currency} {rule.threshold_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        <span className={`px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap ${rule.enabled ? 'bg-green-600' : 'bg-gray-600'}`}>
+                          {rule.enabled ? (lang === 'ar' ? 'مفعل' : 'Enabled') : (lang === 'ar' ? 'معطل' : 'Disabled')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        {lang === 'ar' ? 'تم الإنشاء في' : 'Created'} {new Date(rule.created_at).toLocaleDateString()}
+                      </p>
                     </div>
-                    <p className="text-xs text-gray-400">
-                      {new Date(rule.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleToggleRule(rule.id, rule.enabled)}
-                      className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded"
-                    >
-                      {rule.enabled ? (lang === 'ar' ? 'تعطيل' : 'Disable') : (lang === 'ar' ? 'تفعيل' : 'Enable')}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteRule(rule.id)}
-                      className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded"
-                    >
-                      {lang === 'ar' ? 'حذف' : 'Delete'}
-                    </button>
+                    <div className="flex gap-2 sm:flex-shrink-0">
+                      <button
+                        onClick={() => handleToggleRule(rule.id, rule.enabled)}
+                        className="px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600 text-white rounded-md font-medium transition-colors"
+                      >
+                        {rule.enabled ? (lang === 'ar' ? 'تعطيل' : 'Disable') : (lang === 'ar' ? 'تفعيل' : 'Enable')}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRule(rule.id)}
+                        className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-md font-medium transition-colors"
+                      >
+                        {lang === 'ar' ? 'حذف' : 'Delete'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -452,8 +456,8 @@ export default function NotificationsPage() {
         </div>
 
         {/* Recent Deliveries */}
-        <div className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8">
-          <h2 className={`text-xl font-semibold text-gray-100 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
+        <div className="bg-gray-900 rounded-lg shadow-md p-5 sm:p-6 lg:p-8">
+          <h2 className={`text-lg sm:text-xl font-semibold text-gray-100 mb-5 sm:mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
             {lang === 'ar' ? 'التسليمات الأخيرة' : 'Recent Deliveries'}
           </h2>
           {deliveries.length === 0 ? (
@@ -461,23 +465,27 @@ export default function NotificationsPage() {
               {lang === 'ar' ? 'لا توجد تسليمات' : 'No deliveries yet'}
             </p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {deliveries.map((delivery) => (
-                <div key={delivery.id} className="bg-gray-800 rounded p-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-300">
-                      {delivery.country} {delivery.karat}k {delivery.direction} {(delivery.price_change_pct * 100).toFixed(2)}%
-                    </span>
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      delivery.status === 'sent' ? 'bg-green-600' :
-                      delivery.status === 'failed' ? 'bg-red-600' : 'bg-gray-600'
-                    }`}>
-                      {delivery.status}
-                    </span>
+                <div key={delivery.id} className="bg-gray-800 rounded-lg p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                        <span className="text-sm sm:text-base font-medium text-gray-200">
+                          {delivery.country} {delivery.karat}k {delivery.direction} {(delivery.price_change_pct * 100).toFixed(2)}%
+                        </span>
+                        <span className={`px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap ${
+                          delivery.status === 'sent' ? 'bg-green-600' :
+                          delivery.status === 'failed' ? 'bg-red-600' : 'bg-gray-600'
+                        }`}>
+                          {delivery.status}
+                        </span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-gray-400 break-words">
+                        {new Date(delivery.sent_at || delivery.created_at).toLocaleString()} • {delivery.channel} • {delivery.currency} {delivery.price?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 'N/A'}
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {new Date(delivery.sent_at).toLocaleString()} • {delivery.channel} • {delivery.currency} {delivery.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
                 </div>
               ))}
             </div>
