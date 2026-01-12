@@ -295,10 +295,9 @@ export async function GET(request: NextRequest) {
                 'email',
                 'skipped',
                 change.pctChange,
-                change.oldPrice,
                 change.newPrice,
-                change.direction,
                 currency,
+                change.direction,
                 'No email address in profile',
                 { type: 'global_alert' }
               );
