@@ -189,14 +189,55 @@ export default function NotificationsPage() {
         return;
       }
 
-      // Register service worker
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      await registration.update();
+      // Check if VAPID public key is configured
+      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!vapidPublicKey) {
+        alert(lang === 'ar' ? 'إعدادات الإشعارات الفورية غير مكتملة. يرجى الاتصال بالدعم.' : 'Push notification settings are incomplete. Please contact support.');
+        return;
+      }
 
+      // Convert VAPID key from base64 URL-safe to Uint8Array
+      const urlBase64ToUint8Array = (base64String: string) => {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding)
+          .replace(/\-/g, '+')
+          .replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+          outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+      };
+
+      // Register service worker
+      let registration;
+      try {
+        registration = await navigator.serviceWorker.register('/sw.js');
+        await registration.update();
+      } catch (swError) {
+        console.error('Service worker registration error:', swError);
+        alert(lang === 'ar' ? 'فشل تسجيل خدمة العامل. تأكد من أن الموقع يعمل على HTTPS.' : 'Failed to register service worker. Make sure the site is running on HTTPS.');
+        return;
+      }
+
+      // Subscribe to push
+      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '',
+        applicationServerKey: applicationServerKey,
       });
+
+      // Convert keys to base64 for storage
+      const p256dhKey = subscription.getKey('p256dh');
+      const authKey = subscription.getKey('auth');
+      
+      if (!p256dhKey || !authKey) {
+        throw new Error('Failed to get subscription keys');
+      }
+
+      const p256dh = btoa(String.fromCharCode(...new Uint8Array(p256dhKey)));
+      const auth = btoa(String.fromCharCode(...new Uint8Array(authKey)));
 
       const res = await fetch('/api/push/subscribe', {
         method: 'POST',
@@ -204,18 +245,23 @@ export default function NotificationsPage() {
         body: JSON.stringify({
           endpoint: subscription.endpoint,
           keys: {
-            p256dh: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('p256dh')!))),
-            auth: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('auth')!))),
+            p256dh: p256dh,
+            auth: auth,
           },
         }),
       });
 
-      if (res.ok) {
-        setPushEnabled(true);
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to save subscription');
       }
+
+      setPushEnabled(true);
+      alert(lang === 'ar' ? 'تم تفعيل الإشعارات الفورية بنجاح' : 'Push notifications enabled successfully');
     } catch (err) {
       console.error('Error enabling push:', err);
-      alert(lang === 'ar' ? 'فشل تفعيل الإشعارات الفورية' : 'Failed to enable push notifications');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      alert(lang === 'ar' ? `فشل تفعيل الإشعارات الفورية: ${errorMessage}` : `Failed to enable push notifications: ${errorMessage}`);
     }
   };
 
