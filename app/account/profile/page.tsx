@@ -21,8 +21,6 @@ interface UserProfile {
   preferred_country: Country | null;
   preferred_currency: Currency | null;
   preferred_language: Language | null;
-  email_notifications_enabled: boolean;
-  app_notifications_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -49,8 +47,6 @@ export default function ProfilePage() {
     preferred_country: '' as Country | '',
     preferred_currency: '' as Currency | '',
     preferred_language: '' as Language | '',
-    email_notifications_enabled: true,
-    app_notifications_enabled: false,
   });
 
   // Delete account state
@@ -90,8 +86,6 @@ export default function ProfilePage() {
           preferred_country: data.profile.preferred_country || '',
           preferred_currency: data.profile.preferred_currency || '',
           preferred_language: data.profile.preferred_language || '',
-          email_notifications_enabled: data.profile.email_notifications_enabled ?? true,
-          app_notifications_enabled: data.profile.app_notifications_enabled ?? false,
         });
       }
       setError(null);
@@ -120,12 +114,6 @@ export default function ProfilePage() {
       }
       if (formData.preferred_language !== (profileData?.profile?.preferred_language || '')) {
         payload.preferred_language = formData.preferred_language || null;
-      }
-      if (formData.email_notifications_enabled !== (profileData?.profile?.email_notifications_enabled ?? true)) {
-        payload.email_notifications_enabled = formData.email_notifications_enabled;
-      }
-      if (formData.app_notifications_enabled !== (profileData?.profile?.app_notifications_enabled ?? false)) {
-        payload.app_notifications_enabled = formData.app_notifications_enabled;
       }
 
       const res = await fetch('/api/profile', {
@@ -283,12 +271,6 @@ export default function ProfilePage() {
           >
             {lang === 'ar' ? 'المحفظة' : 'Portfolio'}
           </Link>
-          <Link
-            href="/account/notifications"
-            className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md text-sm font-medium transition-colors"
-          >
-            {lang === 'ar' ? 'الإشعارات' : 'Notifications'}
-          </Link>
         </div>
 
         {/* Messages */}
@@ -409,61 +391,6 @@ export default function ProfilePage() {
                   <option value="EN">English (EN)</option>
                   <option value="AR">العربية (AR)</option>
                 </select>
-              </div>
-            </div>
-          </section>
-
-          {/* Notification Preferences */}
-          <section className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8">
-            <h2 className={`text-xl font-semibold text-gray-100 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
-              {lang === 'ar' ? 'تفضيلات الإشعارات' : 'Notification Preferences'}
-            </h2>
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <label className="text-sm font-medium text-gray-300">
-                    {lang === 'ar' ? 'تفعيل إشعارات البريد الإلكتروني' : 'Enable Email Notifications'}
-                  </label>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {lang === 'ar' ? 'تلقي تنبيهات الأسعار عبر البريد الإلكتروني' : 'Receive price alerts via email'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, email_notifications_enabled: !formData.email_notifications_enabled })}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    formData.email_notifications_enabled ? 'bg-blue-600' : 'bg-gray-700'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      formData.email_notifications_enabled ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <label className="text-sm font-medium text-gray-300">
-                    {lang === 'ar' ? 'تفعيل إشعارات التطبيق' : 'Enable App Notifications'}
-                  </label>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {lang === 'ar' ? 'إشعارات الدفع (قريباً)' : 'Push notifications (coming soon)'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, app_notifications_enabled: !formData.app_notifications_enabled })}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    formData.app_notifications_enabled ? 'bg-blue-600' : 'bg-gray-700'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      formData.app_notifications_enabled ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
               </div>
             </div>
           </section>

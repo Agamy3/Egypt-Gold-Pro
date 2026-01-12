@@ -3,7 +3,6 @@ import './globals.css'
 import { LanguageProvider } from '@/components/LanguageProvider'
 import { Analytics } from '@vercel/analytics/next'
 import CookieConsentBanner from '@/components/CookieConsentBanner'
-import NotificationPrompt from '@/components/NotificationPrompt'
 
 // Get site URL from environment or use fallback
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com'
@@ -61,7 +60,6 @@ export default function RootLayout({
       <body className="touch-pan-y">
         <LanguageProvider>{children}</LanguageProvider>
         <CookieConsentBanner />
-        <NotificationPrompt />
         <Analytics />
       </body>
     </html>
