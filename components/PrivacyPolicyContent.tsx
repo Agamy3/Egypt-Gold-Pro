@@ -109,7 +109,7 @@ const privacyPolicyAr = {
   sections: {
     whoWeAre: {
       title: 'من نحن',
-      content: 'EgyptGold Pro هي منصة تعليمية توفر تحليلات سوق الذهب وتتبع المحفظة. للأسئلة حول سياسة الخصوصية هذه، اتصل بنا على: privacy@egyptgoldpro.com',
+      content: 'EgyptGold Pro هي منصة تعليمية توفر تحليلات سوق الذهب وتتبع المحفظة. للأسئلة حول سياسة الخصوصية هذه، اتصل بنا على: support@egyptgoldpro.com',
     },
     dataCollection: {
       title: 'البيانات التي نجمعها',
@@ -196,7 +196,7 @@ const privacyPolicyAr = {
     },
     contact: {
       title: 'اتصل بنا',
-      content: 'إذا كانت لديك أسئلة حول سياسة الخصوصية هذه أو ترغب في ممارسة حقوقك، يرجى الاتصال بنا على: privacy@egyptgoldpro.com',
+      content: 'إذا كانت لديك أسئلة حول سياسة الخصوصية هذه أو ترغب في ممارسة حقوقك، يرجى الاتصال بنا على: support@egyptgoldpro.com',
     },
   },
 };

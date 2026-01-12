@@ -72,7 +72,7 @@ const termsAr = {
     },
     contact: {
       title: 'اتصل بنا',
-      text: 'للأسئلة حول هذه الشروط، اتصل بنا على: privacy@egyptgoldpro.com',
+      text: 'للأسئلة حول هذه الشروط، اتصل بنا على: support@egyptgoldpro.com',
     },
   },
 };
