@@ -6,6 +6,7 @@ import Link from 'next/link';
 import LanguageToggle from '@/components/LanguageToggle';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import AccountMenu from '@/components/AccountMenu';
+import Footer from '@/components/Footer';
 import ForecastCard from '@/components/ForecastCard';
 import { useLang } from '@/components/LanguageProvider';
 import { useSearchParams } from 'next/navigation';
