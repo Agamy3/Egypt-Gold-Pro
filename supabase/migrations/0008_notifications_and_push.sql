@@ -241,27 +241,103 @@ BEGIN
   END IF;
 END $$;
 
--- Indexes for notification deliveries
-CREATE INDEX IF NOT EXISTS idx_notification_deliveries_rule_id ON public.notification_deliveries(rule_id);
-CREATE INDEX IF NOT EXISTS idx_notification_deliveries_user_id ON public.notification_deliveries(user_id);
-CREATE INDEX IF NOT EXISTS idx_notification_deliveries_sent_at ON public.notification_deliveries(sent_at DESC);
-CREATE INDEX IF NOT EXISTS idx_notification_deliveries_dedupe_key ON public.notification_deliveries(dedupe_key);
+-- Indexes for notification deliveries (only create if columns exist)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'notification_deliveries' 
+    AND column_name = 'rule_id'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_notification_deliveries_rule_id ON public.notification_deliveries(rule_id);
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'notification_deliveries' 
+    AND column_name = 'user_id'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_notification_deliveries_user_id ON public.notification_deliveries(user_id);
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'notification_deliveries' 
+    AND column_name = 'sent_at'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_notification_deliveries_sent_at ON public.notification_deliveries(sent_at DESC);
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'notification_deliveries' 
+    AND column_name = 'dedupe_key'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_notification_deliveries_dedupe_key ON public.notification_deliveries(dedupe_key);
+  END IF;
+END $$;
 
 -- Enable RLS
 ALTER TABLE public.notification_deliveries ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for notification deliveries
 DROP POLICY IF EXISTS "Users can view deliveries for own notifications" ON public.notification_deliveries;
-CREATE POLICY "Users can view deliveries for own notifications"
-  ON public.notification_deliveries
-  FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.user_notification_rules
-      WHERE user_notification_rules.id = notification_deliveries.rule_id
-      AND user_notification_rules.user_id = auth.uid()
-    )
-  );
+
+-- Create policy based on which columns exist
+DO $$
+BEGIN
+  -- Check which structure we have and create appropriate policy
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'notification_deliveries' 
+    AND column_name = 'user_id'
+  ) THEN
+    -- New structure with user_id column - use it directly
+    EXECUTE 'CREATE POLICY "Users can view deliveries for own notifications"
+      ON public.notification_deliveries
+      FOR SELECT
+      USING (user_id = auth.uid())';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'notification_deliveries' 
+    AND column_name = 'rule_id'
+  ) THEN
+    -- New structure with rule_id (but no user_id yet)
+    EXECUTE 'CREATE POLICY "Users can view deliveries for own notifications"
+      ON public.notification_deliveries
+      FOR SELECT
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.user_notification_rules
+          WHERE user_notification_rules.id = notification_deliveries.rule_id
+          AND user_notification_rules.user_id = auth.uid()
+        )
+      )';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'notification_deliveries' 
+    AND column_name = 'notification_id'
+  ) THEN
+    -- Old structure with notification_id
+    EXECUTE 'CREATE POLICY "Users can view deliveries for own notifications"
+      ON public.notification_deliveries
+      FOR SELECT
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.user_notifications
+          WHERE user_notifications.id = notification_deliveries.notification_id
+          AND user_notifications.user_id = auth.uid()
+        )
+      )';
+  END IF;
+END $$;
 
 -- Service role can insert/update deliveries (for cron jobs)
 DROP POLICY IF EXISTS "Service role can manage deliveries" ON public.notification_deliveries;
