@@ -11,6 +11,7 @@ import { useState, useEffect } from 'react';
 import ForecastMiniChart from './ForecastMiniChart';
 import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
+import HoverTip from './ui/HoverTip';
 
 interface ForecastData {
   direction: 'UP' | 'DOWN' | 'SIDEWAYS';
@@ -161,7 +162,14 @@ export default function ForecastCard({ forecast, insufficientData, country = 'EG
     return (
       <div className={`bg-gray-900 rounded-lg shadow p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-400`}>
         <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-          <h3 className={`text-lg font-semibold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>{displayTitle}</h3>
+          <h3 className={`text-lg font-semibold text-gray-100 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {displayTitle}
+            <HoverTip text={lang === 'ar' ? 'التنبؤ بالاتجاه بناءً على تحليل الاتجاهات والزخم والانحرافات. يعتمد على بيانات السوق المحلية والعالمية.' : "Directional forecast based on trend analysis, momentum, and variance. Uses both local and global market data."}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            </HoverTip>
+          </h3>
           <span className="text-xs text-gray-400">{t(lang, 'next120')}</span>
         </div>
         <div className="text-center py-4">
@@ -235,7 +243,14 @@ export default function ForecastCard({ forecast, insufficientData, country = 'EG
   return (
     <div className={`bg-gray-900 rounded-lg shadow p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} ${directionColors[forecast.direction]}`}>
       <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-        <h3 className={`text-lg font-semibold text-gray-800 ${lang === 'ar' ? 'text-right' : ''}`}>{displayTitle}</h3>
+        <h3 className={`text-lg font-semibold text-gray-800 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+          {displayTitle}
+          <HoverTip text={lang === 'ar' ? 'التنبؤ بالاتجاه بناءً على تحليل الاتجاهات والزخم والانحرافات. يعتمد على بيانات السوق المحلية والعالمية.' : "Directional forecast based on trend analysis, momentum, and variance. Uses both local and global market data."}>
+            <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+          </HoverTip>
+        </h3>
         <span className="text-xs text-gray-500">{t(lang, 'next120')}</span>
       </div>
 

@@ -357,26 +357,26 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           onMouseLeave={() => setExpandedCard(null)}
           onClick={() => setExpandedCard(expandedCard === 'fx' ? null : 'fx')}
         >
-          <HoverTip text={lang === 'ar' ? 'سعر الصرف الفوري للدولار المستخدم لتحويل أسعار الذهب العالمية إلى القيمة المحلية.' : "Live USD exchange rate used to convert global gold prices into local fair value."}>
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {(() => {
-                // Always use selected currency (not canonical currency) to show the rate the user wants to see
-                const displayCurrency = snapshot.currency || 
-                                      (snapshot.country === 'EG' ? 'EGP' :
-                                       snapshot.country === 'AE' ? 'AED' :
-                                       snapshot.country === 'SA' ? 'SAR' :
-                                       snapshot.country === 'US' ? 'USD' : 'EGP');
-                return displayCurrency === 'EGP' ? (t(lang, 'usdEgp') || 'USD/EGP') :
-                       displayCurrency === 'AED' ? 'USD/AED' :
-                       displayCurrency === 'SAR' ? 'USD/SAR' :
-                       displayCurrency === 'USD' ? 'USD/USD' :
-                       'USD Rate';
-              })()}
-              <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {(() => {
+              // Always use selected currency (not canonical currency) to show the rate the user wants to see
+              const displayCurrency = snapshot.currency || 
+                                    (snapshot.country === 'EG' ? 'EGP' :
+                                     snapshot.country === 'AE' ? 'AED' :
+                                     snapshot.country === 'SA' ? 'SAR' :
+                                     snapshot.country === 'US' ? 'USD' : 'EGP');
+              return displayCurrency === 'EGP' ? (t(lang, 'usdEgp') || 'USD/EGP') :
+                     displayCurrency === 'AED' ? 'USD/AED' :
+                     displayCurrency === 'SAR' ? 'USD/SAR' :
+                     displayCurrency === 'USD' ? 'USD/USD' :
+                     'USD Rate';
+            })()}
+            <HoverTip text={lang === 'ar' ? 'سعر الصرف الفوري للدولار المستخدم لتحويل أسعار الذهب العالمية إلى القيمة المحلية.' : "Live USD exchange rate used to convert global gold prices into local fair value."}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-            </h2>
-          </HoverTip>
+            </HoverTip>
+          </h2>
           {(() => {
             // Always use selected currency to determine which rate to show
             const displayCurrency = snapshot.currency || 
@@ -447,14 +447,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           onMouseLeave={() => setExpandedCard(null)}
           onClick={() => setExpandedCard(expandedCard === 'variance' ? null : 'variance')}
         >
-          <HoverTip text={lang === 'ar' ? 'الفرق بين وسيط السوق المحلي والقيمة العادلة المحسوبة. يوضح العلاوة/الخصم والتصنيف.' : "Difference between local market median and computed fair value. Shows premium/discount and classification."}>
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {t(lang, 'marketVariance')}
-              <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {t(lang, 'marketVariance')}
+            <HoverTip text={lang === 'ar' ? 'الفرق بين وسيط السوق المحلي والقيمة العادلة المحسوبة. يوضح العلاوة/الخصم والتصنيف.' : "Difference between local market median and computed fair value. Shows premium/discount and classification."}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-            </h2>
-          </HoverTip>
+            </HoverTip>
+          </h2>
           {snapshot.pricing.variance.classification !== 'N/A' ? (
             <>
               <div className={`inline-block px-4 py-2 rounded border-2 font-semibold mb-4 ${getVarianceBadgeColor(snapshot.pricing.variance.classification)}`}>
@@ -505,22 +505,22 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           onMouseLeave={() => setExpandedCard(null)}
           onClick={() => setExpandedCard(expandedCard === 'pricing' ? null : 'pricing')}
         >
-          <HoverTip text={(() => {
-            const currencyLabel = snapshot.canonicalCurrency === 'EGP' ? 'USD/EGP' :
-                                 snapshot.canonicalCurrency === 'AED' ? 'USD/AED' :
-                                 snapshot.canonicalCurrency === 'SAR' ? 'USD/SAR' :
-                                 'USD';
-            return lang === 'ar' 
-              ? `مقاييس التسعير المشتقة المحسوبة من سعر الذهب العالمي الفوري وسعر صرف ${currencyLabel}.`
-              : `Derived pricing metrics calculated from global gold spot price and ${currencyLabel} exchange rate.`;
-          })()}>
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {t(lang, 'pricingDetails')}
-              <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {t(lang, 'pricingDetails')}
+            <HoverTip text={(() => {
+              const currencyLabel = snapshot.canonicalCurrency === 'EGP' ? 'USD/EGP' :
+                                   snapshot.canonicalCurrency === 'AED' ? 'USD/AED' :
+                                   snapshot.canonicalCurrency === 'SAR' ? 'USD/SAR' :
+                                   'USD';
+              return lang === 'ar' 
+                ? `مقاييس التسعير المشتقة المحسوبة من سعر الذهب العالمي الفوري وسعر صرف ${currencyLabel}.`
+                : `Derived pricing metrics calculated from global gold spot price and ${currencyLabel} exchange rate.`;
+            })()}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-            </h2>
-          </HoverTip>
+            </HoverTip>
+          </h2>
           <div className="space-y-3 text-sm">
             <div>
               <HoverTip text={lang === 'ar' ? 'مشتق من سعر الأونصة العالمية مقسومًا على 31.1035 جرام لكل أونصة تروي.' : "Derived from global ounce price divided by 31.1035 grams per troy ounce."}>
