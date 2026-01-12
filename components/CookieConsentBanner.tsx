@@ -65,6 +65,10 @@ export default function CookieConsentBanner() {
               {lang === 'ar'
                 ? 'نستخدم ملفات تعريف الارتباط لتحسين تجربتك. من خلال المتابعة، فإنك توافق على استخدامنا لملفات تعريف الارتباط.'
                 : 'We use cookies to enhance your experience. By continuing, you agree to our use of cookies.'}
+              {' '}
+              <Link href="/privacy" className="text-blue-400 hover:text-blue-300 underline">
+                {lang === 'ar' ? 'اعرف المزيد' : 'Learn more'}
+              </Link>
             </p>
           </div>
           <div className={`flex gap-3 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>

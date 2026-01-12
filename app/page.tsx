@@ -8,6 +8,7 @@ import ForecastCard from '@/components/ForecastCard';
 import LanguageToggle from '@/components/LanguageToggle';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import AccountMenu from '@/components/AccountMenu';
+import Footer from '@/components/Footer';
 import { useLang } from '@/components/LanguageProvider';
 import { t } from '@/lib/i18n';
 import { useSearchParams } from 'next/navigation';
