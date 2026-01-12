@@ -285,7 +285,28 @@ export async function GET(request: NextRequest) {
           const pushEnabled = profile.app_notifications_enabled ?? false;
 
           // Send email if enabled
-          if (emailEnabled && profile.email) {
+          if (emailEnabled) {
+            if (!profile.email) {
+              console.warn(`User ${profile.id} has email notifications enabled but no email address`);
+              await logDelivery(
+                profile.id,
+                change.country,
+                change.karat,
+                'email',
+                'skipped',
+                change.pctChange,
+                change.oldPrice,
+                change.newPrice,
+                change.direction,
+                currency,
+                'No email address in profile',
+                { type: 'global_alert' }
+              );
+              continue;
+            }
+
+            console.log(`Sending email to ${profile.email} for ${change.country} ${change.karat}k ${change.direction} ${change.pctChange * 100}%`);
+            
             const emailResult = await sendEmailToUser(
               profile.id,
               profile.email,
@@ -309,14 +330,17 @@ export async function GET(request: NextRequest) {
               currency,
               change.direction,
               emailResult.error,
-              { email: profile.email }
+              { email: profile.email, type: 'global_alert' }
             );
 
             if (emailResult.success) {
               results.notificationsSent++;
+              console.log(`Email sent successfully to ${profile.email}`);
             } else {
               results.notificationsFailed++;
-              results.errors.push(`Email failed for user ${profile.id}: ${emailResult.error}`);
+              const errorMsg = `Email failed for user ${profile.id} (${profile.email}): ${emailResult.error}`;
+              console.error(errorMsg);
+              results.errors.push(errorMsg);
             }
           }
 
