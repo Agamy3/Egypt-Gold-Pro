@@ -16,7 +16,7 @@ interface HoverTipProps {
 
 export default function HoverTip({ text, children, side = 'bottom' }: HoverTipProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const containerRef = useRef<HTMLSpanElement>(null);
+  const containerRef = useRef<HTMLButtonElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -69,15 +69,22 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
     // Keep visible for a bit to allow reading
   };
 
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card onClick from firing
+    setIsVisible(!isVisible);
+  };
+
   return (
     <>
-      <span
+      <button
+        type="button"
         ref={containerRef}
-        className="inline-flex items-center gap-1 cursor-help"
+        className="inline-flex items-center gap-1 cursor-help focus:outline-none pointer-events-auto z-20"
         onMouseEnter={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
+        onClick={handleClick}
         onFocus={() => setIsVisible(true)}
         onBlur={() => setIsVisible(false)}
         tabIndex={0}
@@ -85,7 +92,7 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
         aria-label={text}
       >
         {children}
-      </span>
+      </button>
       {isVisible && (
         <div
           ref={tooltipRef}

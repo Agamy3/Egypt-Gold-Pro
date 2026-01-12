@@ -215,14 +215,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           onMouseLeave={() => setExpandedCard(null)}
           onClick={() => setExpandedCard(expandedCard === 'global' ? null : 'global')}
         >
-          <HoverTip text={lang === 'ar' ? 'سعر الذهب العالمي الفوري لكل أونصة تروي (XAUUSD). يُستخدم كمرجع لحسابات القيمة العادلة.' : "Global spot gold price per troy ounce (XAUUSD). Used as the reference for fair-value calculations."}>
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {lang === 'ar' ? 'السعر الفوري العالمي للذهب' : 'Global Spot Gold (USD)'}
-              <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {lang === 'ar' ? 'السعر الفوري العالمي للذهب' : 'Global Spot Gold (USD)'}
+            <HoverTip text={lang === 'ar' ? 'سعر الذهب العالمي الفوري لكل أونصة تروي (XAUUSD). يُستخدم كمرجع لحسابات القيمة العادلة.' : "Global spot gold price per troy ounce (XAUUSD). Used as the reference for fair-value calculations."}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-            </h2>
-          </HoverTip>
+            </HoverTip>
+          </h2>
           {snapshot.impliedOunce ? (
             <>
               <HoverTip 
@@ -257,14 +257,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           onMouseLeave={() => setExpandedCard(null)}
           onClick={() => setExpandedCard(expandedCard === '21k' ? null : '21k')}
         >
-          <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 21k المتاحة من المصادر النشطة.' : "Median of available 21k buy prices from active sources."}>
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {getCountryMarketLabel(snapshot.country, '21', lang)}
-              <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {getCountryMarketLabel(snapshot.country, '21', lang)}
+            <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 21k المتاحة من المصادر النشطة.' : "Median of available 21k buy prices from active sources."}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-            </h2>
-          </HoverTip>
+            </HoverTip>
+          </h2>
           {snapshot.market.median.market21Buy !== null ? (
             <>
               <HoverTip 
@@ -307,14 +307,14 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           onMouseLeave={() => setExpandedCard(null)}
           onClick={() => setExpandedCard(expandedCard === '24k' ? null : '24k')}
         >
-          <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 24k المتاحة من المصادر النشطة.' : "Median of available 24k buy prices from active sources."}>
-            <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              {getCountryMarketLabel(snapshot.country, '24', lang)}
-              <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {getCountryMarketLabel(snapshot.country, '24', lang)}
+            <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 24k المتاحة من المصادر النشطة.' : "Median of available 24k buy prices from active sources."}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-            </h2>
-          </HoverTip>
+            </HoverTip>
+          </h2>
           {snapshot.market.median.market24Buy !== null ? (
             <>
               <HoverTip 
