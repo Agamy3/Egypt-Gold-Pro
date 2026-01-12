@@ -32,11 +32,12 @@ interface Delivery {
   channel: 'email' | 'push';
   status: 'sent' | 'failed' | 'skipped';
   direction: 'UP' | 'DOWN';
-  price_change_pct: number;
+  pct_change: number; // Database field name
   price: number;
   currency: Currency;
-  sent_at: string;
+  created_at: string; // Database uses created_at, not sent_at
   error: string | null;
+  payload?: any;
 }
 
 export default function NotificationsPage() {
@@ -472,7 +473,7 @@ export default function NotificationsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-1.5">
                         <span className="text-sm sm:text-base font-medium text-gray-200">
-                          {delivery.country} {delivery.karat}k {delivery.direction} {(delivery.price_change_pct * 100).toFixed(2)}%
+                          {delivery.country} {delivery.karat}k {delivery.direction} {(delivery.pct_change * 100).toFixed(2)}%
                         </span>
                         <span className={`px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap ${
                           delivery.status === 'sent' ? 'bg-green-600' :
@@ -482,7 +483,7 @@ export default function NotificationsPage() {
                         </span>
                       </div>
                       <p className="text-xs sm:text-sm text-gray-400 break-words">
-                        {new Date(delivery.sent_at || delivery.created_at).toLocaleString()} • {delivery.channel} • {delivery.currency} {delivery.price?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 'N/A'}
+                        {new Date(delivery.created_at).toLocaleString()} • {delivery.channel} • {delivery.currency} {delivery.price?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 'N/A'}
                       </p>
                     </div>
                   </div>
