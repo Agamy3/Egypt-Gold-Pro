@@ -35,18 +35,22 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
   }, [isVisible]);
 
   useEffect(() => {
-    if (isVisible && tooltipRef.current) {
+    if (isVisible && tooltipRef.current && mousePosition.x > 0 && mousePosition.y > 0) {
       const tooltipEl = tooltipRef.current;
       tooltipEl.style.position = 'fixed';
-      tooltipEl.style.zIndex = '9999';
+      tooltipEl.style.zIndex = '99999'; // Higher z-index to ensure it's above everything
       
-      // Position tooltip near cursor with offset
-      const offset = 12; // Distance from cursor
+      // Position tooltip very close to cursor
+      const offset = 8; // Small distance from cursor for better UX
       let tooltipX = mousePosition.x + offset;
       let tooltipY = mousePosition.y + offset;
       
-      // Measure tooltip to adjust positioning
-      setTimeout(() => {
+      // Set initial position immediately
+      tooltipEl.style.left = `${tooltipX}px`;
+      tooltipEl.style.top = `${tooltipY}px`;
+      
+      // Then adjust if needed after measuring
+      requestAnimationFrame(() => {
         const tooltipRect = tooltipEl.getBoundingClientRect();
         
         // Adjust if it would go off screen right
@@ -71,7 +75,7 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
         
         tooltipEl.style.left = `${tooltipX}px`;
         tooltipEl.style.top = `${tooltipY}px`;
-      }, 0);
+      });
     }
   }, [isVisible, mousePosition, side]);
 
@@ -97,8 +101,14 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
   };
 
   const handleMouseEnter = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card expansion from interfering
     setMousePosition({ x: e.clientX, y: e.clientY });
     setIsVisible(true);
+  };
+
+  const handleMouseLeave = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card collapse from interfering
+    setIsVisible(false);
   };
 
   return (
@@ -106,10 +116,13 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
       <button
         type="button"
         ref={containerRef}
-        className="inline-flex items-center gap-1 cursor-help focus:outline-none pointer-events-auto z-20"
+        className="inline-flex items-center gap-1 cursor-help focus:outline-none pointer-events-auto z-20 relative"
         onMouseEnter={handleMouseEnter}
-        onMouseMove={(e) => setMousePosition({ x: e.clientX, y: e.clientY })}
-        onMouseLeave={() => setIsVisible(false)}
+        onMouseMove={(e) => {
+          e.stopPropagation(); // Prevent card expansion
+          setMousePosition({ x: e.clientX, y: e.clientY });
+        }}
+        onMouseLeave={handleMouseLeave}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onClick={handleClick}
@@ -125,8 +138,12 @@ export default function HoverTip({ text, children, side = 'bottom' }: HoverTipPr
         <div
           ref={tooltipRef}
           id="hover-tooltip"
-          className="fixed z-50 px-3 py-2 bg-gray-900 text-white text-xs sm:text-sm rounded-lg shadow-lg max-w-[90vw] sm:max-w-xs pointer-events-none break-words border border-gray-700"
+          className="fixed z-[99999] px-3 py-2 bg-gray-900 text-white text-xs sm:text-sm rounded-lg shadow-lg max-w-[90vw] sm:max-w-xs pointer-events-none break-words border border-gray-700"
           role="tooltip"
+          style={{
+            left: `${mousePosition.x + 8}px`,
+            top: `${mousePosition.y + 8}px`,
+          }}
         >
           {text}
         </div>
