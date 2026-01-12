@@ -236,6 +236,7 @@ function HomeContent() {
           </>
         )}
       </main>
+      <Footer />
     </div>
   );
 }
