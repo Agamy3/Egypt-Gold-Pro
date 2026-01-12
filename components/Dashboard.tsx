@@ -144,7 +144,6 @@ function getCountryMarketLabel(country: string | undefined, karat: '21' | '24', 
 
 export default function Dashboard({ snapshot }: DashboardProps) {
   const { lang } = useLang();
-  const [expandedCard, setExpandedCard] = React.useState<string | null>(null);
   
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -208,12 +207,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Global Spot Gold Price */}
         <div 
-          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gold-600 transition-all duration-300 cursor-pointer ${
-            expandedCard === 'global' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
-          }`}
-          onMouseEnter={() => setExpandedCard('global')}
-          onMouseLeave={() => setExpandedCard(null)}
-          onClick={() => setExpandedCard(expandedCard === 'global' ? null : 'global')}
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gold-600`}
         >
           <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             {lang === 'ar' ? 'السعر الفوري العالمي للذهب' : 'Global Spot Gold (USD)'}
@@ -250,12 +244,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
 
         {/* Market 21k */}
         <div 
-          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600 transition-all duration-300 cursor-pointer ${
-            expandedCard === '21k' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
-          }`}
-          onMouseEnter={() => setExpandedCard('21k')}
-          onMouseLeave={() => setExpandedCard(null)}
-          onClick={() => setExpandedCard(expandedCard === '21k' ? null : '21k')}
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600`}
         >
           <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             {getCountryMarketLabel(snapshot.country, '21', lang)}
@@ -300,12 +289,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
 
         {/* Market 24k */}
         <div 
-          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-purple-600 transition-all duration-300 cursor-pointer ${
-            expandedCard === '24k' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
-          }`}
-          onMouseEnter={() => setExpandedCard('24k')}
-          onMouseLeave={() => setExpandedCard(null)}
-          onClick={() => setExpandedCard(expandedCard === '24k' ? null : '24k')}
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-purple-600`}
         >
           <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             {getCountryMarketLabel(snapshot.country, '24', lang)}
@@ -350,12 +334,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
 
         {/* USD Exchange Rate */}
         <div 
-          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-green-600 transition-all duration-300 cursor-pointer ${
-            expandedCard === 'fx' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
-          }`}
-          onMouseEnter={() => setExpandedCard('fx')}
-          onMouseLeave={() => setExpandedCard(null)}
-          onClick={() => setExpandedCard(expandedCard === 'fx' ? null : 'fx')}
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-green-600`}
         >
           <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             {(() => {
@@ -440,12 +419,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
 
         {/* Over/Under Pricing */}
         <div 
-          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-indigo-600 transition-all duration-300 cursor-pointer ${
-            expandedCard === 'variance' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
-          }`}
-          onMouseEnter={() => setExpandedCard('variance')}
-          onMouseLeave={() => setExpandedCard(null)}
-          onClick={() => setExpandedCard(expandedCard === 'variance' ? null : 'variance')}
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-indigo-600`}
         >
           <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             {t(lang, 'marketVariance')}
@@ -498,12 +472,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
 
         {/* Pricing Details */}
         <div 
-          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-600 transition-all duration-300 cursor-pointer ${
-            expandedCard === 'pricing' ? 'scale-110 z-10' : expandedCard ? 'scale-95 opacity-70' : 'scale-100'
-          }`}
-          onMouseEnter={() => setExpandedCard('pricing')}
-          onMouseLeave={() => setExpandedCard(null)}
-          onClick={() => setExpandedCard(expandedCard === 'pricing' ? null : 'pricing')}
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-600`}
         >
           <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             {t(lang, 'pricingDetails')}
