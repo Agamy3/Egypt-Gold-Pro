@@ -8,6 +8,7 @@ import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import LanguageToggle from '@/components/LanguageToggle';
 import AccountMenu from '@/components/AccountMenu';
 import PortfolioTable from '@/components/PortfolioTable';
+import Footer from '@/components/Footer';
 import Image from 'next/image';
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';

@@ -411,6 +411,7 @@ function USPageContent() {
           </div>
         )}
       </main>
+      <Footer />
     </div>
   );
 }

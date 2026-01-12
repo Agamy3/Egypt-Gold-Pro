@@ -1,6 +1,7 @@
 'use client';
 
 import { useLang } from './LanguageProvider';
+import Footer from './Footer';
 import Link from 'next/link';
 import Image from 'next/image';
 

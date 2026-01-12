@@ -165,15 +165,6 @@ export default function AccountMenu() {
             >
               {lang === 'ar' ? 'الإشعارات' : 'Notifications'}
             </button>
-            <button
-              onClick={() => {
-                setShowMenu(false);
-                router.push('/privacy');
-              }}
-              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
-            >
-              {lang === 'ar' ? 'سياسة الخصوصية' : 'Privacy Policy'}
-            </button>
             <div className="border-t border-gray-700 my-1" />
             <button
               onClick={handleSignOut}

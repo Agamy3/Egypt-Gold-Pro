@@ -8,6 +8,7 @@ import { useLang } from '@/components/LanguageProvider';
 import AccountMenu from '@/components/AccountMenu';
 import LanguageToggle from '@/components/LanguageToggle';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
+import Footer from '@/components/Footer';
 import Modal from '@/components/ui/Modal';
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';

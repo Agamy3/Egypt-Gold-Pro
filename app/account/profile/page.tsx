@@ -509,6 +509,7 @@ export default function ProfilePage() {
           </div>
         </div>
       </main>
+      <Footer />
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
