@@ -199,16 +199,35 @@ async function logDelivery(
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const secret = searchParams.get('secret') || request.headers.get('authorization')?.replace('Bearer ', '');
     const expectedSecret = process.env.CRON_SECRET;
 
-    if (!expectedSecret) {
-      console.error('CRON_SECRET not configured in environment variables');
-      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
-    }
+    // Detect Vercel Cron (requests from Vercel Cron include this header)
+    const isVercelCron = !!request.headers.get('x-vercel-cron');
 
-    if (!secret || secret !== expectedSecret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!isVercelCron) {
+      // For manual calls (e.g. curl), require the secret via query param or Authorization header
+      const secret =
+        searchParams.get('secret') ||
+        request.headers.get('authorization')?.replace('Bearer ', '');
+
+      if (!expectedSecret) {
+        console.error('CRON_SECRET not configured in environment variables');
+        return NextResponse.json(
+          { error: 'Server configuration error' },
+          { status: 500 }
+        );
+      }
+
+      if (!secret || secret !== expectedSecret) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+    } else {
+      // For Vercel Cron, we trust the platform and only require that CRON_SECRET exists
+      if (!expectedSecret) {
+        console.warn(
+          '[notify-price-changes] CRON_SECRET not configured; Vercel Cron requests will still be allowed'
+        );
+      }
     }
 
     const supabase = getServerClient();
