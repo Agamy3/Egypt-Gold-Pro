@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/ingest",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/notify-price-changes",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

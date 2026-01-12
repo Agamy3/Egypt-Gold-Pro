@@ -199,10 +199,15 @@ async function logDelivery(
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const secret = searchParams.get('secret');
+    const secret = searchParams.get('secret') || request.headers.get('authorization')?.replace('Bearer ', '');
     const expectedSecret = process.env.CRON_SECRET;
 
-    if (!expectedSecret || secret !== expectedSecret) {
+    if (!expectedSecret) {
+      console.error('CRON_SECRET not configured in environment variables');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+
+    if (!secret || secret !== expectedSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
