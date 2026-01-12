@@ -263,12 +263,19 @@ export async function GET(request: NextRequest) {
         const currency = getCountryCurrency(change.country);
 
         // Get user profiles to check preferences and emails
-        const { data: profiles } = await supabase
+        const { data: profiles, error: profilesError } = await supabase
           .from('user_profiles')
           .select('id, email, email_notifications_enabled, app_notifications_enabled')
           .in('id', userIds);
 
-        if (!profiles) {
+        if (profilesError) {
+          console.error(`Error fetching profiles for ${change.country} ${change.karat}k:`, profilesError);
+          results.errors.push(`Error fetching profiles: ${profilesError.message}`);
+          continue;
+        }
+
+        if (!profiles || profiles.length === 0) {
+          console.log(`No profiles found for users watching ${change.country}`);
           continue;
         }
 

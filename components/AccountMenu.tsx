@@ -14,10 +14,20 @@ interface User {
   };
 }
 
+interface UserProfile {
+  display_name: string | null;
+  email: string;
+  user_metadata?: {
+    full_name?: string;
+    avatar_url?: string;
+  };
+}
+
 export default function AccountMenu() {
   const { lang } = useLang();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -39,8 +49,22 @@ export default function AccountMenu() {
       const supabase = createClientSupabaseClient();
 
       // Get initial session
-      supabase.auth.getSession().then(({ data: { session } }) => {
+      supabase.auth.getSession().then(async ({ data: { session } }) => {
         setUser(session?.user ?? null);
+        
+        // Fetch user profile if logged in
+        if (session?.user) {
+          try {
+            const res = await fetch('/api/user/profile');
+            if (res.ok) {
+              const profileData = await res.json();
+              setProfile(profileData);
+            }
+          } catch (err) {
+            console.error('Error fetching user profile:', err);
+          }
+        }
+        
         setLoading(false);
       }).catch((err) => {
         console.error('Error getting session:', err);
@@ -48,8 +72,23 @@ export default function AccountMenu() {
       });
 
       // Listen for auth changes
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
         setUser(session?.user ?? null);
+        
+        // Fetch user profile if logged in
+        if (session?.user) {
+          try {
+            const res = await fetch('/api/user/profile');
+            if (res.ok) {
+              const profileData = await res.json();
+              setProfile(profileData);
+            }
+          } catch (err) {
+            console.error('Error fetching user profile:', err);
+          }
+        } else {
+          setProfile(null);
+        }
       });
 
       return () => subscription.unsubscribe();
@@ -101,7 +140,13 @@ export default function AccountMenu() {
     );
   }
 
-  const displayName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
+  // Get display name from profile, fallback to user_metadata, then email, then 'User'
+  const displayName = 
+    profile?.display_name || 
+    user.user_metadata?.full_name || 
+    user.email?.split('@')[0] || 
+    'User';
+  
   const initials = displayName
     .split(' ')
     .map((n) => n[0])
@@ -119,7 +164,7 @@ export default function AccountMenu() {
           {initials}
         </div>
         <span className="hidden sm:block text-sm text-gray-300 truncate max-w-[120px]">
-          {user.email}
+          {displayName}
         </span>
         <svg
           className={`w-4 h-4 text-gray-400 transition-transform ${showMenu ? 'rotate-180' : ''}`}

@@ -26,12 +26,29 @@ export async function sendNotificationEmail(
   options: EmailOptions
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   if (!RESEND_API_KEY) {
-    console.error('RESEND_API_KEY not configured. Email sending disabled.');
+    const errorMsg = 'RESEND_API_KEY not configured. Email sending disabled.';
+    console.error('[EMAIL]', errorMsg);
+    console.error('[EMAIL] Please set RESEND_API_KEY in your environment variables.');
     return {
       success: false,
-      error: 'Email service not configured',
+      error: errorMsg,
     };
   }
+
+  if (!NOTIF_FROM_EMAIL || !NOTIF_FROM_NAME) {
+    const errorMsg = 'NOTIF_FROM_EMAIL or NOTIF_FROM_NAME not configured.';
+    console.error('[EMAIL]', errorMsg);
+    return {
+      success: false,
+      error: errorMsg,
+    };
+  }
+
+  console.log('[EMAIL] Attempting to send email:', {
+    to: options.to,
+    subject: options.subject,
+    from: `${NOTIF_FROM_NAME} <${NOTIF_FROM_EMAIL}>`,
+  });
 
   try {
     const response = await fetch('https://api.resend.com/emails', {
@@ -49,21 +66,30 @@ export async function sendNotificationEmail(
       }),
     });
 
+    const responseText = await response.text();
+    let errorData: any = { message: 'Unknown error' };
+    
+    try {
+      errorData = JSON.parse(responseText);
+    } catch {
+      errorData = { message: responseText || `HTTP ${response.status}: ${response.statusText}` };
+    }
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-      console.error('Resend API error:', {
+      console.error('[EMAIL] Resend API error:', {
         status: response.status,
         statusText: response.statusText,
         error: errorData,
+        responseBody: responseText,
       });
       return {
         success: false,
-        error: errorData.message || `HTTP ${response.status}: ${response.statusText}`,
+        error: errorData.message || errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`,
       };
     }
 
-    const data = await response.json();
-    console.log('Email sent successfully via Resend:', {
+    const data = JSON.parse(responseText);
+    console.log('[EMAIL] Email sent successfully via Resend:', {
       messageId: data.id,
       to: options.to,
       subject: options.subject,
@@ -75,10 +101,11 @@ export async function sendNotificationEmail(
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Failed to send email via Resend:', {
+    console.error('[EMAIL] Failed to send email via Resend:', {
       to: options.to,
       subject: options.subject,
       error: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
     });
 
     return {
