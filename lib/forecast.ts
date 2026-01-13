@@ -37,15 +37,17 @@ export interface ForecastResult {
   insufficientData: boolean;
 }
 
-// Use as much historical data as available (up to 7 days)
-// This allows forecasting based on longer trends
-const FORECAST_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days window (use all available historical data)
+// Use shorter window for more responsive forecasts
+// Primary window: last 24 hours (most relevant for short-term forecast)
+// Secondary window: last 7 days (for context and trend validation)
+const FORECAST_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours window (more responsive to recent changes)
+const RECENT_WINDOW_MS = 2 * 60 * 60 * 1000; // Last 2 hours (most recent trend)
 const HORIZON_MINUTES = 120; // 2 hours forecast horizon (predict next 2 hours)
 
-// Thresholds for forecast reliability (adjusted for longer window)
-const MIN_SNAPSHOTS_FOR_FORECAST = 10; // Minimum snapshots needed to attempt a forecast (reduced from 20 to 10 to work with less data)
-const LOW_CONFIDENCE_THRESHOLD = 30; // Snapshots needed for MED confidence (reduced from 50)
-const HIGH_CONFIDENCE_THRESHOLD = 100; // Snapshots needed for HIGH confidence (reduced from 150)
+// Thresholds for forecast reliability
+const MIN_SNAPSHOTS_FOR_FORECAST = 10; // Minimum snapshots needed to attempt a forecast
+const LOW_CONFIDENCE_THRESHOLD = 20; // Snapshots needed for MED confidence
+const HIGH_CONFIDENCE_THRESHOLD = 50; // Snapshots needed for HIGH confidence
 
 /**
  * Calculate forecast using stored snapshot data
@@ -284,10 +286,34 @@ export async function calculateForecast(
     const startPrice = median(snapshotsByTimeBucket[firstBucket]);
     const endPrice = median(snapshotsByTimeBucket[lastBucket]);
 
+    // Calculate recent momentum (last 2 hours) for more responsive forecast
+    const recentWindowStart = now - RECENT_WINDOW_MS;
+    const recentBucketStart = Math.floor((recentWindowStart - windowStartMs) / bucketSizeMs);
+    const recentBuckets = timeBuckets.filter(b => b >= recentBucketStart && b <= lastBucket);
+    
+    let recentMomentum = 0;
+    if (recentBuckets.length >= 2) {
+      const recentStartPrice = median(snapshotsByTimeBucket[recentBuckets[0]]);
+      const recentEndPrice = median(snapshotsByTimeBucket[recentBuckets[recentBuckets.length - 1]]);
+      if (recentStartPrice > 0 && recentEndPrice > 0) {
+        recentMomentum = ((recentEndPrice - recentStartPrice) / recentStartPrice) * 100;
+      }
+    } else if (recentBuckets.length === 1) {
+      // If only one recent bucket, compare to overall end price
+      const recentPrice = median(snapshotsByTimeBucket[recentBuckets[0]]);
+      if (recentPrice > 0 && endPrice > 0) {
+        recentMomentum = ((endPrice - recentPrice) / recentPrice) * 100;
+      }
+    } else {
+      // No recent buckets, use overall momentum
+      recentMomentum = overallMomentum;
+    }
+
     // Component 1: Price momentum (% change)
-    // For US, this is 24k momentum. For others, it's 21k momentum (or 24k if 21k unavailable)
-    const priceMomentum = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
-    const momentum21k = priceMomentum; // Keep name for backward compatibility
+    // Weight: 60% recent momentum (last 2 hours) + 40% overall momentum (last 24 hours)
+    // This makes the forecast more responsive to recent changes
+    const overallMomentum = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
+    const momentum21k = (recentMomentum * 0.6) + (overallMomentum * 0.4); // Weight recent trend more heavily
 
     // Component 2 & 3: Calculate variance and FX at start and end
     // Use global gold spot price from GoldAPI.com (USD per troy ounce)
@@ -388,40 +414,48 @@ export async function calculateForecast(
       : 0;
 
     // Calculate weighted score (normalize components to -100..+100 range)
-    // With longer historical data, we weight recent trends more heavily
-    // Momentum: weight 50% (recent price movements are most important)
+    // Improved weighting for more responsive forecasts:
+    // Momentum: weight 60% (recent price movements are most important)
     // Variance: weight 20% (market premium changes)
-    // FX: weight 15% (currency movements)
-    // Ounce: weight 15% (global gold price movements)
+    // FX: weight 10% (currency movements)
+    // Ounce: weight 10% (global gold price movements)
 
-    const momentumScore = Math.max(-50, Math.min(50, momentum21k * 0.5));
+    // Scale momentum more aggressively for better sensitivity
+    const momentumScore = Math.max(-60, Math.min(60, momentum21k * 1.2)); // More sensitive to momentum
     const varianceScore = Math.max(-20, Math.min(20, varianceDelta * 4)); // Scale: ±5% → ±20
-    const fxScore = Math.max(-15, Math.min(15, fxDelta * 3)); // Scale: ±5% → ±15
-    const ounceScore = Math.max(-15, Math.min(15, ounceDelta * 3)); // Scale: ±5% → ±15
+    const fxScore = Math.max(-10, Math.min(10, fxDelta * 2)); // Scale: ±5% → ±10
+    const ounceScore = Math.max(-10, Math.min(10, ounceDelta * 2)); // Scale: ±5% → ±10
 
     const score = momentumScore + varianceScore + fxScore + ounceScore;
 
-    // Determine direction
+    // Determine direction with lower thresholds for more responsive forecasts
+    // Reduced from ±25 to ±15 to catch smaller but meaningful trends
     let direction: 'UP' | 'DOWN' | 'SIDEWAYS';
-    if (score >= 25) {
+    if (score >= 15) {
       direction = 'UP';
-    } else if (score <= -25) {
+    } else if (score <= -15) {
       direction = 'DOWN';
     } else {
       direction = 'SIDEWAYS';
     }
 
-    // Determine confidence
+    // Determine confidence with improved logic
     let confidence: 'LOW' | 'MED' | 'HIGH';
     
-    // Check if signals agree (all components point in same direction)
-    const signals = [momentumScore, varianceScore, fxScore, ounceScore].filter(s => Math.abs(s) > 5);
+    // Check if signals agree (components point in same direction)
+    const signals = [momentumScore, varianceScore, fxScore, ounceScore].filter(s => Math.abs(s) > 3);
     const positiveSignals = signals.filter(s => s > 0).length;
     const negativeSignals = signals.filter(s => s < 0).length;
-    const signalsAgree = signals.length >= 3 && (positiveSignals >= 3 || negativeSignals >= 3);
-
-    if (snapshotCount >= HIGH_CONFIDENCE_THRESHOLD && signalsAgree) {
+    const signalsAgree = signals.length >= 2 && (positiveSignals >= 2 || negativeSignals >= 2);
+    
+    // Check momentum strength (strong momentum = higher confidence)
+    const strongMomentum = Math.abs(momentumScore) > 20;
+    
+    // Improved confidence calculation
+    if (snapshotCount >= HIGH_CONFIDENCE_THRESHOLD && (signalsAgree || strongMomentum)) {
       confidence = 'HIGH';
+    } else if (snapshotCount >= LOW_CONFIDENCE_THRESHOLD && (signalsAgree || strongMomentum)) {
+      confidence = 'MED';
     } else if (snapshotCount >= LOW_CONFIDENCE_THRESHOLD) {
       confidence = 'MED';
     } else {
@@ -435,10 +469,15 @@ export async function calculateForecast(
     const windowHours = FORECAST_WINDOW_MS / (60 * 60 * 1000);
     const windowDesc = windowHours >= 24 ? `${(windowHours / 24).toFixed(1)} days` : `${windowHours.toFixed(1)} hours`;
     
-    if (Math.abs(momentumScore) > 5) {
+    if (Math.abs(momentumScore) > 3) {
       const trend = momentum21k > 0 ? 'up' : 'down';
       const karatLabel = use24kOnly ? '24k' : '21k';
-      reasons.push(`${karatLabel} price moved ${Math.abs(momentum21k).toFixed(2)}% ${trend} over ${windowDesc}`);
+      // Show both recent and overall momentum if significantly different
+      if (Math.abs(recentMomentum - overallMomentum) > 0.5) {
+        reasons.push(`${karatLabel} price: ${Math.abs(recentMomentum).toFixed(2)}% ${recentMomentum > 0 ? 'up' : 'down'} (last 2h), ${Math.abs(overallMomentum).toFixed(2)}% ${overallMomentum > 0 ? 'up' : 'down'} (last 24h)`);
+      } else {
+        reasons.push(`${karatLabel} price moved ${Math.abs(momentum21k).toFixed(2)}% ${trend} over last 24 hours`);
+      }
     }
     
     if (Math.abs(varianceScore) > 5) {
