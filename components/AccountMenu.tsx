@@ -30,6 +30,7 @@ export default function AccountMenu() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -75,7 +76,7 @@ export default function AccountMenu() {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
         setUser(session?.user ?? null);
         
-        // Fetch user profile if logged in
+        // Fetch user profile and admin status if logged in
         if (session?.user) {
           try {
             const res = await fetch('/api/user/profile');
@@ -83,11 +84,18 @@ export default function AccountMenu() {
               const profileData = await res.json();
               setProfile(profileData);
             }
+            // Check admin status
+            const adminRes = await fetch('/api/user/is-admin');
+            if (adminRes.ok) {
+              const adminData = await adminRes.json();
+              setIsAdmin(adminData.isAdmin || false);
+            }
           } catch (err) {
             console.error('Error fetching user profile:', err);
           }
         } else {
           setProfile(null);
+          setIsAdmin(false);
         }
       });
 
@@ -210,6 +218,17 @@ export default function AccountMenu() {
             >
               {lang === 'ar' ? 'الإشعارات' : 'Notifications'}
             </button>
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setShowMenu(false);
+                  router.push('/admin/coupons');
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-gold-400 hover:bg-gray-700 hover:text-gold-300 font-semibold transition-colors"
+              >
+                {lang === 'ar' ? 'لوحة التحكم' : 'Admin'}
+              </button>
+            )}
             <div className="border-t border-gray-700 my-1" />
             <button
               onClick={handleSignOut}

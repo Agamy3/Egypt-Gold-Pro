@@ -146,6 +146,17 @@ function getCountryMarketLabel(country: string | undefined, karat: '21' | '24', 
 
 export default function Dashboard({ snapshot }: DashboardProps) {
   const { lang } = useLang();
+  const [isPremium, setIsPremium] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Check premium status
+    fetch('/api/user/premium-status')
+      .then(res => res.json())
+      .then(data => {
+        setIsPremium(data.status?.isPremium || false);
+      })
+      .catch(() => setIsPremium(false));
+  }, []);
   
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -471,6 +482,9 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             </div>
           )}
         </div>
+
+        {/* Premium Macro Panel */}
+        <PremiumMacroPanel isPremium={isPremium} lang={lang} />
 
         {/* Pricing Details */}
         <div 
