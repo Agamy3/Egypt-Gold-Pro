@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/ingest",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/notify",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/news-ingest",
+      "schedule": "0 */6 * * *"
     }
   ]
 }

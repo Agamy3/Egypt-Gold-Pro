@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.90.1",
+    "@types/web-push": "^3.6.4",
     "@vercel/analytics": "^1.6.1",
     "cheerio": "^1.0.0-rc.12",
     "next": "^14.0.0",
@@ -19,7 +20,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^3.6.0",
-    "resend": "^6.7.0"
+    "resend": "^6.7.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",

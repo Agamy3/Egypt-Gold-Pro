@@ -201,6 +201,15 @@ export default function AccountMenu() {
             >
               {lang === 'ar' ? 'الملف الشخصي' : 'Profile'}
             </button>
+            <button
+              onClick={() => {
+                setShowMenu(false);
+                router.push('/account/notifications');
+              }}
+              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+            >
+              {lang === 'ar' ? 'الإشعارات' : 'Notifications'}
+            </button>
             <div className="border-t border-gray-700 my-1" />
             <button
               onClick={handleSignOut}
