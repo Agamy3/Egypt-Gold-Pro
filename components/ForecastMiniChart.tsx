@@ -54,30 +54,53 @@ export default function ForecastMiniChart({
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerHeight, setContainerHeight] = useState(height || 240);
+  const heightRef = useRef<number>(height || 240);
+
+  // Update height ref when prop changes
+  useEffect(() => {
+    if (height) {
+      heightRef.current = height;
+    }
+  }, [height]);
 
   // Get actual container height on mount and resize
   useEffect(() => {
     const updateHeight = () => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        if (rect.height > 0) {
+        // Only update if we get a valid height that's not too small
+        if (rect.height > 100) {
           setContainerHeight(rect.height);
-        } else if (height) {
-          setContainerHeight(height);
+          heightRef.current = rect.height;
+        } else {
+          // Use the ref value to maintain previous height
+          setContainerHeight(heightRef.current);
         }
-      } else if (height) {
-        setContainerHeight(height);
+      } else {
+        // Use the ref value to maintain previous height
+        setContainerHeight(heightRef.current);
       }
     };
 
-    // Use requestAnimationFrame to ensure DOM is ready
+    // Use requestAnimationFrame with a small delay to ensure DOM is fully rendered
     requestAnimationFrame(() => {
-      updateHeight();
+      requestAnimationFrame(() => {
+        updateHeight();
+      });
     });
     
     // Use ResizeObserver if available for better performance
     if (containerRef.current && typeof ResizeObserver !== 'undefined') {
-      const resizeObserver = new ResizeObserver(updateHeight);
+      const resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const newHeight = entry.contentRect.height;
+          // Only update if we get a valid height that's not too small
+          if (newHeight > 100) {
+            setContainerHeight(newHeight);
+            heightRef.current = newHeight;
+          }
+        }
+      });
       resizeObserver.observe(containerRef.current);
       return () => resizeObserver.disconnect();
     } else {
@@ -85,7 +108,29 @@ export default function ForecastMiniChart({
       window.addEventListener('resize', updateHeight);
       return () => window.removeEventListener('resize', updateHeight);
     }
-  }, [height]);
+  }, []); // Empty deps - only run on mount/unmount
+
+  // Recalculate height when points change (after data loads)
+  useEffect(() => {
+    if (!loading && points && points.length > 0) {
+      const updateHeight = () => {
+        if (containerRef.current) {
+          const rect = containerRef.current.getBoundingClientRect();
+          if (rect.height > 100) {
+            setContainerHeight(rect.height);
+            heightRef.current = rect.height;
+          }
+        }
+      };
+      // Delay to ensure DOM has updated after data load
+      const timeoutId = setTimeout(() => {
+        requestAnimationFrame(() => {
+          updateHeight();
+        });
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [loading, points?.length]);
 
   // Use container height if available, otherwise use prop or default to 240px
   const chartHeight = containerHeight || height || 240;

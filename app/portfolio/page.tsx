@@ -287,6 +287,7 @@ function PortfolioContent() {
             />
           </div>
         )}
+
       </main>
       <Footer />
     </div>

@@ -14,6 +14,9 @@ export interface UserProfile {
   display_name: string | null;
   preferred_country: 'EG' | 'AE' | 'SA' | 'US' | null;
   preferred_currency: 'EGP' | 'USD' | 'AED' | 'SAR' | null;
+  is_premium?: boolean;
+  ads_disabled?: boolean;
+  role?: 'user' | 'admin';
   created_at: string;
   updated_at: string;
 }

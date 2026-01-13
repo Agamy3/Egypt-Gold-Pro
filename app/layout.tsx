@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Script from 'next/script'
 import './globals.css'
 import { LanguageProvider } from '@/components/LanguageProvider'
 import { Analytics } from '@vercel/analytics/next'
@@ -61,6 +62,12 @@ export default function RootLayout({
         <LanguageProvider>{children}</LanguageProvider>
         <CookieConsentBanner />
         <Analytics />
+        <Script
+          async
+          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${process.env.NEXT_PUBLIC_ADSENSE_CLIENT || 'ca-pub-1715676389323573'}`}
+          crossOrigin="anonymous"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   )

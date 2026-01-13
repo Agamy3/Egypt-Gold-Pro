@@ -361,7 +361,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
           </div>
         </div>
 
-        <div className="w-full h-[240px] md:h-[340px] lg:h-[380px]">
+        <div className="w-full h-[240px] md:h-[340px] lg:h-[380px] relative" style={{ minHeight: '240px' }}>
           <ForecastMiniChart
             points={seriesData?.points || []}
             unit={chartUnit}

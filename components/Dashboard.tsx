@@ -4,6 +4,7 @@ import React from 'react';
 import HoverTip from './ui/HoverTip';
 import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
+import AdGate from './ads/AdGate';
 
 interface DashboardProps {
   snapshot: {
@@ -468,6 +469,19 @@ export default function Dashboard({ snapshot }: DashboardProps) {
                 : (lang === 'ar' ? 'القيمة العادلة غير متاحة للمقارنة' : 'Fair value not available for comparison')}
             </div>
           )}
+        </div>
+
+        {/* Sponsored Ad Card (after first row) */}
+        <div className="col-span-1 sm:col-span-2 lg:col-span-3">
+          <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-700`}>
+            <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide">
+              {lang === 'ar' ? 'ممول' : 'Sponsored'}
+            </div>
+            <AdGate
+              slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
+              format="auto"
+            />
+          </div>
         </div>
 
         {/* Pricing Details */}
