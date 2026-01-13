@@ -430,14 +430,17 @@ export async function calculateForecast(
 
     const score = momentumScore + varianceScore + fxScore + ounceScore;
 
-    // Determine direction with much lower thresholds for more responsive forecasts
-    // Reduced to ±8 to catch even small but meaningful trends
+    // Determine direction with very low thresholds for more responsive forecasts
+    // Reduced to ±3 to catch even small but meaningful trends
     // If momentum alone is strong enough, use it even if total score is lower
     let direction: 'UP' | 'DOWN' | 'SIDEWAYS';
-    const strongMomentumThreshold = Math.abs(momentumScore) >= 12; // Strong momentum can override
-    if (score >= 8 || (score >= 3 && momentumScore >= 12)) {
+    const strongMomentumThreshold = Math.abs(momentumScore) >= 8; // Strong momentum can override (lowered from 12)
+    // Very permissive: if score is positive and momentum is positive, go UP
+    // If score is negative and momentum is negative, go DOWN
+    // Only show SIDEWAYS if score is very close to 0 AND momentum is weak
+    if (score >= 3 || (score >= 1 && momentumScore >= 8) || (score > 0 && momentumScore > 5)) {
       direction = 'UP';
-    } else if (score <= -8 || (score <= -3 && momentumScore <= -12)) {
+    } else if (score <= -3 || (score <= -1 && momentumScore <= -8) || (score < 0 && momentumScore < -5)) {
       direction = 'DOWN';
     } else {
       direction = 'SIDEWAYS';
