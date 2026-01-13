@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useLang } from './LanguageProvider';
+import CookiePreferencesLink from './CookiePreferencesLink';
 
 export default function Footer() {
   const { lang } = useLang();
@@ -26,6 +27,7 @@ export default function Footer() {
             >
               {lang === 'ar' ? 'شروط الخدمة' : 'Terms of Service'}
             </Link>
+            <CookiePreferencesLink />
             <a
               href="mailto:support@egyptgoldpro.com"
               className="text-sm text-gray-400 hover:text-gray-300 transition-colors"

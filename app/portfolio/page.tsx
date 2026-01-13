@@ -10,6 +10,7 @@ import AccountMenu from '@/components/AccountMenu';
 import PortfolioTable from '@/components/PortfolioTable';
 import Footer from '@/components/Footer';
 import Image from 'next/image';
+import AdGateClient from '@/components/ads/AdGateClient';
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
@@ -288,6 +289,14 @@ function PortfolioContent() {
           </div>
         )}
 
+        {/* Ad at bottom of page (for free users only) */}
+        <div className="mt-8 mb-4">
+          <AdGateClient
+            adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
+            format="auto"
+            className="w-full"
+          />
+        </div>
       </main>
       <Footer />
     </div>

@@ -1,27 +1,31 @@
 /**
- * Ad Gate Component
+ * Ad Gate Client Component
  * 
- * Client-side component that checks consent and user type before rendering ads
+ * Client-side wrapper for ad units (used in client components)
  */
 
 'use client';
 
 import { useEffect, useState, ReactNode } from 'react';
-import AdsenseAd from './AdsenseAd';
+import AdSenseUnit from './AdSenseUnit';
 
-interface AdGateProps {
-  slot: string;
+interface AdGateClientProps {
+  adSlot: string;
   format?: 'auto' | 'rectangle' | 'horizontal' | 'vertical';
+  fullWidthResponsive?: boolean;
   className?: string;
-  fallback?: ReactNode;
+  style?: React.CSSProperties;
+  children?: ReactNode;
 }
 
-export default function AdGate({
-  slot,
+export default function AdGateClient({
+  adSlot,
   format,
+  fullWidthResponsive,
   className,
-  fallback,
-}: AdGateProps) {
+  style,
+  children,
+}: AdGateClientProps) {
   const [canShowAd, setCanShowAd] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -47,7 +51,7 @@ export default function AdGate({
           setCanShowAd(data.shouldShow === true);
         })
         .catch((error) => {
-          console.error('[AdGate] Error checking ad visibility:', error);
+          console.error('[AdGateClient] Error checking ad visibility:', error);
           setCanShowAd(false);
         });
     };
@@ -66,15 +70,17 @@ export default function AdGate({
 
   // Don't show ad
   if (!canShowAd) {
-    return <>{fallback}</> || null;
+    return <>{children}</> || null;
   }
 
-  // Show ad
+  // Show ad unit
   return (
-    <AdsenseAd
-      slot={slot}
+    <AdSenseUnit
+      adSlot={adSlot}
       format={format}
+      fullWidthResponsive={fullWidthResponsive}
       className={className}
+      style={style}
     />
   );
 }

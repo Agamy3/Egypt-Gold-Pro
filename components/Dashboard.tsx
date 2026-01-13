@@ -4,7 +4,7 @@ import React from 'react';
 import HoverTip from './ui/HoverTip';
 import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
-import AdGate from './ads/AdGate';
+import AdGateClient from './ads/AdGateClient';
 
 interface DashboardProps {
   snapshot: {
@@ -477,8 +477,8 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide">
               {lang === 'ar' ? 'ممول' : 'Sponsored'}
             </div>
-            <AdGate
-              slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
+            <AdGateClient
+              adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
               format="auto"
             />
           </div>
