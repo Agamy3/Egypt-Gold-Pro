@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useLang } from '@/components/LanguageProvider';
 import { computeGoldFromMoney, type MarketSnapshot } from '@/lib/calculator';
 import { createClientSupabaseClient } from '@/lib/supabase/client-auth';
@@ -137,6 +138,60 @@ export default function MoneyToGoldCalculator({
       default: return currency;
     }
   };
+
+  // If not authenticated, show benefits CTA
+  if (!isAuthenticated) {
+    return (
+      <div className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8 border border-gold-600">
+        <h2 className={`text-xl font-semibold text-gray-100 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
+          {lang === 'ar' ? 'حاسبة المال إلى الذهب' : 'Money → Gold Calculator'}
+        </h2>
+        
+        <div className={`bg-gray-800 rounded-lg p-6 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
+          <h3 className={`text-lg font-semibold text-gold-400 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
+            {lang === 'ar' ? '🎯 مزايا الحساب المجاني' : '🎯 Free Account Benefits'}
+          </h3>
+          <ul className={`space-y-3 text-gray-300 ${lang === 'ar' ? 'text-right' : ''}`}>
+            <li className="flex items-start gap-2">
+              <span className="text-gold-400 mt-1">✓</span>
+              <span>{lang === 'ar' ? 'حاسبة المال إلى الذهب - احسب كم جرام ذهب يمكنك شراؤه' : 'Money → Gold Calculator - Calculate how many grams of gold you can buy'}</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-gold-400 mt-1">✓</span>
+              <span>{lang === 'ar' ? 'محفظة الذهب - تتبع استثماراتك في الذهب' : 'Gold Portfolio - Track your gold investments'}</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-gold-400 mt-1">✓</span>
+              <span>{lang === 'ar' ? 'إشعارات الأسعار - تنبيهات عند تغيير الأسعار' : 'Price Notifications - Alerts when prices change'}</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-gold-400 mt-1">✓</span>
+              <span>{lang === 'ar' ? 'تخزين التفضيلات - احفظ إعداداتك عبر الأجهزة' : 'Save Preferences - Your settings sync across devices'}</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-gold-400 mt-1">✓</span>
+              <span>{lang === 'ar' ? 'ملخصات يومية وأسبوعية - رؤى السوق' : 'Daily & Weekly Summaries - Market insights'}</span>
+            </li>
+          </ul>
+        </div>
+
+        <div className={`flex gap-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+          <Link
+            href="/auth/signin"
+            className="flex-1 px-6 py-3 bg-gold-600 hover:bg-gold-700 text-white font-semibold rounded-md text-center transition-colors"
+          >
+            {lang === 'ar' ? 'تسجيل الدخول' : 'Sign In'}
+          </Link>
+          <Link
+            href="/auth/signup"
+            className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-md text-center transition-colors"
+          >
+            {lang === 'ar' ? 'إنشاء حساب' : 'Create Account'}
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8">
