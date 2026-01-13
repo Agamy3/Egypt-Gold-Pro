@@ -29,7 +29,7 @@ interface ForecastData {
 }
 
 interface ForecastCardProps {
-  forecast: ForecastData | null;
+  forecast?: ForecastData | null; // Optional - if not provided, component will fetch its own
   insufficientData?: boolean;
   country?: 'EG' | 'AE' | 'SA' | 'US';
   title?: string; // Optional custom title
@@ -66,13 +66,14 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
   const [scope, setScope] = useState<ForecastScope>('local');
   const [seriesData, setSeriesData] = useState<SeriesResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [forecast, setForecast] = useState<ForecastData | null>(initialForecast);
-  const [insufficientData, setInsufficientData] = useState(initialInsufficientData);
+  // Always manage forecast state internally - ignore initial props after first render
+  const [forecast, setForecast] = useState<ForecastData | null>(initialForecast || null);
+  const [insufficientData, setInsufficientData] = useState(initialInsufficientData || false);
   const [forecastLoading, setForecastLoading] = useState(false);
   
   const displayTitle = title || t(lang, 'marketForecast');
 
-  // Fetch forecast when dropdowns change
+  // Fetch forecast when dropdowns or country change (always fetch, don't rely on props)
   useEffect(() => {
     const fetchForecast = async () => {
       try {

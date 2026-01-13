@@ -333,8 +333,13 @@ export async function calculateForecast(
 
     // Component 2 & 3: Calculate variance and FX at start and end
     // Use global gold spot price from GoldAPI.com (USD per troy ounce)
+    // If scope is 'global', use global spot prices directly. If 'local', use local market prices.
     const startOunce = goldSpotData.length > 0 ? goldSpotData[0].xau_spot_usd_oz : null;
     const endOunce = goldSpotData.length > 0 ? goldSpotData[goldSpotData.length - 1].xau_spot_usd_oz : null;
+    
+    // For global scope, we want to forecast based on global spot price movements
+    // For local scope, we use local market prices (already calculated above)
+    const useGlobalScope = scope === 'global';
 
     let startVariance: number | null = null;
     let endVariance: number | null = null;
@@ -359,9 +364,18 @@ export async function calculateForecast(
           return timeBucket === lastBucket;
         });
         
-        // For US, we only have 24k buy prices and no sell prices
-        // Calculate variance by comparing market price to fair value (derived from spot)
-        if (use24kOnly) {
+        // Handle scope: global uses spot prices, local uses market prices
+        if (useGlobalScope) {
+          // Global scope: forecast based on global spot price movements
+          // Variance is always 0 for global (no local premium/discount)
+          // FX is always 1.0 (prices are in USD)
+          startVariance = 0;
+          endVariance = 0;
+          startFX = 1.0;
+          endFX = 1.0;
+        } else if (use24kOnly) {
+          // For US, we only have 24k buy prices and no sell prices
+          // Calculate variance by comparing market price to fair value (derived from spot)
           // Fair value 24k per gram = (spot_oz_usd / 31.1034768)
           const startFair24k = startOunce ? startOunce / 31.1034768 : null;
           const endFair24k = endOunce ? endOunce / 31.1034768 : null;
