@@ -471,19 +471,6 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           )}
         </div>
 
-        {/* Sponsored Ad Card (after first row) */}
-        <div className="col-span-1 sm:col-span-2 lg:col-span-3">
-          <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-700`}>
-            <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide">
-              {lang === 'ar' ? 'ممول' : 'Sponsored'}
-            </div>
-            <AdGateClient
-              adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
-              format="auto"
-            />
-          </div>
-        </div>
-
         {/* Pricing Details */}
         <div 
           className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-600`}
