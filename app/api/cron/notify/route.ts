@@ -496,7 +496,9 @@ async function checkPortfolioPL() {
           getCountryCurrency(countryCode),
           fxRates
         );
-        totalInvested += investedInCanonical;
+        if (investedInCanonical !== null) {
+          totalInvested += investedInCanonical;
+        }
         totalGrams += holding.grams;
       }
 

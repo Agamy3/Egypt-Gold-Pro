@@ -51,6 +51,7 @@ function formatCurrency(num: number | null, currency: Currency, decimals = 2): s
 
 export default function PortfolioTable({ holdings, currency, country, lang, onRefresh }: PortfolioTableProps) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -74,6 +75,7 @@ export default function PortfolioTable({ holdings, currency, country, lang, onRe
 
   const handleCloseModal = () => {
     setShowAddForm(false);
+    setEditingHolding(null);
     setError(null);
     // Reset form
     setFormData({
@@ -85,6 +87,46 @@ export default function PortfolioTable({ holdings, currency, country, lang, onRe
       notes: '',
       country: country,
     });
+  };
+
+  const handleEdit = (holding: Holding) => {
+    setEditingHolding(holding);
+    setFormData({
+      karat: holding.karat,
+      grams: holding.grams.toString(),
+      purchasePricePerGram: holding.purchase_price_per_gram.toString(),
+      purchaseCurrency: holding.purchase_currency,
+      purchasedAt: holding.purchased_at || '',
+      notes: holding.notes || '',
+      country: holding.country || country,
+    });
+    setShowAddForm(true);
+  };
+
+  const handleDelete = async (holdingId: number) => {
+    if (!confirm(lang === 'ar' ? 'هل أنت متأكد من حذف هذا الاستثمار؟' : 'Are you sure you want to delete this holding?')) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/portfolio/${holdingId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete holding');
+      }
+
+      onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleInputChange = (field: string, value: string | number) => {
@@ -143,15 +185,26 @@ export default function PortfolioTable({ holdings, currency, country, lang, onRe
         payload.country = formData.country;
       }
 
-      const res = await fetch('/api/portfolio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      let res;
+      if (editingHolding) {
+        // Update existing holding
+        res = await fetch(`/api/portfolio/${editingHolding.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        // Create new holding
+        res = await fetch('/api/portfolio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Failed to create holding');
+        throw new Error(data.error || (editingHolding ? 'Failed to update holding' : 'Failed to create holding'));
       }
 
       // Success - close modal and refresh
@@ -227,10 +280,20 @@ export default function PortfolioTable({ holdings, currency, country, lang, onRe
                       {formatCurrency(holding.pnl, currency)} ({formatNumber(holding.pnl_pct * 100, 2)}%)
                     </td>
                     <td className="py-3 px-4">
-                      <button className="text-blue-400 hover:text-blue-300 text-sm mr-3">
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(holding)}
+                        disabled={loading}
+                        className="text-blue-400 hover:text-blue-300 text-sm mr-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
                         {lang === 'ar' ? 'تعديل' : 'Edit'}
                       </button>
-                      <button className="text-red-400 hover:text-red-300 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(holding.id)}
+                        disabled={loading}
+                        className="text-red-400 hover:text-red-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
                         {lang === 'ar' ? 'حذف' : 'Delete'}
                       </button>
                     </td>
@@ -245,7 +308,7 @@ export default function PortfolioTable({ holdings, currency, country, lang, onRe
       <Modal
         isOpen={showAddForm}
         onClose={handleCloseModal}
-        title={lang === 'ar' ? 'إضافة استثمار جديد' : 'Add New Holding'}
+        title={editingHolding ? (lang === 'ar' ? 'تعديل الاستثمار' : 'Edit Holding') : (lang === 'ar' ? 'إضافة استثمار جديد' : 'Add New Holding')}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
