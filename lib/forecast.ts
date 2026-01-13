@@ -249,15 +249,44 @@ export async function calculateForecast(
       ? 30 * 60 * 1000  // 30-minute buckets for medium datasets (>200 snapshots)
       : 5 * 60 * 1000;  // 5-minute buckets for small datasets
     
-    // Determine which price to use based on country and availability
+    // Determine which price to use based on country, availability, and scope
     // For US, use 24k only. For others, prefer 21k but fallback to 24k
+    // For global scope, use global spot prices converted to per-gram
     const use24kOnly = country === 'US';
+    const useGlobalScope = scope === 'global';
     
     const snapshotsByTimeBucket = snapshotsToUse.reduce((acc, s) => {
-      // For US, use 24k. For others, prefer 21k but fallback to 24k
-      const price = use24kOnly 
-        ? s.market24Buy 
-        : (s.market21Buy ?? s.market24Buy);
+      let price: number | null = null;
+      
+      if (useGlobalScope && goldSpotData.length > 0) {
+        // Global scope: use global spot price converted to per-gram
+        // Find the closest gold spot data point to this snapshot's time
+        const snapshotTime = s.createdAt;
+        let closestSpot = goldSpotData[0];
+        let minDiff = Math.abs(closestSpot.fetched_at - snapshotTime);
+        
+        for (const spot of goldSpotData) {
+          const diff = Math.abs(spot.fetched_at - snapshotTime);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestSpot = spot;
+          }
+        }
+        
+        if (closestSpot) {
+          // Convert ounce to gram: 1 troy oz = 31.1034768g
+          // For 24k: price = spot_oz / 31.1034768
+          // For 21k: price = (spot_oz / 31.1034768) * (21/24)
+          const gramPrice24k = closestSpot.xau_spot_usd_oz / 31.1034768;
+          price = use24kOnly ? gramPrice24k : gramPrice24k * (21/24);
+        }
+      } else {
+        // Local scope: use local market prices
+        price = use24kOnly 
+          ? s.market24Buy 
+          : (s.market21Buy ?? s.market24Buy);
+      }
+      
       if (price !== null) {
         const timeBucket = Math.floor((s.createdAt - windowStartMs) / bucketSizeMs);
         if (!acc[timeBucket]) acc[timeBucket] = [];
@@ -336,10 +365,6 @@ export async function calculateForecast(
     // If scope is 'global', use global spot prices directly. If 'local', use local market prices.
     const startOunce = goldSpotData.length > 0 ? goldSpotData[0].xau_spot_usd_oz : null;
     const endOunce = goldSpotData.length > 0 ? goldSpotData[goldSpotData.length - 1].xau_spot_usd_oz : null;
-    
-    // For global scope, we want to forecast based on global spot price movements
-    // For local scope, we use local market prices (already calculated above)
-    const useGlobalScope = scope === 'global';
 
     let startVariance: number | null = null;
     let endVariance: number | null = null;
