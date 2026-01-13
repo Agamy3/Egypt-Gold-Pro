@@ -475,7 +475,7 @@ export async function calculateForecast(
     const windowHours = FORECAST_WINDOW_MS / (60 * 60 * 1000);
     const windowDesc = windowHours >= 24 ? `${(windowHours / 24).toFixed(1)} days` : `${windowHours.toFixed(1)} hours`;
     
-    if (Math.abs(momentumScore) > 3) {
+    if (Math.abs(momentumScore) > 2) {
       const trend = momentum21k > 0 ? 'up' : 'down';
       const karatLabel = use24kOnly ? '24k' : '21k';
       // Show both recent and overall momentum if significantly different
