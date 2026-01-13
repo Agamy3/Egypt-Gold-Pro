@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import HoverTip from './ui/HoverTip';
 import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
 import AdGateClient from './ads/AdGateClient';
+import PremiumMacroPanel from './PremiumMacroPanel';
 
 interface DashboardProps {
   snapshot: {

@@ -14,11 +14,21 @@ export interface UserProfile {
   display_name: string | null;
   preferred_country: 'EG' | 'AE' | 'SA' | 'US' | null;
   preferred_currency: 'EGP' | 'USD' | 'AED' | 'SAR' | null;
+  preferred_language?: 'EN' | 'AR' | null;
   is_premium?: boolean;
-  ads_disabled?: boolean;
+  is_ad_free?: boolean;
+  entitlements?: Record<string, any>;
+  premium_expires_at?: string | null;
   role?: 'user' | 'admin';
   created_at: string;
   updated_at: string;
+}
+
+export interface UserEntitlements {
+  ad_free?: boolean;
+  premium_macro_explanations?: boolean;
+  gold_news_premium_filters?: boolean;
+  notifications_advanced?: boolean;
 }
 
 /**

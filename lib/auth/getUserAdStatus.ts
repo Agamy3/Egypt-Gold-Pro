@@ -38,7 +38,7 @@ export async function getUserAdStatus(): Promise<UserAdStatus> {
     const supabase = await createServerSupabaseClient();
     const { data: profile, error } = await supabase
       .from('user_profiles')
-      .select('is_premium')
+      .select('is_premium, entitlements, premium_expires_at')
       .eq('id', user.id)
       .single();
 
@@ -52,11 +52,20 @@ export async function getUserAdStatus(): Promise<UserAdStatus> {
     }
 
     const isPremium = profile.is_premium ?? false;
+    const entitlements = (profile.entitlements as Record<string, any>) || {};
+    const isAdFree = entitlements.ad_free === true || isPremium;
+    
+    // Check if premium has expired
+    const premiumExpired = profile.premium_expires_at 
+      ? new Date(profile.premium_expires_at) < new Date()
+      : false;
+    
+    const effectivePremium = isPremium && !premiumExpired;
 
     return {
       isLoggedIn: true,
-      isPremium: isPremium,
-      shouldShowAds: !isPremium, // Show ads if not premium
+      isPremium: effectivePremium,
+      shouldShowAds: !isAdFree, // Show ads if not ad-free (via entitlements or premium)
     };
   } catch (error) {
     console.error('[getUserAdStatus] Error:', error);
