@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import HoverTip from './ui/HoverTip';
 import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
@@ -9,6 +10,7 @@ import PremiumMacroPanel from './PremiumMacroPanel';
 
 interface DashboardProps {
   snapshot: {
+    country?: string;
     timestamp: number;
     impliedOunce: {
       impliedOunceUsd: number;
@@ -41,7 +43,6 @@ interface DashboardProps {
       activeUnderlyingSources?: string[];
       sourcesUsed?: Record<string, string[]>;
     };
-    country?: string;
     currency?: string;
     canonicalCurrency?: string;
     pricing: {
@@ -147,6 +148,7 @@ function getCountryMarketLabel(country: string | undefined, karat: '21' | '24', 
 export default function Dashboard({ snapshot }: DashboardProps) {
   const { lang } = useLang();
   const [isPremium, setIsPremium] = useState<boolean>(false);
+  const country = snapshot.country || 'EG';
 
   useEffect(() => {
     // Check premium status
@@ -483,8 +485,36 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           )}
         </div>
 
-        {/* Premium Macro Panel */}
-        <PremiumMacroPanel isPremium={isPremium} lang={lang} />
+        {/* Premium CTA - Always visible for non-premium users */}
+        {!isPremium && (
+          <>
+            {country === 'US' ? (
+              <PremiumMacroPanel isPremium={false} lang={lang} />
+            ) : (
+              <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-700`}>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className={`text-lg font-semibold text-gray-400 ${lang === 'ar' ? 'text-right' : ''}`}>
+                    {lang === 'ar' ? 'ترقية إلى مميز' : 'Upgrade to Premium'}
+                  </h2>
+                </div>
+                <p className="text-gray-500 mb-4 text-sm">
+                  {lang === 'ar' 
+                    ? 'افهم سبب تحرك الذهب - وليس فقط السعر.'
+                    : 'Understand why gold moves — not just the price.'}
+                </p>
+                <Link
+                  href="/premium"
+                  className="inline-flex items-center px-4 py-2 bg-gold-600 hover:bg-gold-700 text-white rounded-md font-semibold transition-colors"
+                >
+                  {lang === 'ar' ? 'ترقية إلى مميز' : 'Upgrade to Premium'}
+                </Link>
+              </div>
+            )}
+          </>
+        )}
+        {isPremium && country === 'US' && (
+          <PremiumMacroPanel isPremium={true} lang={lang} />
+        )}
 
         {/* Pricing Details */}
         <div 

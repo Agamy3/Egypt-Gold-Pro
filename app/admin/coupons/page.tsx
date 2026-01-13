@@ -15,29 +15,16 @@ import Footer from '@/components/Footer';
 interface Coupon {
   id: number;
   code: string;
-  active: boolean;
+  description: string | null;
+  is_active: boolean;
   max_redemptions: number | null;
-  redemption_count: number;
+  redeemed_count: number;
   starts_at: string | null;
-  ends_at: string | null;
-  note: string | null;
-  effect: any;
+  expires_at: string | null;
+  grants_premium: boolean;
+  premium_days: number | null;
+  unlock_features: string[] | null;
   created_at: string;
-}
-
-interface CouponFormData {
-  code: string;
-  active: boolean;
-  max_redemptions: string;
-  starts_at: string;
-  ends_at: string;
-  note: string;
-  setPremium: boolean;
-  adFree: boolean;
-  days: string;
-  premium_macro_explanations: boolean;
-  gold_news_premium_filters: boolean;
-  notifications_advanced: boolean;
 }
 
 export default function AdminCouponsPage() {
@@ -46,24 +33,19 @@ export default function AdminCouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
-  const [redemptions, setRedemptions] = useState<any[]>([]);
-  const [formData, setFormData] = useState<CouponFormData>({
+  const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
+  const [formData, setFormData] = useState({
     code: '',
-    active: true,
+    description: '',
+    premium_days: '',
     max_redemptions: '',
     starts_at: '',
-    ends_at: '',
-    note: '',
-    setPremium: false,
-    adFree: false,
-    days: '',
-    premium_macro_explanations: false,
-    gold_news_premium_filters: false,
-    notifications_advanced: false,
+    expires_at: '',
+    grants_premium: true,
+    unlock_features: '',
   });
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     checkAdmin();
@@ -71,21 +53,35 @@ export default function AdminCouponsPage() {
 
   const checkAdmin = async () => {
     try {
-      const res = await fetch('/api/admin/coupons?limit=100');
-      if (res.status === 403) {
+      const res = await fetch('/api/user/is-admin');
+      if (res.status === 403 || !res.ok) {
         setIsAdmin(false);
         setLoading(false);
         return;
       }
-      if (res.ok) {
+      const data = await res.json();
+      if (data.isAdmin) {
         setIsAdmin(true);
-        const data = await res.json();
-        setCoupons(data.coupons || []);
+        loadCoupons();
+      } else {
+        setIsAdmin(false);
       }
       setLoading(false);
     } catch (error) {
       setIsAdmin(false);
       setLoading(false);
+    }
+  };
+
+  const loadCoupons = async () => {
+    try {
+      const res = await fetch('/api/admin/coupons');
+      if (res.ok) {
+        const data = await res.json();
+        setCoupons(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error loading coupons:', error);
     }
   };
 
@@ -95,62 +91,47 @@ export default function AdminCouponsPage() {
       return;
     }
 
-    setSaving(true);
-    setMessage(null);
-
     try {
-      const effect: any = {};
-      if (formData.setPremium) effect.setPremium = true;
-      if (formData.adFree) effect.adFree = true;
-      if (formData.days) effect.days = parseInt(formData.days);
-      
-      const entitlements: any = {};
-      if (formData.premium_macro_explanations) entitlements.premium_macro_explanations = true;
-      if (formData.gold_news_premium_filters) entitlements.gold_news_premium_filters = true;
-      if (formData.notifications_advanced) entitlements.notifications_advanced = true;
-      if (Object.keys(entitlements).length > 0) effect.entitlements = entitlements;
+      const unlockFeatures = formData.unlock_features.trim()
+        ? formData.unlock_features.split(',').map(f => f.trim()).filter(Boolean)
+        : null;
 
       const res = await fetch('/api/admin/coupons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: formData.code,
-          active: formData.active,
+          description: formData.description || null,
+          premium_days: formData.premium_days ? parseInt(formData.premium_days) : null,
           max_redemptions: formData.max_redemptions ? parseInt(formData.max_redemptions) : null,
           starts_at: formData.starts_at || null,
-          ends_at: formData.ends_at || null,
-          note: formData.note || null,
-          effect,
+          expires_at: formData.expires_at || null,
+          grants_premium: formData.grants_premium,
+          unlock_features: unlockFeatures,
         }),
       });
 
       const data = await res.json();
 
-      if (res.ok) {
+      if (res.ok && data.ok) {
         setMessage({ type: 'success', text: 'Coupon created successfully' });
         setFormData({
           code: '',
-          active: true,
+          description: '',
+          premium_days: '',
           max_redemptions: '',
           starts_at: '',
-          ends_at: '',
-          note: '',
-          setPremium: false,
-          adFree: false,
-          days: '',
-          premium_macro_explanations: false,
-          gold_news_premium_filters: false,
-          notifications_advanced: false,
+          expires_at: '',
+          grants_premium: true,
+          unlock_features: '',
         });
         setShowCreateForm(false);
-        checkAdmin();
+        loadCoupons();
       } else {
         setMessage({ type: 'error', text: data.error || 'Failed to create coupon' });
       }
     } catch (error) {
       setMessage({ type: 'error', text: 'An error occurred' });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -159,28 +140,71 @@ export default function AdminCouponsPage() {
       const res = await fetch(`/api/admin/coupons/${coupon.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active: !coupon.active }),
+        body: JSON.stringify({ is_active: !coupon.is_active }),
       });
 
       if (res.ok) {
-        checkAdmin();
+        loadCoupons();
       }
     } catch (error) {
       console.error('Error toggling coupon:', error);
     }
   };
 
-  const handleViewRedemptions = async (coupon: Coupon) => {
+  const handleEditCoupon = async () => {
+    if (!editingCoupon) return;
+
     try {
-      const res = await fetch(`/api/admin/coupons/${coupon.id}/redemptions`);
-      if (res.ok) {
-        const data = await res.json();
-        setRedemptions(data.redemptions || []);
-        setSelectedCoupon(coupon);
+      const unlockFeatures = formData.unlock_features.trim()
+        ? formData.unlock_features.split(',').map(f => f.trim()).filter(Boolean)
+        : null;
+
+      const res = await fetch(`/api/admin/coupons/${editingCoupon.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: formData.description || null,
+          premium_days: formData.premium_days ? parseInt(formData.premium_days) : null,
+          max_redemptions: formData.max_redemptions ? parseInt(formData.max_redemptions) : null,
+          starts_at: formData.starts_at || null,
+          expires_at: formData.expires_at || null,
+          grants_premium: formData.grants_premium,
+          unlock_features: unlockFeatures,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.ok) {
+        setMessage({ type: 'success', text: 'Coupon updated successfully' });
+        setEditingCoupon(null);
+        loadCoupons();
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to update coupon' });
       }
     } catch (error) {
-      console.error('Error fetching redemptions:', error);
+      setMessage({ type: 'error', text: 'An error occurred' });
     }
+  };
+
+  const copyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setMessage({ type: 'success', text: `Copied ${code} to clipboard` });
+    setTimeout(() => setMessage(null), 2000);
+  };
+
+  const startEdit = (coupon: Coupon) => {
+    setEditingCoupon(coupon);
+    setFormData({
+      code: coupon.code,
+      description: coupon.description || '',
+      premium_days: coupon.premium_days?.toString() || '',
+      max_redemptions: coupon.max_redemptions?.toString() || '',
+      starts_at: coupon.starts_at ? coupon.starts_at.substring(0, 16) : '',
+      expires_at: coupon.expires_at ? coupon.expires_at.substring(0, 16) : '',
+      grants_premium: coupon.grants_premium,
+      unlock_features: coupon.unlock_features?.join(', ') || '',
+    });
   };
 
   if (loading) {
@@ -206,7 +230,7 @@ export default function AdminCouponsPage() {
         </header>
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-white mb-4">Access Denied</h1>
+            <h1 className="text-3xl font-bold text-white mb-4">Not Authorized</h1>
             <p className="text-gray-400 mb-8">You don't have permission to access this page.</p>
             <Link href="/" className="text-gold-400 hover:text-gold-300">
               Return to Home
@@ -249,16 +273,21 @@ export default function AdminCouponsPage() {
 
         <div className="mb-6">
           <button
-            onClick={() => setShowCreateForm(!showCreateForm)}
+            onClick={() => {
+              setShowCreateForm(!showCreateForm);
+              setEditingCoupon(null);
+            }}
             className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-white rounded-md font-semibold"
           >
             {showCreateForm ? 'Cancel' : '+ Create Coupon'}
           </button>
         </div>
 
-        {showCreateForm && (
+        {(showCreateForm || editingCoupon) && (
           <div className="bg-gray-900 rounded-lg shadow-md p-6 mb-8 border border-gray-800">
-            <h2 className="text-xl font-bold text-white mb-4">Create New Coupon</h2>
+            <h2 className="text-xl font-bold text-white mb-4">
+              {editingCoupon ? 'Edit Coupon' : 'Create New Coupon'}
+            </h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">Code *</label>
@@ -266,29 +295,40 @@ export default function AdminCouponsPage() {
                   type="text"
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                  disabled={!!editingCoupon}
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white disabled:opacity-50"
                   placeholder="PREM2024"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Description</label>
+                <input
+                  type="text"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                  placeholder="Optional description"
                 />
               </div>
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">Max Redemptions</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Premium Days (blank = lifetime)</label>
+                  <input
+                    type="number"
+                    value={formData.premium_days}
+                    onChange={(e) => setFormData({ ...formData, premium_days: e.target.value })}
+                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                    placeholder="30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Max Redemptions (blank = unlimited)</label>
                   <input
                     type="number"
                     value={formData.max_redemptions}
                     onChange={(e) => setFormData({ ...formData, max_redemptions: e.target.value })}
                     className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
-                    placeholder="Leave empty for unlimited"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">Days (Premium Duration)</label>
-                  <input
-                    type="number"
-                    value={formData.days}
-                    onChange={(e) => setFormData({ ...formData, days: e.target.value })}
-                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
-                    placeholder="30"
+                    placeholder="100"
                   />
                 </div>
               </div>
@@ -303,92 +343,41 @@ export default function AdminCouponsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">Ends At</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Expires At</label>
                   <input
                     type="datetime-local"
-                    value={formData.ends_at}
-                    onChange={(e) => setFormData({ ...formData, ends_at: e.target.value })}
+                    value={formData.expires_at}
+                    onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
                     className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Note</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Unlock Features (comma-separated)</label>
                 <input
                   type="text"
-                  value={formData.note}
-                  onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                  value={formData.unlock_features}
+                  onChange={(e) => setFormData({ ...formData, unlock_features: e.target.value })}
                   className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
-                  placeholder="Internal note"
+                  placeholder="advanced_macro, premium_news"
                 />
-              </div>
-              <div className="border-t border-gray-700 pt-4">
-                <p className="text-sm font-medium text-gray-300 mb-3">Effects</p>
-                <div className="space-y-2">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={formData.setPremium}
-                      onChange={(e) => setFormData({ ...formData, setPremium: e.target.checked })}
-                      className="mr-2"
-                    />
-                    <span className="text-gray-300">Set Premium</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={formData.adFree}
-                      onChange={(e) => setFormData({ ...formData, adFree: e.target.checked })}
-                      className="mr-2"
-                    />
-                    <span className="text-gray-300">Ad Free</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={formData.premium_macro_explanations}
-                      onChange={(e) => setFormData({ ...formData, premium_macro_explanations: e.target.checked })}
-                      className="mr-2"
-                    />
-                    <span className="text-gray-300">Premium Macro Explanations</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={formData.gold_news_premium_filters}
-                      onChange={(e) => setFormData({ ...formData, gold_news_premium_filters: e.target.checked })}
-                      className="mr-2"
-                    />
-                    <span className="text-gray-300">Gold News Premium Filters</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={formData.notifications_advanced}
-                      onChange={(e) => setFormData({ ...formData, notifications_advanced: e.target.checked })}
-                      className="mr-2"
-                    />
-                    <span className="text-gray-300">Advanced Notifications</span>
-                  </label>
-                </div>
               </div>
               <div>
                 <label className="flex items-center">
                   <input
                     type="checkbox"
-                    checked={formData.active}
-                    onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+                    checked={formData.grants_premium}
+                    onChange={(e) => setFormData({ ...formData, grants_premium: e.target.checked })}
                     className="mr-2"
                   />
-                  <span className="text-gray-300">Active</span>
+                  <span className="text-gray-300">Grants Premium</span>
                 </label>
               </div>
               <button
-                onClick={handleCreateCoupon}
-                disabled={saving}
-                className="px-6 py-2 bg-gold-600 hover:bg-gold-700 text-white rounded-md font-semibold disabled:opacity-50"
+                onClick={editingCoupon ? handleEditCoupon : handleCreateCoupon}
+                className="px-6 py-2 bg-gold-600 hover:bg-gold-700 text-white rounded-md font-semibold"
               >
-                {saving ? 'Creating...' : 'Create Coupon'}
+                {editingCoupon ? 'Update Coupon' : 'Create Coupon'}
               </button>
             </div>
           </div>
@@ -402,27 +391,42 @@ export default function AdminCouponsPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Code</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Redemptions</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Effect</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Premium Days</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Created</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {coupons.map((coupon) => (
                   <tr key={coupon.id} className="hover:bg-gray-800/50">
-                    <td className="px-4 py-3 text-white font-mono">{coupon.code}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-mono">{coupon.code}</span>
+                        <button
+                          onClick={() => copyCode(coupon.code)}
+                          className="text-xs text-gray-400 hover:text-gray-300"
+                          title="Copy code"
+                        >
+                          📋
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                        coupon.active ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
+                        coupon.is_active ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
                       }`}>
-                        {coupon.active ? 'Active' : 'Inactive'}
+                        {coupon.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-300">
-                      {coupon.redemption_count}
+                      {coupon.redeemed_count}
                       {coupon.max_redemptions && ` / ${coupon.max_redemptions}`}
                     </td>
+                    <td className="px-4 py-3 text-gray-300">
+                      {coupon.premium_days || 'Lifetime'}
+                    </td>
                     <td className="px-4 py-3 text-gray-400 text-sm">
-                      {JSON.stringify(coupon.effect)}
+                      {new Date(coupon.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
@@ -430,13 +434,13 @@ export default function AdminCouponsPage() {
                           onClick={() => handleToggleActive(coupon)}
                           className="text-sm text-blue-400 hover:text-blue-300"
                         >
-                          {coupon.active ? 'Deactivate' : 'Activate'}
+                          {coupon.is_active ? 'Deactivate' : 'Activate'}
                         </button>
                         <button
-                          onClick={() => handleViewRedemptions(coupon)}
+                          onClick={() => startEdit(coupon)}
                           className="text-sm text-gold-400 hover:text-gold-300"
                         >
-                          View
+                          Edit
                         </button>
                       </div>
                     </td>
@@ -446,49 +450,9 @@ export default function AdminCouponsPage() {
             </table>
           </div>
         </div>
-
-        {selectedCoupon && redemptions.length > 0 && (
-          <div className="mt-8 bg-gray-900 rounded-lg shadow-md p-6 border border-gray-800">
-            <h2 className="text-xl font-bold text-white mb-4">
-              Redemptions for {selectedCoupon.code}
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-800">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">User</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Redeemed At</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {redemptions.map((redemption: any) => (
-                    <tr key={redemption.id}>
-                      <td className="px-4 py-3 text-gray-300">
-                        {redemption.user_profiles?.email || 'N/A'}
-                      </td>
-                      <td className="px-4 py-3 text-gray-400 text-sm">
-                        {new Date(redemption.redeemed_at).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <button
-              onClick={() => {
-                setSelectedCoupon(null);
-                setRedemptions([]);
-              }}
-              className="mt-4 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-md"
-            >
-              Close
-            </button>
-          </div>
-        )}
       </main>
 
       <Footer />
     </div>
   );
 }
-

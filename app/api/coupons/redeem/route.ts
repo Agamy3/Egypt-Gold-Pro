@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUser } from '@/lib/supabase/server-auth';
-import { redeemCoupon } from '@/lib/coupons/redeem';
+import { redeemCouponV2 } from '@/lib/coupons/redeem-v2';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,20 +34,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Redeem coupon
-    const result = await redeemCoupon(code);
+    const result = await redeemCouponV2(code);
 
-    if (!result.success) {
+    if (!result.ok) {
       return NextResponse.json(
-        { error: result.message },
+        { ok: false, error: result.error },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      message: result.message,
-      effect: result.effect,
-    });
+    return NextResponse.json(result);
   } catch (error) {
     console.error('[API /coupons/redeem] Error:', error);
     return NextResponse.json(

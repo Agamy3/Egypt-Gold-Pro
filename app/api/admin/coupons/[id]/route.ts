@@ -6,43 +6,34 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdmin } from '@/lib/auth/isAdmin';
+import { getUserStatus } from '@/lib/auth/getUserStatus';
 import { createServerClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    // Check admin
-    const admin = await isAdmin();
-    if (!admin) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
+    const status = await getUserStatus();
+    if (!status.isAdmin) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 403 });
     }
 
     const id = parseInt(params.id, 10);
     if (isNaN(id)) {
-      return NextResponse.json(
-        { error: 'Invalid coupon ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: 'Invalid coupon ID' }, { status: 400 });
     }
 
-    // Parse request body
     const body = await request.json();
     const updates: any = {};
 
-    if ('active' in body) updates.active = body.active;
+    if ('is_active' in body) updates.is_active = body.is_active;
+    if ('description' in body) updates.description = body.description || null;
     if ('max_redemptions' in body) updates.max_redemptions = body.max_redemptions || null;
     if ('starts_at' in body) updates.starts_at = body.starts_at || null;
-    if ('ends_at' in body) updates.ends_at = body.ends_at || null;
-    if ('note' in body) updates.note = body.note || null;
-    if ('effect' in body) updates.effect = body.effect || {};
+    if ('expires_at' in body) updates.expires_at = body.expires_at || null;
+    if ('grants_premium' in body) updates.grants_premium = body.grants_premium;
+    if ('premium_days' in body) updates.premium_days = body.premium_days || null;
+    if ('unlock_features' in body) updates.unlock_features = body.unlock_features || null;
 
     const supabaseAdmin = createServerClient();
     const { data, error } = await supabaseAdmin
@@ -53,67 +44,66 @@ export async function PATCH(
       .single();
 
     if (error) {
-      console.error('[API /admin/coupons/:id] Error:', error);
-      return NextResponse.json(
-        { error: error.message || 'Failed to update coupon' },
-        { status: 400 }
-      );
+      console.error('[API /admin/coupons/:id PATCH] Error:', error);
+      return NextResponse.json({ ok: false, error: error.message || 'Failed to update coupon' }, { status: 400 });
     }
 
-    return NextResponse.json({ coupon: data });
+    if (!data) {
+      return NextResponse.json({ ok: false, error: 'Coupon not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, data });
   } catch (error) {
-    console.error('[API /admin/coupons/:id] Error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('[API /admin/coupons/:id PATCH] Error:', error);
+    return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    // Check admin
-    const admin = await isAdmin();
-    if (!admin) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
+    const status = await getUserStatus();
+    if (!status.isAdmin) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 403 });
     }
 
     const id = parseInt(params.id, 10);
     if (isNaN(id)) {
-      return NextResponse.json(
-        { error: 'Invalid coupon ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: 'Invalid coupon ID' }, { status: 400 });
     }
 
     const supabaseAdmin = createServerClient();
-    const { data, error } = await supabaseAdmin
+
+    // Get coupon
+    const { data: coupon, error: couponError } = await supabaseAdmin
+      .from('coupons')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (couponError || !coupon) {
+      return NextResponse.json({ ok: false, error: 'Coupon not found' }, { status: 404 });
+    }
+
+    // Get redemptions
+    const { data: redemptions, error: redemptionsError } = await supabaseAdmin
       .from('coupon_redemptions')
       .select('*, user_profiles(email, display_name)')
       .eq('coupon_id', id)
       .order('redeemed_at', { ascending: false });
 
-    if (error) {
-      console.error('[API /admin/coupons/:id/redemptions] Error:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch redemptions' },
-        { status: 500 }
-      );
+    if (redemptionsError) {
+      console.error('[API /admin/coupons/:id GET] Error fetching redemptions:', redemptionsError);
     }
 
-    return NextResponse.json({ redemptions: data || [] });
+    return NextResponse.json({
+      ok: true,
+      data: {
+        coupon,
+        redemptions: redemptions || [],
+      },
+    });
   } catch (error) {
-    console.error('[API /admin/coupons/:id/redemptions] Error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('[API /admin/coupons/:id GET] Error:', error);
+    return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 });
   }
 }
-

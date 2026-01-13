@@ -32,6 +32,153 @@ interface ProfileData {
   created_at: string;
 }
 
+function PremiumStatusSection({ lang }: { lang: 'en' | 'ar' }) {
+  const [isPremium, setIsPremium] = useState<boolean | null>(null);
+  const [premiumExpiresAt, setPremiumExpiresAt] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemMessage, setRedeemMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/user/premium-status')
+      .then(res => res.json())
+      .then(data => {
+        setIsPremium(data.status?.isPremium || false);
+        setPremiumExpiresAt(data.status?.premiumExpiresAt || null);
+      })
+      .catch(() => setIsPremium(false));
+    
+    fetch('/api/user/is-admin')
+      .then(res => res.json())
+      .then(data => setIsAdmin(data.isAdmin || false))
+      .catch(() => setIsAdmin(false));
+  }, []);
+
+  const handleRedeemCoupon = async () => {
+    if (!couponCode.trim()) {
+      setRedeemMessage({ type: 'error', text: lang === 'ar' ? 'يرجى إدخال كود القسيمة' : 'Please enter a coupon code' });
+      return;
+    }
+
+    setRedeeming(true);
+    setRedeemMessage(null);
+
+    try {
+      const response = await fetch('/api/coupons/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: couponCode.trim() }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && (data.ok || data.success)) {
+        setRedeemMessage({ type: 'success', text: lang === 'ar' ? 'تم استبدال القسيمة بنجاح!' : 'Coupon redeemed successfully!' });
+        setCouponCode('');
+        fetch('/api/user/premium-status')
+          .then(res => res.json())
+          .then(data => {
+            setIsPremium(data.status?.isPremium || false);
+            setPremiumExpiresAt(data.status?.premiumExpiresAt || null);
+          });
+      } else {
+        setRedeemMessage({ type: 'error', text: data.error || (lang === 'ar' ? 'فشل استبدال القسيمة' : 'Failed to redeem coupon') });
+      }
+    } catch (error) {
+      setRedeemMessage({ type: 'error', text: lang === 'ar' ? 'حدث خطأ. يرجى المحاولة مرة أخرى.' : 'An error occurred. Please try again.' });
+    } finally {
+      setRedeeming(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-gray-400 mb-2">
+          {lang === 'ar' ? 'حالة العضوية' : 'Membership Status'}
+        </label>
+        <div className="flex items-center gap-3">
+          <span className={`px-3 py-1.5 rounded text-sm font-semibold ${
+            isPremium 
+              ? 'bg-gold-900 text-gold-300' 
+              : 'bg-gray-800 text-gray-400'
+          }`}>
+            {isPremium ? (lang === 'ar' ? 'مميز' : 'Premium') : (lang === 'ar' ? 'مجاني' : 'Free')}
+          </span>
+          {premiumExpiresAt && (
+            <span className="text-sm text-gray-400">
+              {lang === 'ar' ? 'ينتهي في' : 'Expires'} {new Date(premiumExpiresAt).toLocaleDateString()}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {!isPremium && (
+        <div>
+          <label className="block text-sm font-medium text-gray-400 mb-2">
+            {lang === 'ar' ? 'استبدال كود القسيمة' : 'Redeem Coupon Code'}
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={couponCode}
+              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+              placeholder={lang === 'ar' ? 'أدخل كود القسيمة' : 'Enter coupon code'}
+              className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+              onKeyPress={(e) => e.key === 'Enter' && handleRedeemCoupon()}
+            />
+            <button
+              onClick={handleRedeemCoupon}
+              disabled={redeeming}
+              className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-white rounded-md font-semibold disabled:opacity-50"
+            >
+              {redeeming ? (lang === 'ar' ? 'جارٍ...' : 'Redeeming...') : (lang === 'ar' ? 'استبدال' : 'Redeem')}
+            </button>
+          </div>
+          {redeemMessage && (
+            <div className={`mt-2 p-2 rounded text-sm ${
+              redeemMessage.type === 'success' 
+                ? 'bg-green-900/50 text-green-300' 
+                : 'bg-red-900/50 text-red-300'
+            }`}>
+              {redeemMessage.text}
+            </div>
+          )}
+          <p className="mt-2 text-sm text-gray-500">
+            {lang === 'ar' ? 'لا تملك قسيمة؟' : "Don't have a coupon?"}{' '}
+            <Link href="/premium" className="text-gold-400 hover:text-gold-300">
+              {lang === 'ar' ? 'اطلب الوصول المميز' : 'Request Premium Access'}
+            </Link>
+          </p>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div>
+          <label className="block text-sm font-medium text-gray-400 mb-2">
+            {lang === 'ar' ? 'لوحة التحكم' : 'Admin Panel'}
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/admin/coupons"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium"
+            >
+              {lang === 'ar' ? 'إدارة القسائم' : 'Manage Coupons'}
+            </Link>
+            <Link
+              href="/admin/premium-requests"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium"
+            >
+              {lang === 'ar' ? 'طلبات المميز' : 'Premium Requests'}
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const { lang, setLang } = useLang();
   const router = useRouter();
@@ -393,6 +540,14 @@ export default function ProfilePage() {
                 </select>
               </div>
             </div>
+          </section>
+
+          {/* Premium Status */}
+          <section className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8">
+            <h2 className={`text-xl font-semibold text-gray-100 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
+              {lang === 'ar' ? 'حالة العضوية المميزة' : 'Premium Status'}
+            </h2>
+            <PremiumStatusSection lang={lang} />
           </section>
 
           {/* Security */}

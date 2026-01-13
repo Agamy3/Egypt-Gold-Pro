@@ -1,25 +1,21 @@
 /**
  * Admin Coupons API
  * 
- * GET /api/admin/coupons?limit=100
- * POST /api/admin/coupons/create
+ * GET /api/admin/coupons
+ * POST /api/admin/coupons
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdmin } from '@/lib/auth/isAdmin';
+import { getUserStatus } from '@/lib/auth/getUserStatus';
 import { createServerClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    // Check admin
-    const admin = await isAdmin();
-    if (!admin) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
+    const status = await getUserStatus();
+    if (!status.isAdmin) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -33,83 +29,82 @@ export async function GET(request: NextRequest) {
       .limit(limit);
 
     if (error) {
-      console.error('[API /admin/coupons] Error:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch coupons' },
-        { status: 500 }
-      );
+      console.error('[API /admin/coupons GET] Error:', error);
+      return NextResponse.json({ ok: false, error: 'Failed to fetch coupons' }, { status: 500 });
     }
 
-    return NextResponse.json({ coupons: data || [] });
+    return NextResponse.json({ ok: true, data: data || [] });
   } catch (error) {
-    console.error('[API /admin/coupons] Error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('[API /admin/coupons GET] Error:', error);
+    return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Check admin
-    const admin = await isAdmin();
-    if (!admin) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
+    const status = await getUserStatus();
+    if (!status.isAdmin) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 403 });
     }
 
-    // Parse request body
     const body = await request.json();
     const {
       code,
-      active = true,
+      description,
+      is_active = true,
       max_redemptions,
       starts_at,
-      ends_at,
-      note,
-      effect = {},
+      expires_at,
+      grants_premium = true,
+      premium_days,
+      unlock_features,
+      notes,
     } = body;
 
     if (!code || typeof code !== 'string') {
-      return NextResponse.json(
-        { error: 'Coupon code is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: 'Coupon code is required' }, { status: 400 });
     }
 
     const supabaseAdmin = createServerClient();
+    const normalizedCode = code.toUpperCase().trim();
+
+    // Check if code already exists
+    const { data: existing } = await supabaseAdmin
+      .from('coupons')
+      .select('id')
+      .eq('code', normalizedCode)
+      .single();
+
+    if (existing) {
+      return NextResponse.json({ ok: false, error: 'Coupon code already exists' }, { status: 400 });
+    }
+
     const { data, error } = await supabaseAdmin
       .from('coupons')
       .insert({
-        code: code.toUpperCase().trim(),
-        active,
+        code: normalizedCode,
+        description: description || null,
+        is_active,
         max_redemptions: max_redemptions || null,
         starts_at: starts_at || null,
-        ends_at: ends_at || null,
-        note: note || null,
-        effect,
+        expires_at: expires_at || null,
+        grants_premium,
+        premium_days: premium_days || null,
+        unlock_features: unlock_features || null,
+        notes: notes || null,
+        redeemed_count: 0,
       })
       .select()
       .single();
 
     if (error) {
-      console.error('[API /admin/coupons] Error:', error);
-      return NextResponse.json(
-        { error: error.message || 'Failed to create coupon' },
-        { status: 400 }
-      );
+      console.error('[API /admin/coupons POST] Error:', error);
+      return NextResponse.json({ ok: false, error: error.message || 'Failed to create coupon' }, { status: 400 });
     }
 
-    return NextResponse.json({ coupon: data });
+    return NextResponse.json({ ok: true, data });
   } catch (error) {
-    console.error('[API /admin/coupons] Error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('[API /admin/coupons POST] Error:', error);
+    return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 });
   }
 }
-
