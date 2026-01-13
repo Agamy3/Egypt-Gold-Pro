@@ -383,11 +383,16 @@ function NotificationsContent() {
       setPushSubscribed(true);
       setPushEnabled(true);
       await handleSaveProfile();
-      alert(lang === 'ar' ? 'تم تفعيل الإشعارات الفورية بنجاح' : 'Push notifications enabled successfully');
+      setSuccess(lang === 'ar' ? 'تم تفعيل الإشعارات الفورية بنجاح' : 'Push notifications enabled successfully');
     } catch (err) {
       console.error('[PUSH] Error enabling push:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      alert(lang === 'ar' ? `فشل تفعيل الإشعارات الفورية: ${errorMessage}` : `Failed to enable push notifications: ${errorMessage}`);
+      console.error('[PUSH] Full error details:', {
+        error: err,
+        message: errorMessage,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+      setError(lang === 'ar' ? `فشل تفعيل الإشعارات الفورية: ${errorMessage}` : `Failed to enable push notifications: ${errorMessage}`);
     }
   };
 
