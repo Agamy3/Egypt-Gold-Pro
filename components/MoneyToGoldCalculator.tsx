@@ -141,53 +141,109 @@ export default function MoneyToGoldCalculator({
 
   // If not authenticated, show benefits CTA
   if (!isAuthenticated) {
-    return (
-      <div className="bg-gray-900 rounded-lg shadow-md p-6 sm:p-8 border border-gold-600">
-        <h2 className={`text-xl font-semibold text-gray-100 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
-          {lang === 'ar' ? 'حاسبة المال إلى الذهب' : 'Money → Gold Calculator'}
-        </h2>
-        
-        <div className={`bg-gray-800 rounded-lg p-6 mb-6 ${lang === 'ar' ? 'text-right' : ''}`}>
-          <h3 className={`text-lg font-semibold text-gold-400 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
-            {lang === 'ar' ? '🎯 مزايا الحساب المجاني' : '🎯 Free Account Benefits'}
-          </h3>
-          <ul className={`space-y-3 text-gray-300 ${lang === 'ar' ? 'text-right' : ''}`}>
-            <li className="flex items-start gap-2">
-              <span className="text-gold-400 mt-1">✓</span>
-              <span>{lang === 'ar' ? 'حاسبة المال إلى الذهب - احسب كم جرام ذهب يمكنك شراؤه' : 'Money → Gold Calculator - Calculate how many grams of gold you can buy'}</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-gold-400 mt-1">✓</span>
-              <span>{lang === 'ar' ? 'محفظة الذهب - تتبع استثماراتك في الذهب' : 'Gold Portfolio - Track your gold investments'}</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-gold-400 mt-1">✓</span>
-              <span>{lang === 'ar' ? 'إشعارات الأسعار - تنبيهات عند تغيير الأسعار' : 'Price Notifications - Alerts when prices change'}</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-gold-400 mt-1">✓</span>
-              <span>{lang === 'ar' ? 'تخزين التفضيلات - احفظ إعداداتك عبر الأجهزة' : 'Save Preferences - Your settings sync across devices'}</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-gold-400 mt-1">✓</span>
-              <span>{lang === 'ar' ? 'ملخصات يومية وأسبوعية - رؤى السوق' : 'Daily & Weekly Summaries - Market insights'}</span>
-            </li>
-          </ul>
-        </div>
+    const benefits = [
+      {
+        icon: '🧮',
+        title: lang === 'ar' ? 'حاسبة المال إلى الذهب' : 'Money → Gold Calculator',
+        description: lang === 'ar' ? 'احسب كم جرام ذهب يمكنك شراؤه بأي مبلغ' : 'Calculate how many grams of gold you can buy with any amount',
+      },
+      {
+        icon: '💼',
+        title: lang === 'ar' ? 'محفظة الذهب' : 'Gold Portfolio',
+        description: lang === 'ar' ? 'تتبع استثماراتك في الذهب واحسب الأرباح والخسائر' : 'Track your gold investments and calculate profit/loss',
+      },
+      {
+        icon: '🔔',
+        title: lang === 'ar' ? 'إشعارات الأسعار' : 'Price Notifications',
+        description: lang === 'ar' ? 'تنبيهات فورية عند تغيير أسعار الذهب' : 'Instant alerts when gold prices change',
+      },
+      {
+        icon: '⚙️',
+        title: lang === 'ar' ? 'تخزين التفضيلات' : 'Save Preferences',
+        description: lang === 'ar' ? 'احفظ إعداداتك وتفضيلاتك عبر جميع الأجهزة' : 'Your settings and preferences sync across all devices',
+      },
+      {
+        icon: '📊',
+        title: lang === 'ar' ? 'ملخصات السوق' : 'Market Summaries',
+        description: lang === 'ar' ? 'ملخصات يومية وأسبوعية مع رؤى السوق' : 'Daily & weekly summaries with market insights',
+      },
+    ];
 
-        <div className={`flex gap-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-          <Link
-            href="/auth/signin"
-            className="flex-1 px-6 py-3 bg-gold-600 hover:bg-gold-700 text-white font-semibold rounded-md text-center transition-colors"
-          >
-            {lang === 'ar' ? 'تسجيل الدخول' : 'Sign In'}
-          </Link>
-          <Link
-            href="/auth/signup"
-            className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-md text-center transition-colors"
-          >
-            {lang === 'ar' ? 'إنشاء حساب' : 'Create Account'}
-          </Link>
+    return (
+      <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 rounded-lg shadow-lg p-6 sm:p-8 border border-gold-600/30 relative overflow-hidden">
+        {/* Decorative background elements */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gold-600/5 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-600/5 rounded-full blur-3xl"></div>
+        
+        <div className="relative z-10">
+          <div className={`flex items-center gap-3 mb-6 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            <div className="w-12 h-12 bg-gold-600/20 rounded-lg flex items-center justify-center">
+              <span className="text-2xl">✨</span>
+            </div>
+            <div>
+              <h2 className={`text-2xl font-bold text-gray-100 ${lang === 'ar' ? 'text-right' : ''}`}>
+                {lang === 'ar' ? 'انضم مجاناً واحصل على المزيد' : 'Join Free & Unlock More'}
+              </h2>
+              <p className={`text-sm text-gray-400 mt-1 ${lang === 'ar' ? 'text-right' : ''}`}>
+                {lang === 'ar' ? 'إنشاء حساب مجاني - لا توجد بطاقات ائتمانية مطلوبة' : 'Create a free account - No credit card required'}
+              </p>
+            </div>
+          </div>
+
+          {/* Benefits Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            {benefits.map((benefit, index) => (
+              <div
+                key={index}
+                className={`bg-gray-800/50 backdrop-blur-sm rounded-lg p-4 border border-gray-700/50 hover:border-gold-600/50 transition-all hover:shadow-lg ${lang === 'ar' ? 'text-right' : ''}`}
+              >
+                <div className={`flex items-start gap-3 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+                  <div className="text-3xl flex-shrink-0">{benefit.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-gray-100 mb-1 text-sm">
+                      {benefit.title}
+                    </h3>
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      {benefit.description}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* CTA Buttons */}
+          <div className={`flex flex-col sm:flex-row gap-3 ${lang === 'ar' ? 'sm:flex-row-reverse' : ''}`}>
+            <Link
+              href="/auth/signup"
+              className="flex-1 px-6 py-3.5 bg-gradient-to-r from-gold-600 to-gold-700 hover:from-gold-700 hover:to-gold-800 text-white font-semibold rounded-lg text-center transition-all shadow-lg hover:shadow-gold-600/50 flex items-center justify-center gap-2"
+            >
+              <span>{lang === 'ar' ? 'إنشاء حساب مجاني' : 'Create Free Account'}</span>
+              <span>→</span>
+            </Link>
+            <Link
+              href="/auth/signin"
+              className="flex-1 px-6 py-3.5 bg-gray-800 hover:bg-gray-700 text-white font-semibold rounded-lg text-center transition-all border border-gray-700 hover:border-gray-600 flex items-center justify-center gap-2"
+            >
+              <span>{lang === 'ar' ? 'تسجيل الدخول' : 'Sign In'}</span>
+            </Link>
+          </div>
+
+          {/* Trust indicators */}
+          <div className={`mt-4 flex items-center justify-center gap-6 text-xs text-gray-500 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            <div className="flex items-center gap-1.5">
+              <span>🔒</span>
+              <span>{lang === 'ar' ? 'آمن 100%' : '100% Secure'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span>⚡</span>
+              <span>{lang === 'ar' ? 'سريع وسهل' : 'Quick & Easy'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span>🆓</span>
+              <span>{lang === 'ar' ? 'مجاني دائماً' : 'Always Free'}</span>
+            </div>
+          </div>
         </div>
       </div>
     );
