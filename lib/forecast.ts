@@ -459,7 +459,7 @@ export async function calculateForecast(
     
     // Check momentum strength (strong momentum = higher confidence)
     // Lowered threshold for strong momentum to make it more responsive
-    const strongMomentum = Math.abs(momentumScore) > 15;
+    const strongMomentum = Math.abs(momentumScore) > 10;
     
     // Improved confidence calculation
     if (snapshotCount >= HIGH_CONFIDENCE_THRESHOLD && (signalsAgree || strongMomentum)) {
