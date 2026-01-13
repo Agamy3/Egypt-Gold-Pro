@@ -286,6 +286,9 @@ export async function calculateForecast(
     const startPrice = median(snapshotsByTimeBucket[firstBucket]);
     const endPrice = median(snapshotsByTimeBucket[lastBucket]);
 
+    // Component 1: Calculate overall momentum first
+    const overallMomentum = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
+
     // Calculate recent momentum (last 2 hours) for more responsive forecast
     const recentWindowStart = now - RECENT_WINDOW_MS;
     const recentBucketStart = Math.floor((recentWindowStart - windowStartMs) / bucketSizeMs);
@@ -309,10 +312,8 @@ export async function calculateForecast(
       recentMomentum = overallMomentum;
     }
 
-    // Component 1: Price momentum (% change)
     // Weight: 60% recent momentum (last 2 hours) + 40% overall momentum (last 24 hours)
     // This makes the forecast more responsive to recent changes
-    const overallMomentum = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
     const momentum21k = (recentMomentum * 0.6) + (overallMomentum * 0.4); // Weight recent trend more heavily
 
     // Component 2 & 3: Calculate variance and FX at start and end
