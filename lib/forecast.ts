@@ -421,9 +421,10 @@ export async function calculateForecast(
     // FX: weight 10% (currency movements)
     // Ounce: weight 10% (global gold price movements)
 
-    // Scale momentum more aggressively for better sensitivity
+    // Scale momentum much more aggressively for better sensitivity
     // Increased momentum weight significantly to make forecast more responsive
-    const momentumScore = Math.max(-80, Math.min(80, momentum21k * 2.0)); // Much more sensitive to momentum
+    // Increased multiplier from 2.0 to 3.0 to make even small movements more visible
+    const momentumScore = Math.max(-80, Math.min(80, momentum21k * 3.0)); // Much more sensitive to momentum
     const varianceScore = Math.max(-20, Math.min(20, varianceDelta * 4)); // Scale: ±5% → ±20
     const fxScore = Math.max(-10, Math.min(10, fxDelta * 2)); // Scale: ±5% → ±10
     const ounceScore = Math.max(-10, Math.min(10, ounceDelta * 2)); // Scale: ±5% → ±10
