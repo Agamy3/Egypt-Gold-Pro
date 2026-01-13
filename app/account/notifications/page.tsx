@@ -256,26 +256,30 @@ function NotificationsContent() {
     }
 
     try {
+      // Request permission first
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        alert(lang === 'ar' ? 'تم رفض الإذن' : 'Permission denied');
+        alert(lang === 'ar' ? 'تم رفض الإذن. يرجى السماح بالإشعارات في إعدادات المتصفح.' : 'Permission denied. Please allow notifications in browser settings.');
         return;
       }
 
+      // Get VAPID public key from environment (available at build time)
+      // In Next.js, NEXT_PUBLIC_ variables are injected into the client bundle
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!vapidPublicKey) {
-        alert(lang === 'ar' ? 'إعدادات الإشعارات غير مكتملة' : 'Push settings incomplete');
+        console.error('[PUSH] NEXT_PUBLIC_VAPID_PUBLIC_KEY is not configured');
+        alert(lang === 'ar' ? 'إعدادات الإشعارات الفورية غير مكتملة. يرجى الاتصال بالدعم.' : 'Push notification settings are incomplete. Please contact support.');
         return;
       }
 
-      // Register service worker
-      const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-      await navigator.serviceWorker.ready;
+      console.log('[PUSH] VAPID public key found:', vapidPublicKey.substring(0, 20) + '...');
 
-      // Convert VAPID key
+      // Convert VAPID key from base64 URL-safe to Uint8Array
       const urlBase64ToUint8Array = (base64String: string) => {
         const padding = '='.repeat((4 - base64String.length % 4) % 4);
-        const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+        const base64 = (base64String + padding)
+          .replace(/\-/g, '+')
+          .replace(/_/g, '/');
         const rawData = window.atob(base64);
         const outputArray = new Uint8Array(rawData.length);
         for (let i = 0; i < rawData.length; ++i) {
@@ -284,13 +288,52 @@ function NotificationsContent() {
         return outputArray;
       };
 
-      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey,
-      });
+      // Register service worker
+      let registration;
+      try {
+        registration = await navigator.serviceWorker.register('/sw.js', {
+          scope: '/',
+        });
+        console.log('[PUSH] Service worker registered:', registration.scope);
+        
+        // Wait for service worker to be ready
+        await navigator.serviceWorker.ready;
+        console.log('[PUSH] Service worker ready');
+        
+        // Update service worker if available
+        if (registration.update) {
+          await registration.update();
+        }
+      } catch (swError) {
+        console.error('[PUSH] Service worker registration error:', swError);
+        const errorMsg = swError instanceof Error ? swError.message : 'Unknown error';
+        alert(lang === 'ar' ? `فشل تسجيل خدمة العامل: ${errorMsg}. تأكد من أن الموقع يعمل على HTTPS.` : `Failed to register service worker: ${errorMsg}. Make sure the site is running on HTTPS.`);
+        return;
+      }
 
-      // Convert keys to base64
+      // Get the active registration
+      registration = await navigator.serviceWorker.ready;
+      if (!registration) {
+        throw new Error('Service worker registration not available');
+      }
+
+      // Subscribe to push
+      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+      let subscription;
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey,
+        });
+        console.log('[PUSH] Push subscription created:', subscription.endpoint.substring(0, 50) + '...');
+      } catch (subError) {
+        console.error('[PUSH] Push subscription error:', subError);
+        const errorMsg = subError instanceof Error ? subError.message : 'Unknown error';
+        alert(lang === 'ar' ? `فشل الاشتراك في الإشعارات: ${errorMsg}` : `Failed to subscribe to push: ${errorMsg}`);
+        return;
+      }
+
+      // Convert ArrayBuffer keys to base64 strings for JSON serialization
       const getBase64FromArrayBuffer = (buffer: ArrayBuffer): string => {
         const bytes = new Uint8Array(buffer);
         let binary = '';
@@ -300,14 +343,23 @@ function NotificationsContent() {
         return window.btoa(binary);
       };
 
+      const p256dhKey = subscription.getKey('p256dh');
+      const authKey = subscription.getKey('auth');
+
+      if (!p256dhKey || !authKey) {
+        throw new Error('Failed to get subscription keys');
+      }
+
       const subscriptionData = {
         endpoint: subscription.endpoint,
         keys: {
-          p256dh: getBase64FromArrayBuffer(subscription.getKey('p256dh')!),
-          auth: getBase64FromArrayBuffer(subscription.getKey('auth')!),
+          p256dh: getBase64FromArrayBuffer(p256dhKey),
+          auth: getBase64FromArrayBuffer(authKey),
         },
       };
 
+      // Send subscription data to server
+      console.log('[PUSH] Sending subscription to server:', subscriptionData.endpoint.substring(0, 50) + '...');
       const res = await fetch('/api/notifications/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -315,16 +367,22 @@ function NotificationsContent() {
       });
 
       if (!res.ok) {
-        throw new Error('Failed to save subscription');
+        const data = await res.json();
+        console.error('[PUSH] Server error:', data);
+        throw new Error(data.error || 'Failed to save subscription');
       }
 
+      const result = await res.json();
+      console.log('[PUSH] Subscription saved successfully:', result);
+      
       setPushSubscribed(true);
       setPushEnabled(true);
       await handleSaveProfile();
-      alert(lang === 'ar' ? 'تم تفعيل الإشعارات الفورية' : 'Push notifications enabled');
+      alert(lang === 'ar' ? 'تم تفعيل الإشعارات الفورية بنجاح' : 'Push notifications enabled successfully');
     } catch (err) {
-      console.error('Error enabling push:', err);
-      alert(lang === 'ar' ? 'فشل تفعيل الإشعارات' : 'Failed to enable push notifications');
+      console.error('[PUSH] Error enabling push:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      alert(lang === 'ar' ? `فشل تفعيل الإشعارات الفورية: ${errorMessage}` : `Failed to enable push notifications: ${errorMessage}`);
     }
   };
 
