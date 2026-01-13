@@ -134,10 +134,20 @@ function NotificationsContent() {
     try {
       const res = await fetch('/api/user/profile');
       if (res.ok) {
-        const data = await res.json();
-        if (data.profile) {
-          setEmailEnabled(data.profile.email_notifications_enabled ?? true);
-          setPushEnabled(data.profile.push_notifications_enabled ?? false);
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const text = await res.text();
+          if (text.trim()) {
+            try {
+              const data = JSON.parse(text);
+              if (data.profile) {
+                setEmailEnabled(data.profile.email_notifications_enabled ?? true);
+                setPushEnabled(data.profile.push_notifications_enabled ?? false);
+              }
+            } catch (parseErr) {
+              console.error('Error parsing profile JSON:', parseErr);
+            }
+          }
         }
       }
     } catch (err) {
@@ -149,16 +159,26 @@ function NotificationsContent() {
     try {
       const res = await fetch('/api/notifications/watchlist');
       if (res.ok) {
-        const data = await res.json();
-        const watchlistMap: Record<Country, boolean> = { EG: false, AE: false, SA: false, US: false };
-        if (data.watchlist) {
-          for (const item of data.watchlist) {
-            if (item.enabled) {
-              watchlistMap[item.country as Country] = true;
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const text = await res.text();
+          if (text.trim()) {
+            try {
+              const data = JSON.parse(text);
+              const watchlistMap: Record<Country, boolean> = { EG: false, AE: false, SA: false, US: false };
+              if (data.watchlist) {
+                for (const item of data.watchlist) {
+                  if (item.enabled) {
+                    watchlistMap[item.country as Country] = true;
+                  }
+                }
+              }
+              setWatchlist(watchlistMap);
+            } catch (parseErr) {
+              console.error('Error parsing watchlist JSON:', parseErr);
             }
           }
         }
-        setWatchlist(watchlistMap);
       }
     } catch (err) {
       console.error('Error fetching watchlist:', err);
@@ -171,8 +191,20 @@ function NotificationsContent() {
     try {
       const res = await fetch('/api/notifications/rules');
       if (res.ok) {
-        const data = await res.json();
-        setRules(data.rules || []);
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const text = await res.text();
+          if (text.trim()) {
+            try {
+              const data = JSON.parse(text);
+              setRules(data.rules || []);
+            } catch (parseErr) {
+              console.error('Error parsing rules JSON:', parseErr);
+            }
+          } else {
+            setRules([]);
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching rules:', err);
@@ -183,9 +215,22 @@ function NotificationsContent() {
     try {
       const res = await fetch('/api/notifications/inapp?limit=50');
       if (res.ok) {
-        const data = await res.json();
-        setInAppNotifications(data.notifications || []);
-        setUnreadCount(data.notifications?.filter((n: InAppNotification) => !n.read).length || 0);
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const text = await res.text();
+          if (text.trim()) {
+            try {
+              const data = JSON.parse(text);
+              setInAppNotifications(data.notifications || []);
+              setUnreadCount(data.notifications?.filter((n: InAppNotification) => !n.read).length || 0);
+            } catch (parseErr) {
+              console.error('Error parsing in-app notifications JSON:', parseErr);
+            }
+          } else {
+            setInAppNotifications([]);
+            setUnreadCount(0);
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching in-app notifications:', err);
@@ -208,8 +253,20 @@ function NotificationsContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to update profile');
+        const contentType = res.headers.get('content-type');
+        let errorMessage = 'Failed to update profile';
+        if (contentType && contentType.includes('application/json')) {
+          const text = await res.text();
+          if (text.trim()) {
+            try {
+              const data = JSON.parse(text);
+              errorMessage = data.error || errorMessage;
+            } catch (parseErr) {
+              console.error('Error parsing error response:', parseErr);
+            }
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       setSuccess(lang === 'ar' ? 'تم حفظ التغييرات بنجاح' : 'Settings saved successfully');
@@ -370,14 +427,37 @@ function NotificationsContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        console.error('[PUSH] Server error:', data);
-        const errorMsg = data.error || 'Failed to save subscription';
-        console.error('[PUSH] Full error details:', { status: res.status, statusText: res.statusText, data });
+        const contentType = res.headers.get('content-type');
+        let errorMsg = 'Failed to save subscription';
+        let errorData: any = null;
+        if (contentType && contentType.includes('application/json')) {
+          const text = await res.text();
+          if (text.trim()) {
+            try {
+              errorData = JSON.parse(text);
+              errorMsg = errorData.error || errorMsg;
+            } catch (parseErr) {
+              console.error('[PUSH] Error parsing error response:', parseErr);
+            }
+          }
+        }
+        console.error('[PUSH] Server error:', errorData);
+        console.error('[PUSH] Full error details:', { status: res.status, statusText: res.statusText, errorData });
         throw new Error(errorMsg);
       }
 
-      const result = await res.json();
+      const contentType = res.headers.get('content-type');
+      let result: any = { success: true };
+      if (contentType && contentType.includes('application/json')) {
+        const text = await res.text();
+        if (text.trim()) {
+          try {
+            result = JSON.parse(text);
+          } catch (parseErr) {
+            console.error('[PUSH] Error parsing success response:', parseErr);
+          }
+        }
+      }
       console.log('[PUSH] Subscription saved successfully:', result);
       
       setPushSubscribed(true);
@@ -451,8 +531,20 @@ function NotificationsContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to save rule');
+        const contentType = res.headers.get('content-type');
+        let errorMessage = 'Failed to save rule';
+        if (contentType && contentType.includes('application/json')) {
+          const text = await res.text();
+          if (text.trim()) {
+            try {
+              const data = JSON.parse(text);
+              errorMessage = data.error || errorMessage;
+            } catch (parseErr) {
+              console.error('Error parsing error response:', parseErr);
+            }
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       setShowAddRule(false);
