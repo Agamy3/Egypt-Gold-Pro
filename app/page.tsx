@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import Dashboard from '@/components/Dashboard';
 import ForecastCard from '@/components/ForecastCard';
+import MoneyToGoldCalculator from '@/components/MoneyToGoldCalculator';
 import LanguageToggle from '@/components/LanguageToggle';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import AccountMenu from '@/components/AccountMenu';
@@ -224,6 +225,13 @@ function HomeContent() {
         {snapshot && (
           <>
             <Dashboard snapshot={snapshot} />
+            <div className="mt-4 sm:mt-6">
+              <MoneyToGoldCalculator
+                country={country}
+                currency={currency}
+                snapshot={snapshot}
+              />
+            </div>
             {forecast && (
               <div className="mt-4 sm:mt-6">
                 <ForecastCard 
