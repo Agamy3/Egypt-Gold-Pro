@@ -114,6 +114,15 @@ BEGIN
       ON public.push_subscriptions FOR DELETE
       USING (auth.uid() = user_id);
   END IF;
+
+  -- Add missing columns if table already exists
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'push_subscriptions' AND column_name = 'user_agent') THEN
+    ALTER TABLE public.push_subscriptions ADD COLUMN user_agent TEXT NULL;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'push_subscriptions' AND column_name = 'content_encoding') THEN
+    ALTER TABLE public.push_subscriptions ADD COLUMN content_encoding TEXT DEFAULT 'aes128gcm';
+  END IF;
 END $$;
 
 -- ============================================
