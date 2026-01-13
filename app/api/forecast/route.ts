@@ -35,19 +35,30 @@ export const revalidate = 0;
 
 export async function GET(request: Request) {
   try {
-    // Get country parameter (default to EG)
+    // Get parameters from request
     const { searchParams } = new URL(request.url);
     const countryParam = searchParams.get('country');
     const country = (['EG', 'AE', 'SA', 'US'].includes(countryParam || '') 
       ? countryParam 
       : 'EG') as 'EG' | 'AE' | 'SA' | 'US';
 
+    // Get time range and scope parameters
+    const timeRangeParam = searchParams.get('timeRange') || searchParams.get('range');
+    const timeRange = (['daily', 'weekly', 'monthly', 'yoy'].includes(timeRangeParam || '') 
+      ? timeRangeParam 
+      : 'daily') as 'daily' | 'weekly' | 'monthly' | 'yoy';
+    
+    const scopeParam = searchParams.get('scope');
+    const scope = (['local', 'global'].includes(scopeParam || '') 
+      ? scopeParam 
+      : 'local') as 'local' | 'global';
+
     // Get trusted mode from request
     const EGYPT_TRUSTED_ONLY_MODE = getTrustedMode(request);
 
-    // Calculate forecast with trusted mode and country from request
-    // calculateForecast will check for sufficient data (at least 10 snapshots in 7-day window)
-    const forecast = await calculateForecast(country, EGYPT_TRUSTED_ONLY_MODE);
+    // Calculate forecast with trusted mode, country, time range, and scope from request
+    // calculateForecast will check for sufficient data (at least 10 snapshots in window)
+    const forecast = await calculateForecast(country, EGYPT_TRUSTED_ONLY_MODE, timeRange, scope);
     
     // Override message if trusted source unavailable and forecast is insufficient
     let message: string | undefined = undefined;

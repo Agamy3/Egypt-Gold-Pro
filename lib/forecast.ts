@@ -53,13 +53,27 @@ const HIGH_CONFIDENCE_THRESHOLD = 50; // Snapshots needed for HIGH confidence
  * Calculate forecast using stored snapshot data
  * @param country - Country code (EG, AE, SA, US)
  * @param trustedMode - Whether to use only trusted sources
+ * @param timeRange - Time range for analysis: 'daily' (24h), 'weekly' (7d), 'monthly' (30d), 'yoy' (365d)
+ * @param scope - Forecast scope: 'local' (local market) or 'global' (global spot)
  */
 export async function calculateForecast(
   country: 'EG' | 'AE' | 'SA' | 'US' = 'EG',
-  trustedMode: boolean = false
+  trustedMode: boolean = false,
+  timeRange: 'daily' | 'weekly' | 'monthly' | 'yoy' = 'daily',
+  scope: 'local' | 'global' = 'local'
 ): Promise<ForecastResult> {
   const now = Date.now();
-  const windowStartMs = now - FORECAST_WINDOW_MS;
+  
+  // Adjust window based on time range
+  const TIME_RANGE_MS: Record<'daily' | 'weekly' | 'monthly' | 'yoy', number> = {
+    daily: 24 * 60 * 60 * 1000,      // 24 hours
+    weekly: 7 * 24 * 60 * 60 * 1000,  // 7 days
+    monthly: 30 * 24 * 60 * 60 * 1000, // 30 days
+    yoy: 365 * 24 * 60 * 60 * 1000,   // 365 days
+  };
+  
+  const analysisWindowMs = TIME_RANGE_MS[timeRange];
+  const windowStartMs = now - analysisWindowMs;
   const windowStart = new Date(windowStartMs).toISOString();
 
   try {
@@ -289,8 +303,9 @@ export async function calculateForecast(
     // Component 1: Calculate overall momentum first
     const overallMomentum = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
 
-    // Calculate recent momentum (last 2 hours) for more responsive forecast
-    const recentWindowStart = now - RECENT_WINDOW_MS;
+    // Calculate recent momentum (last 2 hours for daily, proportionally for longer ranges)
+    const recentWindowRatio = timeRange === 'daily' ? RECENT_WINDOW_MS : analysisWindowMs * 0.1; // 10% of window for longer ranges
+    const recentWindowStart = now - recentWindowRatio;
     const recentBucketStart = Math.floor((recentWindowStart - windowStartMs) / bucketSizeMs);
     const recentBuckets = timeBuckets.filter(b => b >= recentBucketStart && b <= lastBucket);
     

@@ -60,14 +60,56 @@ const TIME_RANGE_MAP: Record<TimeRange, number> = {
   yoy: 525600,      // 365 days
 };
 
-export default function ForecastCard({ forecast, insufficientData, country = 'EG', title }: ForecastCardProps) {
+export default function ForecastCard({ forecast: initialForecast, insufficientData: initialInsufficientData, country = 'EG', title }: ForecastCardProps) {
   const { lang } = useLang();
   const [timeRange, setTimeRange] = useState<TimeRange>('daily');
   const [scope, setScope] = useState<ForecastScope>('local');
   const [seriesData, setSeriesData] = useState<SeriesResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [forecast, setForecast] = useState<ForecastData | null>(initialForecast);
+  const [insufficientData, setInsufficientData] = useState(initialInsufficientData);
+  const [forecastLoading, setForecastLoading] = useState(false);
   
   const displayTitle = title || t(lang, 'marketForecast');
+
+  // Fetch forecast when dropdowns change
+  useEffect(() => {
+    const fetchForecast = async () => {
+      try {
+        setForecastLoading(true);
+        const trustedMode = typeof window !== 'undefined' && localStorage.getItem('egyptTrustedOnlyMode') === 'true';
+        const url = `/api/forecast?country=${country}&timeRange=${timeRange}&scope=${scope}${trustedMode ? '&trustedMode=true' : ''}`;
+        
+        const res = await fetch(url, {
+          headers: {
+            'x-trusted-mode': trustedMode ? 'true' : 'false',
+          },
+          cache: 'no-store',
+        });
+        
+        if (!res.ok) {
+          throw new Error('Failed to fetch forecast');
+        }
+        
+        const data = await res.json();
+        if (data.forecast) {
+          setForecast(data.forecast);
+          setInsufficientData(false);
+        } else {
+          setForecast(null);
+          setInsufficientData(true);
+        }
+      } catch (err) {
+        console.error('Failed to fetch forecast:', err);
+        setForecast(null);
+        setInsufficientData(true);
+      } finally {
+        setForecastLoading(false);
+      }
+    };
+
+    fetchForecast();
+  }, [timeRange, scope, country]);
 
   // Fetch series data when dropdowns change
   useEffect(() => {
@@ -158,7 +200,7 @@ export default function ForecastCard({ forecast, insufficientData, country = 'EG
   const chartUnit = scope === 'global' ? 'USD' as const : (getCurrency(country) as 'EGP' | 'AED' | 'SAR' | 'USD');
   const chartRange = timeRange;
 
-  if (insufficientData || !forecast) {
+  if (insufficientData || !forecast || forecastLoading) {
     return (
       <div className={`bg-gray-900 rounded-lg shadow p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-400`}>
         <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
