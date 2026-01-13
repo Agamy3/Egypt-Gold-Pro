@@ -265,10 +265,13 @@ function NotificationsContent() {
 
       // Get VAPID public key from environment (available at build time)
       // In Next.js, NEXT_PUBLIC_ variables are injected into the client bundle
+      // Get VAPID public key from environment (available at build time)
+      // In Next.js, NEXT_PUBLIC_ variables are injected into the client bundle
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!vapidPublicKey) {
+      if (!vapidPublicKey || vapidPublicKey.trim() === '') {
         console.error('[PUSH] NEXT_PUBLIC_VAPID_PUBLIC_KEY is not configured');
-        alert(lang === 'ar' ? 'إعدادات الإشعارات الفورية غير مكتملة. يرجى الاتصال بالدعم.' : 'Push notification settings are incomplete. Please contact support.');
+        console.error('[PUSH] Please set NEXT_PUBLIC_VAPID_PUBLIC_KEY in your Vercel environment variables');
+        alert(lang === 'ar' ? 'إعدادات الإشعارات الفورية غير مكتملة. يرجى إضافة NEXT_PUBLIC_VAPID_PUBLIC_KEY في متغيرات البيئة.' : 'Push notification settings are incomplete. Please add NEXT_PUBLIC_VAPID_PUBLIC_KEY to your environment variables.');
         return;
       }
 
@@ -369,7 +372,9 @@ function NotificationsContent() {
       if (!res.ok) {
         const data = await res.json();
         console.error('[PUSH] Server error:', data);
-        throw new Error(data.error || 'Failed to save subscription');
+        const errorMsg = data.error || 'Failed to save subscription';
+        console.error('[PUSH] Full error details:', { status: res.status, statusText: res.statusText, data });
+        throw new Error(errorMsg);
       }
 
       const result = await res.json();
