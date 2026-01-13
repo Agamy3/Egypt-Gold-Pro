@@ -35,12 +35,19 @@ export const revalidate = 0;
 
 export async function GET(request: Request) {
   try {
+    // Get country parameter (default to EG)
+    const { searchParams } = new URL(request.url);
+    const countryParam = searchParams.get('country');
+    const country = (['EG', 'AE', 'SA', 'US'].includes(countryParam || '') 
+      ? countryParam 
+      : 'EG') as 'EG' | 'AE' | 'SA' | 'US';
+
     // Get trusted mode from request
     const EGYPT_TRUSTED_ONLY_MODE = getTrustedMode(request);
 
-    // Calculate forecast with trusted mode from request
+    // Calculate forecast with trusted mode and country from request
     // calculateForecast will check for sufficient data (at least 10 snapshots in 7-day window)
-    const forecast = await calculateForecast(EGYPT_TRUSTED_ONLY_MODE);
+    const forecast = await calculateForecast(country, EGYPT_TRUSTED_ONLY_MODE);
     
     // Override message if trusted source unavailable and forecast is insufficient
     let message: string | undefined = undefined;

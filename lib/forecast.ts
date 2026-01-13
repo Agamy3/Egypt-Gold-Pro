@@ -49,29 +49,49 @@ const HIGH_CONFIDENCE_THRESHOLD = 100; // Snapshots needed for HIGH confidence (
 
 /**
  * Calculate forecast using stored snapshot data
+ * @param country - Country code (EG, AE, SA, US)
+ * @param trustedMode - Whether to use only trusted sources
  */
-export async function calculateForecast(trustedMode: boolean = false): Promise<ForecastResult> {
+export async function calculateForecast(
+  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG',
+  trustedMode: boolean = false
+): Promise<ForecastResult> {
   const now = Date.now();
-  const windowStart = now - FORECAST_WINDOW_MS;
+  const windowStartMs = now - FORECAST_WINDOW_MS;
+  const windowStart = new Date(windowStartMs).toISOString();
 
   try {
-    // Get snapshots from Supabase (wide schema)
+    // Get snapshots from Supabase normalized schema
     // Filter by trusted source if trusted-only mode is enabled
     const isTrustedMode = trustedMode || getTrustedModeFromEnv();
-    // IMPORTANT: Only use local market sources (aggregated and individual sources)
-    // Remove order limit to get all data in the window
-    let snapshotQuery = db.supabase
-      .from('market_snapshots')
-      .select('source, createdAt, market21Buy, market21Sell, market24Buy, market24Sell, error')
-      .gte('createdAt', windowStart) // createdAt is bigint, use epoch ms number
-      .is('error', null)
-      .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
-      .or('market21Buy.not.is.null,market24Buy.not.is.null')
-      .order('createdAt', { ascending: true }); // Order by createdAt ascending to get oldest first
+    
+    // Determine sources based on country
+    let allowedSources: string[] = [];
+    if (country === 'EG') {
+      allowedSources = ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'];
+      if (isTrustedMode) {
+        allowedSources = ['goldbullioneg'];
+      }
+    } else if (country === 'AE') {
+      allowedSources = ['goldprice_org_ae', 'global_parity'];
+    } else if (country === 'SA') {
+      allowedSources = ['goldprice_org_sa', 'global_parity'];
+    } else if (country === 'US') {
+      allowedSources = ['goldapi_spot'];
+    }
 
-    // For trusted mode, filter by source (goldbullioneg is trusted)
-    if (isTrustedMode) {
-      snapshotQuery = snapshotQuery.eq('source', 'goldbullioneg');
+    // Query normalized schema
+    let snapshotQuery = db.supabase
+      .from('market_snapshots_norm')
+      .select('source, karat, price, created_at')
+      .eq('country', country)
+      .gte('created_at', windowStart)
+      .in('karat', [21, 24])
+      .in('source', allowedSources)
+      .order('created_at', { ascending: true });
+
+    if (isTrustedMode && country === 'EG') {
+      snapshotQuery = snapshotQuery.eq('trusted', true);
     }
 
     const { data: snapshotRows, error: snapshotError } = await snapshotQuery;
@@ -82,37 +102,38 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
     } else {
       const latestRow = snapshotRows && snapshotRows.length > 0 
         ? snapshotRows.reduce((latest, row) => {
-            const rowTime = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
-            const latestTime = typeof latest.createdAt === 'number' ? latest.createdAt : (typeof latest.createdAt === 'string' ? new Date(latest.createdAt).getTime() : 0);
+            const rowTime = typeof row.created_at === 'string' ? new Date(row.created_at).getTime() : (typeof row.created_at === 'number' ? row.created_at : 0);
+            const latestTime = typeof latest.created_at === 'string' ? new Date(latest.created_at).getTime() : (typeof latest.created_at === 'number' ? latest.created_at : 0);
             return rowTime > latestTime ? row : latest;
           })
         : null;
       const oldestRow = snapshotRows && snapshotRows.length > 0
         ? snapshotRows.reduce((oldest, row) => {
-            const rowTime = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
-            const oldestTime = typeof oldest.createdAt === 'number' ? oldest.createdAt : (typeof oldest.createdAt === 'string' ? new Date(oldest.createdAt).getTime() : 0);
+            const rowTime = typeof row.created_at === 'string' ? new Date(row.created_at).getTime() : (typeof row.created_at === 'number' ? row.created_at : 0);
+            const oldestTime = typeof oldest.created_at === 'string' ? new Date(oldest.created_at).getTime() : (typeof oldest.created_at === 'number' ? oldest.created_at : 0);
             return rowTime < oldestTime ? row : oldest;
           })
         : null;
       
       console.log('[Forecast] Query results:', {
+        country,
         totalRows: snapshotRows?.length || 0,
         windowStart: new Date(windowStart).toISOString(),
         now: new Date(now).toISOString(),
         latestSnapshot: latestRow ? {
-          createdAt: new Date(typeof latestRow.createdAt === 'number' ? latestRow.createdAt : new Date(latestRow.createdAt).getTime()).toISOString(),
+          created_at: typeof latestRow.created_at === 'string' ? latestRow.created_at : new Date(latestRow.created_at).toISOString(),
           source: latestRow.source,
-          minutesAgo: (now - (typeof latestRow.createdAt === 'number' ? latestRow.createdAt : new Date(latestRow.createdAt).getTime())) / (60 * 1000),
+          karat: latestRow.karat,
+          minutesAgo: (now - (typeof latestRow.created_at === 'string' ? new Date(latestRow.created_at).getTime() : latestRow.created_at)) / (60 * 1000),
         } : null,
         oldestSnapshot: oldestRow ? {
-          createdAt: new Date(typeof oldestRow.createdAt === 'number' ? oldestRow.createdAt : new Date(oldestRow.createdAt).getTime()).toISOString(),
-          daysAgo: (now - (typeof oldestRow.createdAt === 'number' ? oldestRow.createdAt : new Date(oldestRow.createdAt).getTime())) / (24 * 60 * 60 * 1000),
+          created_at: typeof oldestRow.created_at === 'string' ? oldestRow.created_at : new Date(oldestRow.created_at).toISOString(),
+          daysAgo: (now - (typeof oldestRow.created_at === 'string' ? new Date(oldestRow.created_at).getTime() : oldestRow.created_at)) / (24 * 60 * 60 * 1000),
         } : null,
       });
     }
 
-    // Transform to snapshot format (group by time bucket - rounded to nearest minute)
-    // This ensures that multiple snapshots ingested at slightly different times are grouped together
+    // Transform normalized schema to snapshot format (group by time bucket)
     const snapshotsByTime = new Map<number, {
       createdAt: number;
       market21Buy: number | null;
@@ -123,20 +144,22 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
     }>();
 
     if (!snapshotError && snapshotRows) {
+      // Group by time bucket (10 seconds)
       for (const row of snapshotRows) {
-        const market21Buy = row.market21Buy as number | null;
-        const market24Buy = row.market24Buy as number | null;
+        const price = Number(row.price);
+        const karat = Number(row.karat);
         
-        // Skip if no valid prices
-        if ((market21Buy === null || !isFinite(market21Buy) || market21Buy <= 0) &&
-            (market24Buy === null || !isFinite(market24Buy) || market24Buy <= 0)) {
+        // Skip if invalid price
+        if (!isFinite(price) || price <= 0) {
           continue;
         }
 
-        // createdAt is stored as bigint (epoch ms number) in Supabase
-        const createdAt = typeof row.createdAt === 'number' ? row.createdAt : (typeof row.createdAt === 'string' ? new Date(row.createdAt).getTime() : 0);
-        // Round to nearest 10 seconds (10000 ms) for grouping - more granular than 1 minute
-        // This ensures snapshots written within the same minute but different seconds create separate buckets
+        // Parse created_at timestamp
+        const createdAt = typeof row.created_at === 'string' 
+          ? new Date(row.created_at).getTime()
+          : (typeof row.created_at === 'number' ? row.created_at : 0);
+        
+        // Round to nearest 10 seconds for grouping
         const timeBucket = Math.floor(createdAt / 10000) * 10000;
         
         if (!snapshotsByTime.has(timeBucket)) {
@@ -151,20 +174,18 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
         }
         const snapshot = snapshotsByTime.get(timeBucket)!;
         
-        // Set prices from wide schema (average if multiple values in same bucket)
-        if (market21Buy !== null && isFinite(market21Buy) && market21Buy > 0) {
+        // Set prices based on karat (average if multiple values in same bucket)
+        if (karat === 21) {
           if (snapshot.market21Buy === null) {
-            snapshot.market21Buy = market21Buy;
+            snapshot.market21Buy = price;
           } else {
-            snapshot.market21Buy = (snapshot.market21Buy + market21Buy) / 2;
+            snapshot.market21Buy = (snapshot.market21Buy + price) / 2;
           }
-        }
-        
-        if (market24Buy !== null && isFinite(market24Buy) && market24Buy > 0) {
+        } else if (karat === 24) {
           if (snapshot.market24Buy === null) {
-            snapshot.market24Buy = market24Buy;
+            snapshot.market24Buy = price;
           } else {
-            snapshot.market24Buy = (snapshot.market24Buy + market24Buy) / 2;
+            snapshot.market24Buy = (snapshot.market24Buy + price) / 2;
           }
         }
       }
@@ -176,7 +197,7 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
     const validSnapshots = snapshots.filter(s => s.market21Buy !== null || s.market24Buy !== null);
 
     // Get global gold spot price data from Supabase
-    const goldSpotData = await getGoldSpotHistory(windowStart);
+    const goldSpotData = await getGoldSpotHistory(windowStartMs);
 
     // Check if we have sufficient data
     // Need at least MIN_SNAPSHOTS_FOR_FORECAST valid snapshots to attempt a forecast
@@ -214,7 +235,7 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
     const snapshotsByTimeBucket = snapshotsToUse.reduce((acc, s) => {
       const price = s.market21Buy ?? s.market24Buy;
       if (price !== null) {
-        const timeBucket = Math.floor((s.createdAt - windowStart) / bucketSizeMs);
+        const timeBucket = Math.floor((s.createdAt - windowStartMs) / bucketSizeMs);
         if (!acc[timeBucket]) acc[timeBucket] = [];
         acc[timeBucket].push(price);
       }
@@ -278,11 +299,11 @@ export async function calculateForecast(trustedMode: boolean = false): Promise<F
           : 5 * 60 * 1000;
         
         const startBucketSnapshots = snapshots.filter(s => {
-          const timeBucket = Math.floor((s.createdAt - windowStart) / bucketSizeMs);
+          const timeBucket = Math.floor((s.createdAt - windowStartMs) / bucketSizeMs);
           return timeBucket === firstBucket;
         });
         const endBucketSnapshots = snapshots.filter(s => {
-          const timeBucket = Math.floor((s.createdAt - windowStart) / bucketSizeMs);
+          const timeBucket = Math.floor((s.createdAt - windowStartMs) / bucketSizeMs);
           return timeBucket === lastBucket;
         });
         

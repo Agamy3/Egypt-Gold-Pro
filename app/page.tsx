@@ -128,7 +128,7 @@ function HomeContent() {
 
   const fetchForecast = useCallback(async () => {
     try {
-      const res = await fetch('/api/forecast', {
+      const res = await fetch(`/api/forecast?country=${country}`, {
         cache: 'no-store', // Ensure fresh data on every fetch
       });
       if (res.ok) {
@@ -139,7 +139,7 @@ function HomeContent() {
       // Forecast errors are non-critical, don't set error state
       console.error('Forecast fetch error:', err);
     }
-  }, []);
+  }, [country]);
 
   useEffect(() => {
     fetchSnapshot();
