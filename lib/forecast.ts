@@ -422,19 +422,22 @@ export async function calculateForecast(
     // Ounce: weight 10% (global gold price movements)
 
     // Scale momentum more aggressively for better sensitivity
-    const momentumScore = Math.max(-60, Math.min(60, momentum21k * 1.2)); // More sensitive to momentum
+    // Increased momentum weight significantly to make forecast more responsive
+    const momentumScore = Math.max(-80, Math.min(80, momentum21k * 2.0)); // Much more sensitive to momentum
     const varianceScore = Math.max(-20, Math.min(20, varianceDelta * 4)); // Scale: ±5% → ±20
     const fxScore = Math.max(-10, Math.min(10, fxDelta * 2)); // Scale: ±5% → ±10
     const ounceScore = Math.max(-10, Math.min(10, ounceDelta * 2)); // Scale: ±5% → ±10
 
     const score = momentumScore + varianceScore + fxScore + ounceScore;
 
-    // Determine direction with lower thresholds for more responsive forecasts
-    // Reduced from ±25 to ±15 to catch smaller but meaningful trends
+    // Determine direction with much lower thresholds for more responsive forecasts
+    // Reduced to ±8 to catch even small but meaningful trends
+    // If momentum alone is strong enough, use it even if total score is lower
     let direction: 'UP' | 'DOWN' | 'SIDEWAYS';
-    if (score >= 15) {
+    const strongMomentumThreshold = Math.abs(momentumScore) >= 12; // Strong momentum can override
+    if (score >= 8 || (score >= 3 && momentumScore >= 12)) {
       direction = 'UP';
-    } else if (score <= -15) {
+    } else if (score <= -8 || (score <= -3 && momentumScore <= -12)) {
       direction = 'DOWN';
     } else {
       direction = 'SIDEWAYS';
@@ -444,13 +447,15 @@ export async function calculateForecast(
     let confidence: 'LOW' | 'MED' | 'HIGH';
     
     // Check if signals agree (components point in same direction)
-    const signals = [momentumScore, varianceScore, fxScore, ounceScore].filter(s => Math.abs(s) > 3);
+    // Lowered threshold to catch more signals
+    const signals = [momentumScore, varianceScore, fxScore, ounceScore].filter(s => Math.abs(s) > 2);
     const positiveSignals = signals.filter(s => s > 0).length;
     const negativeSignals = signals.filter(s => s < 0).length;
     const signalsAgree = signals.length >= 2 && (positiveSignals >= 2 || negativeSignals >= 2);
     
     // Check momentum strength (strong momentum = higher confidence)
-    const strongMomentum = Math.abs(momentumScore) > 20;
+    // Lowered threshold for strong momentum to make it more responsive
+    const strongMomentum = Math.abs(momentumScore) > 15;
     
     // Improved confidence calculation
     if (snapshotCount >= HIGH_CONFIDENCE_THRESHOLD && (signalsAgree || strongMomentum)) {
