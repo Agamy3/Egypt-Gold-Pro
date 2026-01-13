@@ -225,6 +225,7 @@ export async function calculateForecast(
 
     // Calculate median prices at start and end of window
     // Use market21Buy if available, otherwise market24Buy
+    // For US, we only have 24k, so use that
     // For longer windows, use larger time buckets to reduce noise
     const bucketSizeMs = snapshotCount > 500 
       ? 60 * 60 * 1000  // 1-hour buckets for large datasets (>500 snapshots)
@@ -232,8 +233,15 @@ export async function calculateForecast(
       ? 30 * 60 * 1000  // 30-minute buckets for medium datasets (>200 snapshots)
       : 5 * 60 * 1000;  // 5-minute buckets for small datasets
     
+    // Determine which price to use based on country and availability
+    // For US, use 24k only. For others, prefer 21k but fallback to 24k
+    const use24kOnly = country === 'US';
+    
     const snapshotsByTimeBucket = snapshotsToUse.reduce((acc, s) => {
-      const price = s.market21Buy ?? s.market24Buy;
+      // For US, use 24k. For others, prefer 21k but fallback to 24k
+      const price = use24kOnly 
+        ? s.market24Buy 
+        : (s.market21Buy ?? s.market24Buy);
       if (price !== null) {
         const timeBucket = Math.floor((s.createdAt - windowStartMs) / bucketSizeMs);
         if (!acc[timeBucket]) acc[timeBucket] = [];
@@ -276,8 +284,10 @@ export async function calculateForecast(
     const startPrice = median(snapshotsByTimeBucket[firstBucket]);
     const endPrice = median(snapshotsByTimeBucket[lastBucket]);
 
-    // Component 1: 21k momentum (% change)
-    const momentum21k = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
+    // Component 1: Price momentum (% change)
+    // For US, this is 24k momentum. For others, it's 21k momentum (or 24k if 21k unavailable)
+    const priceMomentum = startPrice > 0 ? ((endPrice - startPrice) / startPrice) * 100 : 0;
+    const momentum21k = priceMomentum; // Keep name for backward compatibility
 
     // Component 2 & 3: Calculate variance and FX at start and end
     // Use global gold spot price from GoldAPI.com (USD per troy ounce)
@@ -307,38 +317,56 @@ export async function calculateForecast(
           return timeBucket === lastBucket;
         });
         
-        // Get median sell prices for start/end
-        const startSellPrice = median(startBucketSnapshots.map(s => s.market21Sell).filter((p): p is number => p !== null));
-        const endSellPrice = median(endBucketSnapshots.map(s => s.market21Sell).filter((p): p is number => p !== null));
-        
-        if (startSellPrice !== null && endSellPrice !== null) {
-          const startPricing = calculatePricing({
-            impliedOunceUsd: startOunce,
-            market21Buy: startPrice,
-            market21Sell: startSellPrice,
-            market24Buy: null,
-            market24Sell: null,
-            usdLocalRate: null, // Forecast uses implied FX (computed from gold prices), not real FX
-          });
-          const endPricing = calculatePricing({
-            impliedOunceUsd: endOunce,
-            market21Buy: endPrice,
-            market21Sell: endSellPrice,
-            market24Buy: null,
-            market24Sell: null,
-            usdLocalRate: null, // Forecast uses implied FX (computed from gold prices), not real FX
-          });
+        // For US, we only have 24k buy prices and no sell prices
+        // Calculate variance by comparing market price to fair value (derived from spot)
+        if (use24kOnly) {
+          // Fair value 24k per gram = (spot_oz_usd / 31.1034768)
+          const startFair24k = startOunce ? startOunce / 31.1034768 : null;
+          const endFair24k = endOunce ? endOunce / 31.1034768 : null;
+          
+          if (startFair24k && endFair24k && startPrice && endPrice) {
+            // Variance = (market - fair) / fair * 100
+            startVariance = ((startPrice - startFair24k) / startFair24k) * 100;
+            endVariance = ((endPrice - endFair24k) / endFair24k) * 100;
+            
+            // For US, FX is always 1.0 (prices are already in USD)
+            startFX = 1.0;
+            endFX = 1.0;
+          }
+        } else {
+          // For other countries, use sell prices if available
+          const startSellPrice = median(startBucketSnapshots.map(s => s.market21Sell).filter((p): p is number => p !== null));
+          const endSellPrice = median(endBucketSnapshots.map(s => s.market21Sell).filter((p): p is number => p !== null));
+          
+          if (startSellPrice !== null && endSellPrice !== null) {
+            const startPricing = calculatePricing({
+              impliedOunceUsd: startOunce,
+              market21Buy: startPrice,
+              market21Sell: startSellPrice,
+              market24Buy: null,
+              market24Sell: null,
+              usdLocalRate: null, // Forecast uses implied FX (computed from gold prices), not real FX
+            });
+            const endPricing = calculatePricing({
+              impliedOunceUsd: endOunce,
+              market21Buy: endPrice,
+              market21Sell: endSellPrice,
+              market24Buy: null,
+              market24Sell: null,
+              usdLocalRate: null, // Forecast uses implied FX (computed from gold prices), not real FX
+            });
 
-          startVariance = startPricing.variance.variancePct;
-          endVariance = endPricing.variance.variancePct;
-          // For forecast, we need implied FX (from gold prices), not real FX rate
-          // Calculate implied FX from gold prices if available
-          startFX = startPrice !== null && startPricing.usdPerGram21 !== null && startPricing.usdPerGram21 > 0
-            ? startPrice / startPricing.usdPerGram21
-            : null;
-          endFX = endPrice !== null && endPricing.usdPerGram21 !== null && endPricing.usdPerGram21 > 0
-            ? endPrice / endPricing.usdPerGram21
-            : null;
+            startVariance = startPricing.variance.variancePct;
+            endVariance = endPricing.variance.variancePct;
+            // For forecast, we need implied FX (from gold prices), not real FX rate
+            // Calculate implied FX from gold prices if available
+            startFX = startPrice !== null && startPricing.usdPerGram21 !== null && startPricing.usdPerGram21 > 0
+              ? startPrice / startPricing.usdPerGram21
+              : null;
+            endFX = endPrice !== null && endPricing.usdPerGram21 !== null && endPricing.usdPerGram21 > 0
+              ? endPrice / endPricing.usdPerGram21
+              : null;
+          }
         }
       } catch (error) {
         // Pricing calculation failed, continue with nulls
@@ -409,7 +437,8 @@ export async function calculateForecast(
     
     if (Math.abs(momentumScore) > 5) {
       const trend = momentum21k > 0 ? 'up' : 'down';
-      reasons.push(`21k price moved ${Math.abs(momentum21k).toFixed(2)}% ${trend} over ${windowDesc}`);
+      const karatLabel = use24kOnly ? '24k' : '21k';
+      reasons.push(`${karatLabel} price moved ${Math.abs(momentum21k).toFixed(2)}% ${trend} over ${windowDesc}`);
     }
     
     if (Math.abs(varianceScore) > 5) {
