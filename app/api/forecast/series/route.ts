@@ -264,6 +264,19 @@ export async function GET(request: Request) {
     // Determine range label
     const rangeLabel = rangeParam || 'custom';
 
+    // Calculate lastPointAt (ISO timestamp of the latest point, or null if no points)
+    const lastPointAt = points.length > 0 
+      ? new Date(points[points.length - 1].t).toISOString()
+      : null;
+
+    // Server timestamp (when this response was generated)
+    const serverAsOf = new Date().toISOString();
+
+    // Determine source identifier
+    const source = scope === 'global' 
+      ? 'gold_spot_history' 
+      : `market_snapshots_norm_${country}`;
+
     const response = NextResponse.json({
       timestamp: Date.now(),
       points,
@@ -272,11 +285,15 @@ export async function GET(request: Request) {
         range: rangeLabel,
         unit,
         country,
+        serverAsOf,
+        lastPointAt,
+        pointsCount: points.length,
+        source,
       },
     });
 
-    // Ensure no caching
-    response.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    // Ensure no caching - comprehensive headers
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
 
@@ -285,18 +302,26 @@ export async function GET(request: Request) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Forecast series API error:', errorMessage);
 
+    const serverAsOf = new Date().toISOString();
+
     const response = NextResponse.json(
       {
         timestamp: Date.now(),
         error: 'Failed to fetch forecast series',
         errorMessage,
         points: [],
+        meta: {
+          serverAsOf,
+          lastPointAt: null,
+          pointsCount: 0,
+          source: 'error',
+        },
       },
       { status: 200 } // Always return 200, even on error
     );
 
-    // Ensure no caching
-    response.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    // Ensure no caching - comprehensive headers
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
 
