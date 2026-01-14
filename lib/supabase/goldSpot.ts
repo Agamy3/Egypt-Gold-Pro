@@ -8,6 +8,7 @@
 import 'server-only';
 import db from '../supabase';
 import { fetchGlobalSpot } from '../spot-fetch';
+import { fetchImpliedOunce } from '../implied-ounce';
 
 export interface GoldSpotData {
   xau_spot_usd_oz: number;
@@ -105,7 +106,14 @@ export async function getGoldSpotHistory(
     const STALE_AFTER_MS = 10 * 60 * 1000; // 10 minutes
 
     if (lastAt === null || now - lastAt > STALE_AFTER_MS) {
-      const res = await fetchGlobalSpot();
+      // Prefer gold-api.com (free, no key) for a fresher moving series.
+      // If that fails, fall back to fetchGlobalSpot (GoldAPI.io -> Stooq).
+      const implied = await fetchImpliedOunce();
+      const res =
+        implied.price !== null && implied.source
+          ? { price: implied.price, source: implied.source as string }
+          : await fetchGlobalSpot();
+
       if (res.price && res.price > 0 && res.source) {
         // Non-fatal cache write
         try {

@@ -55,8 +55,10 @@ export default function Sidebar() {
       .then((res) => res.json())
       .then((data) => setIsAdmin(Boolean(data.isAdmin)))
       .catch(() => setIsAdmin(false));
-    
-    // Get country from URL on client side
+  }, []);
+
+  // Get country from URL on client side - update when pathname changes
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const country = urlParams.get('country');
