@@ -377,18 +377,34 @@ export default function ForecastMiniChart({
   // Determine if we should show circles (only if <= 60 points, check displayPoints length)
   const showCircles = displayPoints.length <= 60;
 
+  // Convert screen coords -> SVG viewBox coords accounting for preserveAspectRatio="xMidYMid meet"
+  const getSvgCoords = (clientX: number, clientY: number): { svgX: number; svgY: number } | null => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+
+    const rect = svg.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+
+    // Compute the actual rendered viewBox scale + letterbox offsets
+    const scale = Math.min(rect.width / width, rect.height / chartHeight);
+    const drawnW = width * scale;
+    const drawnH = chartHeight * scale;
+    const offsetX = (rect.width - drawnW) / 2;
+    const offsetY = (rect.height - drawnH) / 2;
+
+    const svgX = (x - offsetX) / scale;
+    const svgY = (y - offsetY) / scale;
+    return { svgX, svgY };
+  };
+
   // Handle pointer move within plot area to find nearest point
-  const handlePointerMove = (e: React.PointerEvent<SVGRectElement>) => {
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!svgRef.current || displayPoints.length === 0) return;
 
-    const svg = svgRef.current;
-    const rect = svg.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    // Convert to SVG coordinates (account for viewBox scaling)
-    const svgX = (mouseX / rect.width) * width;
-    const svgY = (mouseY / rect.height) * chartHeight;
+    const coords = getSvgCoords(e.clientX, e.clientY);
+    if (!coords) return;
+    const { svgX, svgY } = coords;
 
     // Safety: ensure inside plot area bounds
     if (svgX < padLeft || svgX > width - padRight || svgY < padTop || svgY > padTop + h) {
@@ -519,6 +535,9 @@ export default function ForecastMiniChart({
         className="w-full h-full"
         preserveAspectRatio="xMidYMid meet"
         style={{ width: '100%', height: '100%', display: 'block', position: 'relative' }}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+        onPointerCancel={handlePointerLeave}
       >
         {/* Unit label (top-left or top-right inside plot area depending on RTL) */}
         <text
@@ -596,19 +615,6 @@ export default function ForecastMiniChart({
             <rect x={padLeft} y={padTop} width={w} height={h} />
           </clipPath>
         </defs>
-
-        {/* Interactive hitbox: capture pointer events ONLY inside plot area */}
-        <rect
-          x={padLeft}
-          y={padTop}
-          width={w}
-          height={h}
-          fill="transparent"
-          style={{ cursor: 'crosshair' }}
-          onPointerMove={handlePointerMove}
-          onPointerLeave={handlePointerLeave}
-          onPointerCancel={handlePointerLeave}
-        />
 
         {/* Chart line and points (clipped to plot area) */}
         <g clipPath="url(#chart-clip)">
