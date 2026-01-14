@@ -275,16 +275,26 @@ export default function ForecastMiniChart({
     }).format(value);
   };
 
-  // Format X-axis time
+  // Format X-axis time based on range
   const formatTime = (timestamp: number): string => {
     const date = new Date(timestamp);
     if (range === 'daily') {
-      // HH:mm
+      // HH:mm for intraday
       const hours = date.getHours().toString().padStart(2, '0');
       const minutes = date.getMinutes().toString().padStart(2, '0');
       return `${hours}:${minutes}`;
+    } else if (range === 'weekly') {
+      // MMM DD for weekly (e.g., "Jan 14")
+      const month = date.toLocaleDateString('en-US', { month: 'short' });
+      const day = date.getDate();
+      return `${month} ${day}`;
+    } else if (range === 'monthly' || range === 'yoy') {
+      // MMM DD for monthly/yearly (e.g., "Jan 14")
+      const month = date.toLocaleDateString('en-US', { month: 'short' });
+      const day = date.getDate();
+      return `${month} ${day}`;
     } else {
-      // MM/DD for weekly/monthly/yoy
+      // Fallback: MM/DD
       const month = (date.getMonth() + 1).toString().padStart(2, '0');
       const day = date.getDate().toString().padStart(2, '0');
       return `${month}/${day}`;
@@ -300,21 +310,33 @@ export default function ForecastMiniChart({
   }
 
   // Generate X-axis ticks with collision detection
-  // Start with a reasonable number, but will filter based on spacing
-  const maxXTickCount = w < 520 ? 3 : 4;
+  // Adjust tick count based on range and width
+  let maxXTickCount: number;
+  if (range === 'daily') {
+    maxXTickCount = w < 520 ? 4 : 6; // More ticks for intraday
+  } else if (range === 'weekly') {
+    maxXTickCount = w < 520 ? 4 : 5; // 4-5 ticks for weekly
+  } else if (range === 'monthly' || range === 'yoy') {
+    maxXTickCount = w < 520 ? 4 : 5; // 4-5 ticks for monthly/yearly
+  } else {
+    maxXTickCount = w < 520 ? 3 : 4;
+  }
+  
   const xTickCandidates: Array<{ point: ChartPoint; index: number; x: number; label: string }> = [];
   
-  // Generate candidate ticks
+  // Generate candidate ticks evenly distributed
   const candidateIndices: number[] = [];
-  if (maxXTickCount === 3) {
-    candidateIndices.push(0, Math.floor(displayPoints.length / 2), displayPoints.length - 1);
+  if (displayPoints.length <= maxXTickCount) {
+    // If we have fewer points than max ticks, use all points
+    for (let i = 0; i < displayPoints.length; i++) {
+      candidateIndices.push(i);
+    }
   } else {
-    candidateIndices.push(
-      0,
-      Math.floor(displayPoints.length / 3),
-      Math.floor((displayPoints.length * 2) / 3),
-      displayPoints.length - 1
-    );
+    // Distribute ticks evenly
+    for (let i = 0; i < maxXTickCount; i++) {
+      const idx = Math.floor((i / (maxXTickCount - 1)) * (displayPoints.length - 1));
+      candidateIndices.push(idx);
+    }
   }
   
   // Create candidates with their positions
@@ -327,9 +349,9 @@ export default function ForecastMiniChart({
     }
   }
   
-  // Filter ticks to avoid overlap (minimum 60px spacing between labels)
-  // Approximate label width: ~40px for "HH:mm" format, ~50px for "MM/DD" format
-  const minLabelSpacing = range === 'daily' ? 50 : 60;
+  // Filter ticks to avoid overlap
+  // Approximate label width: ~40px for "HH:mm", ~60px for "MMM DD"
+  const minLabelSpacing = range === 'daily' ? 50 : 70;
   const xTicks = xTickCandidates.reduce<Array<{ point: ChartPoint; x: number; label: string }>>((acc, candidate) => {
     if (acc.length === 0) {
       acc.push({ point: candidate.point, x: candidate.x, label: candidate.label });
@@ -489,7 +511,7 @@ export default function ForecastMiniChart({
     <div 
       ref={containerRef} 
       className="w-full h-full relative"
-      style={{ width: '100%', height: '100%', minHeight: '240px', position: 'relative' }}
+      style={{ width: '100%', height: '100%', position: 'relative' }}
     >
       <svg
         ref={svgRef}

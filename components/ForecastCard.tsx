@@ -331,16 +331,19 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
               </select>
             </div>
           </div>
-          <div className="w-full h-[240px] md:h-[340px] lg:h-[380px] relative" style={{ minHeight: '240px' }}>
+          <div className="w-full h-[260px] md:h-[320px] lg:h-[360px] relative overflow-hidden" style={{ minHeight: '260px' }}>
             {seriesData ? (
               <>
-                <ForecastMiniChart
-                  points={seriesData.points || []}
-                  unit={chartUnit}
-                  range={chartRange}
-                  loading={loading}
-                  strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
-                />
+                <div className="w-full h-full">
+                  <ForecastMiniChart
+                    points={seriesData.points || []}
+                    unit={chartUnit}
+                    range={chartRange}
+                    loading={loading}
+                    strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
+                    height={typeof window !== 'undefined' && window.innerWidth >= 1024 ? 360 : (window.innerWidth >= 768 ? 320 : 260)}
+                  />
+                </div>
                 {/* Latest point and update timestamp - using API meta timestamps */}
                 <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-1 text-xs text-gray-400 bg-black/60 px-2 py-1 rounded">
                   {/* Staleness badge */}
@@ -395,16 +398,22 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
                     </div>
                   )}
                   {/* Debug panel (dev-only) */}
-                  {process.env.NODE_ENV !== 'production' && debugMeta && (
+                  {process.env.NODE_ENV !== 'production' && seriesData && seriesData.points && seriesData.points.length > 0 && (
                     <div className="mt-1 pt-1 border-t border-gray-700 text-[10px] text-gray-500 font-mono">
-                      <div>serverAsOf: {debugMeta.serverAsOf}</div>
-                      <div>lastPointAt: {debugMeta.lastPointAt || 'null'}</div>
-                      <div>pointsCount: {debugMeta.pointsCount}</div>
-                      <div>source: {debugMeta.source}</div>
-                      {debugMeta.fallbackUsed !== undefined && (
+                      <div>
+                        Range: {chartRange} | Points: {seriesData.points.length} | First: {new Date(seriesData.points[0].t).toISOString()} | Last: {new Date(seriesData.points[seriesData.points.length - 1].t).toISOString()}
+                      </div>
+                      {debugMeta && (
                         <>
-                          <div>fallbackUsed: {String(debugMeta.fallbackUsed)}</div>
-                          <div>fallbackSource: {debugMeta.fallbackSource || 'null'}</div>
+                          <div>serverAsOf: {debugMeta.serverAsOf}</div>
+                          <div>lastPointAt: {debugMeta.lastPointAt || 'null'}</div>
+                          <div>source: {debugMeta.source}</div>
+                          {debugMeta.fallbackUsed !== undefined && (
+                            <>
+                              <div>fallbackUsed: {String(debugMeta.fallbackUsed)}</div>
+                              <div>fallbackSource: {debugMeta.fallbackSource || 'null'}</div>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -516,14 +525,17 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
           </div>
         </div>
 
-        <div className="w-full h-[240px] md:h-[340px] lg:h-[380px] relative" style={{ minHeight: '240px' }}>
-          <ForecastMiniChart
-            points={seriesData?.points || []}
-            unit={chartUnit}
-            range={chartRange}
-            loading={loading}
-            strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
-          />
+        <div className="w-full h-[260px] md:h-[320px] lg:h-[360px] relative overflow-hidden" style={{ minHeight: '260px' }}>
+          <div className="w-full h-full">
+            <ForecastMiniChart
+              points={seriesData?.points || []}
+              unit={chartUnit}
+              range={chartRange}
+              loading={loading}
+              strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
+              height={typeof window !== 'undefined' && window.innerWidth >= 1024 ? 360 : (window.innerWidth >= 768 ? 320 : 260)}
+            />
+          </div>
           {/* Latest point and update timestamp - using API meta timestamps */}
           <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-1 text-xs text-gray-400 bg-black/60 px-2 py-1 rounded">
             {/* Staleness badge */}
@@ -578,16 +590,22 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
               </div>
             )}
             {/* Debug panel (dev-only) */}
-            {process.env.NODE_ENV !== 'production' && debugMeta && (
+            {process.env.NODE_ENV !== 'production' && seriesData && seriesData.points && seriesData.points.length > 0 && (
               <div className="mt-1 pt-1 border-t border-gray-700 text-[10px] text-gray-500 font-mono">
-                <div>serverAsOf: {debugMeta.serverAsOf}</div>
-                <div>lastPointAt: {debugMeta.lastPointAt || 'null'}</div>
-                <div>pointsCount: {debugMeta.pointsCount}</div>
-                <div>source: {debugMeta.source}</div>
-                {debugMeta.fallbackUsed !== undefined && (
+                <div>
+                  Range: {chartRange} | Points: {seriesData.points.length} | First: {new Date(seriesData.points[0].t).toISOString()} | Last: {new Date(seriesData.points[seriesData.points.length - 1].t).toISOString()}
+                </div>
+                {debugMeta && (
                   <>
-                    <div>fallbackUsed: {String(debugMeta.fallbackUsed)}</div>
-                    <div>fallbackSource: {debugMeta.fallbackSource || 'null'}</div>
+                    <div>serverAsOf: {debugMeta.serverAsOf}</div>
+                    <div>lastPointAt: {debugMeta.lastPointAt || 'null'}</div>
+                    <div>source: {debugMeta.source}</div>
+                    {debugMeta.fallbackUsed !== undefined && (
+                      <>
+                        <div>fallbackUsed: {String(debugMeta.fallbackUsed)}</div>
+                        <div>fallbackSource: {debugMeta.fallbackSource || 'null'}</div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
