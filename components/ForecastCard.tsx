@@ -271,7 +271,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
               </select>
             </div>
             <div>
-              <label className={`block text-xs font-medium text-gray-700 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'forecastScope')}</label>
+              <label className={`block text-xs font-medium text-gray-300 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'forecastScope')}</label>
               <select
                 value={scope}
                 onChange={(e) => setScope(e.target.value as ForecastScope)}
@@ -292,7 +292,6 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
                     range={chartRange}
                     loading={loading}
                     strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
-                    height={typeof window !== 'undefined' && window.innerWidth >= 1024 ? 360 : (window.innerWidth >= 768 ? 320 : 260)}
                   />
                 </div>
               </>
@@ -326,7 +325,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
   return (
     <div className={`bg-gray-900 rounded-lg shadow p-6 overflow-hidden ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} ${directionColors[forecast.direction]}`}>
       <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-        <h3 className={`text-lg font-semibold text-gray-800 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+        <h3 className={`text-lg font-semibold text-gray-100 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
           {displayTitle}
           <HoverTip text={lang === 'ar' ? 'التنبؤ بالاتجاه بناءً على تحليل الاتجاهات والزخم والانحرافات. يعتمد على بيانات السوق المحلية والعالمية.' : "Directional forecast based on trend analysis, momentum, and variance. Uses both local and global market data."}>
             <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
@@ -334,7 +333,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
             </svg>
           </HoverTip>
         </h3>
-        <span className="text-xs text-gray-500">{t(lang, 'next120')}</span>
+        <span className="text-xs text-gray-400">{t(lang, 'next120')}</span>
       </div>
 
       <div className={`flex items-center gap-4 mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
@@ -346,7 +345,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
             </span>
           </div>
           <div className={`flex items-center gap-2 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-            <span className="text-sm text-gray-600">{t(lang, 'confidence')}:</span>
+            <span className="text-sm text-gray-300">{t(lang, 'confidence')}:</span>
             <span className={`px-2 py-1 rounded text-xs font-medium ${confidenceColors[forecast.confidence]}`}>
               {getConfidenceLabel(forecast.confidence)}
             </span>
@@ -376,11 +375,11 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
       <div className="mt-4 pt-4 border-t space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className={`block text-xs font-medium text-gray-700 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'timeRange')}</label>
+            <label className={`block text-xs font-medium text-gray-300 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'timeRange')}</label>
             <select
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value as TimeRange)}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
+              className={`w-full px-3 py-2 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
             >
               <option value="daily">{t(lang, 'daily')}</option>
               <option value="weekly">{t(lang, 'weekly')}</option>
@@ -389,11 +388,11 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
             </select>
           </div>
           <div>
-            <label className={`block text-xs font-medium text-gray-700 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'forecastScope')}</label>
+            <label className={`block text-xs font-medium text-gray-300 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'forecastScope')}</label>
             <select
               value={scope}
               onChange={(e) => setScope(e.target.value as ForecastScope)}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
+              className={`w-full px-3 py-2 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
             >
               <option value="local">{t(lang, 'localMarket')}</option>
               <option value="global">{t(lang, 'globalMarket')}</option>
@@ -409,7 +408,6 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
               range={chartRange}
               loading={loading}
               strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
-              height={typeof window !== 'undefined' && window.innerWidth >= 1024 ? 360 : (window.innerWidth >= 768 ? 320 : 260)}
             />
           </div>
         </div>

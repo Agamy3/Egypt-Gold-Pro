@@ -53,8 +53,8 @@ export default function ForecastMiniChart({
   } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerHeight, setContainerHeight] = useState(height || 240);
-  const heightRef = useRef<number>(height || 240);
+  const [containerHeight, setContainerHeight] = useState(height || 260);
+  const heightRef = useRef<number>(height || 260);
 
   // Update height ref when prop changes
   useEffect(() => {
@@ -132,8 +132,8 @@ export default function ForecastMiniChart({
     }
   }, [loading, points?.length]);
 
-  // Use container height if available, otherwise use prop or default to 240px
-  const chartHeight = containerHeight || height || 240;
+  // Use container height if available, otherwise use prop or default to 260px
+  const chartHeight = containerHeight || height || 260;
   
   // Fixed padding/margins - adjust for RTL
   // In RTL, Y labels go on the right, so padRight needs more space
