@@ -280,8 +280,9 @@ export async function GET(request: Request) {
                 const fallbackLatestTime = fallbackPoints[fallbackPoints.length - 1].t;
                 const fallbackHoursSince = (now - fallbackLatestTime) / (1000 * 60 * 60);
                 
-                // Only use fallback if it's fresher than original
-                if (fallbackHoursSince < hoursSinceLatest) {
+                // Only use fallback if it's fresher than original AND not stale itself.
+                // If aggregated is also stale, prefer GLOBAL spot estimate fallback below.
+                if (fallbackHoursSince < hoursSinceLatest && fallbackHoursSince <= 6) {
                   points = fallbackPoints;
                   fallbackUsed = true;
                   fallbackSource = 'aggregated';
@@ -378,25 +379,8 @@ export async function GET(request: Request) {
           }
         }
 
-        // Ensure the returned series covers the requested window (avoid empty tails/heads in charts).
-        // We ONLY do this for EG local, to match the desired UX behavior:
-        // - daily: last 24h ending at "now"
-        // - weekly/monthly/yoy: last N days ending at "now"
-        // We keep the true last observed data time in meta.lastDataAt.
-        if (country === 'EG' && scope === 'local' && points.length > 0) {
-          points.sort((a, b) => a.t - b.t);
-          const first = points[0];
-          const last = points[points.length - 1];
-
-          // Carry-back to windowStart if needed
-          if (first.t > windowStart) {
-            points = [{ t: windowStart, v: first.v }, ...points];
-          }
-          // Carry-forward to now if needed
-          if (last.t < now) {
-            points = [...points, { t: now, v: last.v }];
-          }
-        }
+        // Note: We do NOT "carry-forward" the last point to now.
+        // Doing so creates a misleading flat line when the upstream source is stale.
         
         console.log('[Forecast Series] Local market data for country', country, ':', points.length, 'points', fallbackUsed ? `(fallback: ${fallbackSource})` : '');
       }

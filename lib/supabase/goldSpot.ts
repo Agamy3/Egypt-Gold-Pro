@@ -7,6 +7,7 @@
 
 import 'server-only';
 import db from '../supabase';
+import { fetchGlobalSpot } from '../spot-fetch';
 
 export interface GoldSpotData {
   xau_spot_usd_oz: number;
@@ -92,10 +93,36 @@ export async function getGoldSpotHistory(
       return [];
     }
 
-    return data.map(row => ({
+    const rows = data.map(row => ({
       xau_spot_usd_oz: row.xau_spot_usd_oz,
       fetched_at: row.fetched_at as number, // Already in epoch ms (bigint)
     }));
+
+    // If history looks stale, fetch a fresh latest point and cache it.
+    // This prevents weekly/monthly/yoy fallback series from "ending early" and looking flat/incorrect.
+    const now = Date.now();
+    const lastAt = rows.length > 0 ? rows[rows.length - 1].fetched_at : null;
+    const STALE_AFTER_MS = 10 * 60 * 1000; // 10 minutes
+
+    if (lastAt === null || now - lastAt > STALE_AFTER_MS) {
+      const res = await fetchGlobalSpot();
+      if (res.price && res.price > 0 && res.source) {
+        // Non-fatal cache write
+        try {
+          await insertGoldSpot(res.price, res.source, now, false);
+        } catch {
+          // ignore cache failures
+        }
+
+        // Include the fresh point in the returned history if within window
+        if (now >= windowStartMs) {
+          rows.push({ xau_spot_usd_oz: res.price, fetched_at: now });
+        }
+      }
+    }
+
+    rows.sort((a, b) => a.fetched_at - b.fetched_at);
+    return rows;
   } catch (error) {
     console.error('[Supabase] Error getting gold spot history:', error);
     return [];

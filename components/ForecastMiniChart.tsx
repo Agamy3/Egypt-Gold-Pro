@@ -182,7 +182,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMidYMid meet"
         >
           <text
             x={width / 2}
@@ -204,7 +204,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMidYMid meet"
         >
           <text
             x={width / 2}
@@ -236,7 +236,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMidYMid meet"
           style={{ width: '100%', height: '100%' }}
         >
           <text
@@ -282,11 +282,10 @@ export default function ForecastMiniChart({
 
   // Domain rules (per your table):
   // - Daily: last 24h ending at "now"
-  // - Weekly/Monthly/YoY: last N days ending at "today/now" BUT do not show empty graph:
-  //   we will "carry-forward" the last value to the domain end, and "carry-back" the first
-  //   value to the domain start if needed.
+  // - Weekly/Monthly/YoY: last N days ending at "today/now"
+  // IMPORTANT: Do NOT "carry-forward" the last value to now — that creates misleading flat lines
+  // when upstream data is stale. Instead, we rely on the API/fallback to provide fresh points.
   const dataMin = validPoints[0].t;
-  const dataMax = validPoints[validPoints.length - 1].t;
 
   const domainEnd = nowMs;
   const domainStart = Math.max(nowMs - rangeWindowMs, dataMin);
@@ -295,21 +294,9 @@ export default function ForecastMiniChart({
   const timeMax = domainEnd;
   const timeRange = timeMax - timeMin || 1;
 
-  // Slice points to domain and add carried endpoints so we never render an "empty" tail/head.
+  // Slice points to domain.
   const inWindow = validPoints.filter((p) => p.t >= timeMin && p.t <= timeMax);
-  let pointsForRender = inWindow.length > 0 ? inWindow : validPoints;
-
-  if (pointsForRender.length > 0) {
-    const first = pointsForRender[0];
-    const last = pointsForRender[pointsForRender.length - 1];
-
-    if (first.t > timeMin) {
-      pointsForRender = [{ t: timeMin, v: first.v }, ...pointsForRender];
-    }
-    if (last.t < timeMax) {
-      pointsForRender = [...pointsForRender, { t: timeMax, v: last.v }];
-    }
-  }
+  const pointsForRender = inWindow.length > 0 ? inWindow : validPoints;
 
   // Downsample rendered points if too many (keep first+last)
   let displayPoints = pointsForRender;
@@ -461,19 +448,36 @@ export default function ForecastMiniChart({
   const showCircles = displayPoints.length <= 60;
 
   // Convert screen coords -> SVG viewBox coords.
-  // We use preserveAspectRatio="none" (with viewBox matching container size) so scaling is linear.
+  // We use preserveAspectRatio="xMidYMid meet"; viewBox is chosen to match container ratio,
+  // but we still handle potential offsets/scale robustly.
   const getSvgCoords = (clientX: number, clientY: number): { svgX: number; svgY: number } | null => {
     const svg = svgRef.current;
     if (!svg) return null;
 
     const rect = svg.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
 
-    const scaleX = rect.width / width;
-    const scaleY = rect.height / chartHeight;
-    const svgX = x / scaleX;
-    const svgY = y / scaleY;
+    if (rect.width <= 0 || rect.height <= 0) return null;
+
+    const viewW = width;
+    const viewH = chartHeight;
+    const sx = rect.width / viewW;
+    const sy = rect.height / viewH;
+    const s = Math.min(sx, sy);
+    const drawnW = viewW * s;
+    const drawnH = viewH * s;
+    const offX = (rect.width - drawnW) / 2;
+    const offY = (rect.height - drawnH) / 2;
+
+    const xIn = px - offX;
+    const yIn = py - offY;
+
+    // If pointer is in letterboxed padding, treat as outside.
+    if (xIn < 0 || yIn < 0 || xIn > drawnW || yIn > drawnH) return null;
+
+    const svgX = xIn / s;
+    const svgY = yIn / s;
     return { svgX, svgY };
   };
 
@@ -614,7 +618,7 @@ export default function ForecastMiniChart({
         ref={svgRef}
         viewBox={`0 0 ${width} ${chartHeight}`}
         className="w-full h-full"
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
         style={{ width: '100%', height: '100%', display: 'block', position: 'relative' }}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
