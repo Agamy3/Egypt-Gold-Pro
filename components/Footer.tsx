@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useLang } from './LanguageProvider';
 import CookiePreferencesLink from './CookiePreferencesLink';
 
@@ -11,9 +12,20 @@ export default function Footer() {
     <footer className="bg-gray-900 border-t border-gray-800 mt-auto w-full">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
         <div className={`flex flex-col sm:flex-row items-center justify-between gap-4 ${lang === 'ar' ? 'sm:flex-row-reverse' : ''}`}>
-          <div className={`text-sm text-gray-400 ${lang === 'ar' ? 'text-right' : ''}`}>
-            © {new Date().getFullYear()} EgyptGold Pro. {lang === 'ar' ? 'جميع الحقوق محفوظة' : 'All rights reserved'}.
-          </div>
+          <Link href="/" className={`flex items-center gap-2 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            <div className="relative w-6 h-6 flex-shrink-0">
+              <Image
+                src="/brand/logo.png"
+                alt="EgyptGold Pro"
+                fill
+                className="object-contain"
+                sizes="24px"
+              />
+            </div>
+            <span className={`text-sm text-gray-400 ${lang === 'ar' ? 'text-right' : ''}`}>
+              © {new Date().getFullYear()} EgyptGold Pro. {lang === 'ar' ? 'جميع الحقوق محفوظة' : 'All rights reserved'}.
+            </span>
+          </Link>
           <div className={`flex gap-4 items-center ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             <Link
               href="/privacy"
