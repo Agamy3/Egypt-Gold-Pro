@@ -163,7 +163,7 @@ export default function NewsPage() {
                             rel="noopener noreferrer"
                             className="text-base sm:text-lg font-semibold text-gray-100 hover:text-gold-400 line-clamp-2"
                           >
-                            {item.title}
+                            {htmlToText(item.title)}
                           </a>
                         </div>
                         <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400 mb-3">
