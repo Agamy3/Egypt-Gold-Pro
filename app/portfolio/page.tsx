@@ -2,15 +2,11 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { useLang } from '@/components/LanguageProvider';
-import CountryCurrencySelector from '@/components/CountryCurrencySelector';
-import LanguageToggle from '@/components/LanguageToggle';
-import AccountMenu from '@/components/AccountMenu';
 import PortfolioTable from '@/components/PortfolioTable';
 import Footer from '@/components/Footer';
-import Image from 'next/image';
 import AdGateClient from '@/components/ads/AdGateClient';
+import Header from '@/components/layout/Header';
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
@@ -147,34 +143,7 @@ function PortfolioContent() {
 
   return (
     <div className="min-h-screen bg-black">
-      <header className="bg-gray-900 shadow-sm border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
-          <div className={`flex flex-col sm:flex-row items-start sm:items-center ${lang === 'ar' ? 'sm:flex-row-reverse' : ''} gap-3 sm:gap-4 justify-between`}>
-            <Link href="/" className={`flex items-center gap-3 sm:gap-4 flex-1 min-w-0 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              <div className="relative w-12 h-12 sm:w-14 sm:h-14 flex-shrink-0">
-                <Image
-                  src="/brand/logo.png"
-                  alt="EgyptGold Pro"
-                  fill
-                  className="object-contain"
-                  priority
-                  sizes="(max-width: 640px) 48px, 56px"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gold-400 truncate">
-                  {lang === 'ar' ? 'المحفظة' : 'Portfolio'}
-                </h1>
-              </div>
-            </Link>
-            <div className={`flex items-center gap-2 sm:gap-4 w-full sm:w-auto ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              <CountryCurrencySelector />
-              <LanguageToggle />
-              <AccountMenu />
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header title={lang === 'ar' ? 'المحفظة' : 'Portfolio'} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 sm:py-8 lg:py-10">
         {portfolio && holdingsCount > 0 && (

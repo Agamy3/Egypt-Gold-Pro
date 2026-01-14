@@ -43,7 +43,25 @@ function parseRSSFeed(xmlText: string, feedUrl: string): NewsItem[] {
       const title = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : null;
       const url = linkMatch ? linkMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : null;
       const pubDate = pubDateMatch ? pubDateMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : null;
-      const summary = descriptionMatch ? descriptionMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim().substring(0, 500) : null;
+      let summary = descriptionMatch ? descriptionMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : null;
+      
+      // Strip HTML tags and decode entities from summary
+      if (summary) {
+        // Remove HTML tags inline (simple regex, no async needed)
+        summary = summary.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        // Decode common entities
+        summary = summary
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&#8220;/g, '"')
+          .replace(/&#8221;/g, '"')
+          .replace(/&#8217;/g, "'")
+          .substring(0, 500);
+      }
       const imageUrl = imageMatch ? imageMatch[1] : null;
 
       if (title && url) {

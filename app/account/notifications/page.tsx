@@ -2,14 +2,10 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import Image from 'next/image';
 import { useLang } from '@/components/LanguageProvider';
-import AccountMenu from '@/components/AccountMenu';
-import LanguageToggle from '@/components/LanguageToggle';
-import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import Footer from '@/components/Footer';
 import Modal from '@/components/ui/Modal';
+import Header from '@/components/layout/Header';
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
@@ -99,16 +95,42 @@ function NotificationsContent() {
   const checkPushSupport = () => {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
       setPushSupported(true);
-      checkPushSubscription();
+      // Register service worker first, then check subscription
+      registerServiceWorker().then(() => {
+        checkPushSubscription();
+      }).catch((err) => {
+        console.error('[PUSH] Service worker registration failed:', err);
+      });
+    }
+  };
+
+  const registerServiceWorker = async () => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+      });
+      console.log('[PUSH] Service worker registered:', registration.scope);
+      return registration;
+    } catch (err) {
+      console.error('[PUSH] Service worker registration error:', err);
+      throw err;
     }
   };
 
   const checkPushSubscription = async () => {
     if (!pushSupported) return;
     try {
+      // Ensure service worker is ready
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       setPushSubscribed(!!subscription);
+      if (subscription) {
+        setPushEnabled(true);
+      }
     } catch (err) {
       console.error('[PUSH] Error checking subscription:', err);
     }
@@ -625,34 +647,7 @@ function NotificationsContent() {
 
   return (
     <div className="min-h-screen bg-black">
-      <header className="bg-gray-900 shadow-sm border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
-          <div className={`flex flex-col sm:flex-row items-start sm:items-center ${lang === 'ar' ? 'sm:flex-row-reverse' : ''} gap-3 sm:gap-4 justify-between`}>
-            <Link href="/" className={`flex items-center gap-3 sm:gap-4 flex-1 min-w-0 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              <div className="relative w-12 h-12 sm:w-14 sm:h-14 flex-shrink-0">
-                <Image
-                  src="/brand/logo.png"
-                  alt="EgyptGold Pro"
-                  fill
-                  className="object-contain"
-                  priority
-                  sizes="(max-width: 640px) 48px, 56px"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gold-400 truncate">
-                  {lang === 'ar' ? 'الإشعارات' : 'Notifications'}
-                </h1>
-              </div>
-            </Link>
-            <div className={`flex items-center gap-2 sm:gap-4 w-full sm:w-auto ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              <CountryCurrencySelector />
-              <LanguageToggle />
-              <AccountMenu />
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header title={lang === 'ar' ? 'الإشعارات' : 'Notifications'} />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {error && (

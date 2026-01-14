@@ -6,6 +6,7 @@
 
 import 'server-only';
 import { createServerClient } from '@/lib/supabase/server';
+import { htmlToText } from '@/lib/html-text-converter';
 
 export interface NewsItem {
   title: string;
@@ -77,6 +78,15 @@ export async function upsertNewsItems(
         }
       }
 
+      // Clean summary: strip HTML and decode entities
+      let cleanSummary: string | null = null;
+      if (item.summary) {
+        cleanSummary = htmlToText(item.summary).substring(0, 500);
+        if (cleanSummary.length === 0) {
+          cleanSummary = null;
+        }
+      }
+
       const { error } = await supabase
         .from('news_items')
         .upsert({
@@ -85,7 +95,7 @@ export async function upsertNewsItems(
           url: item.url.trim(),
           source: item.source ? item.source.trim() : null,
           published_at: publishedAt,
-          summary: item.summary ? item.summary.trim().substring(0, 500) : null,
+          summary: cleanSummary,
           image_url: item.image_url ? item.image_url.trim() : null,
           tags: Array.isArray(item.tags) ? item.tags : null,
           provider: item.provider,

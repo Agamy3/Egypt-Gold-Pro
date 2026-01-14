@@ -31,9 +31,11 @@ export default function Sidebar() {
     }
   }, []);
 
-  // Persist collapsed state to localStorage
+  // Persist collapsed state to localStorage and dispatch event
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+    // Dispatch custom event for header sync
+    window.dispatchEvent(new Event('sidebarToggle'));
   }, [collapsed]);
 
   useEffect(() => {

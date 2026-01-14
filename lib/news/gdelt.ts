@@ -112,12 +112,31 @@ export async function fetchGdelt(country: string): Promise<NewsItem[]> {
         }
       }
 
+      let summary = article.snippet ? String(article.snippet).trim() : null;
+      // Strip HTML if present (GDELT sometimes returns HTML)
+      if (summary) {
+        // Remove HTML tags inline (simple regex)
+        summary = summary.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        // Decode common entities
+        summary = summary
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&#8220;/g, '"')
+          .replace(/&#8221;/g, '"')
+          .replace(/&#8217;/g, "'")
+          .substring(0, 500);
+      }
+
       return {
         title: (article.title || article.snippet || 'Untitled').trim(),
         url: (article.url || '').trim(),
         source: article.source ? String(article.source).trim() : null,
         published_at: publishedAt,
-        summary: article.snippet ? String(article.snippet).trim().substring(0, 500) : null,
+        summary,
         image_url: article.image ? String(article.image).trim() : null,
         tags: Array.isArray(article.tags) ? article.tags : null,
         provider: 'gdelt' as const,

@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import AccountMenu from '@/components/AccountMenu';
 import Footer from '@/components/Footer';
-import CountryCurrencySelector from '@/components/CountryCurrencySelector';
-import LanguageToggle from '@/components/LanguageToggle';
 import { useLang } from '@/components/LanguageProvider';
 import AdGateClient from '@/components/ads/AdGateClient';
+import Header from '@/components/layout/Header';
 
 interface PublicNewsItem {
   id: number;
@@ -118,27 +116,10 @@ export default function NewsPage() {
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
-      <header className="bg-gray-900 shadow-sm border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 justify-between">
-            <Link href="/" className="flex items-center gap-3 flex-1 min-w-0">
-              <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gold-400 truncate">
-                {pageTitle}
-              </span>
-              {!isPremium && (
-                <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-gold-900 text-gold-300 border border-gold-500">
-                  {lang === 'ar' ? 'محتوى مميز متاح' : 'Premium context available'}
-                </span>
-              )}
-            </Link>
-            <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
-              <CountryCurrencySelector />
-              <LanguageToggle />
-              <AccountMenu />
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header 
+        title={pageTitle}
+        subtitle={!isPremium ? (lang === 'ar' ? 'محتوى مميز متاح' : 'Premium context available') : undefined}
+      />
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-10 flex-1 w-full">
         {error && (
