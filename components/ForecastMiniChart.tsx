@@ -265,9 +265,21 @@ export default function ForecastMiniChart({
     }
   }
 
-  // Calculate X-axis range (time) - use displayPoints for range calculation
-  const timeMin = displayPoints[0].t;
-  const timeMax = displayPoints[displayPoints.length - 1].t;
+  // Calculate X-axis domain (time)
+  // Use the full selected range window ending at "now" so weekly/monthly axes show the end date
+  // even if the last data point is older.
+  const nowMs = Date.now();
+  const rangeWindowMs =
+    range === 'daily'
+      ? 24 * 60 * 60 * 1000
+      : range === 'weekly'
+        ? 7 * 24 * 60 * 60 * 1000
+        : range === 'monthly'
+          ? 30 * 24 * 60 * 60 * 1000
+          : 365 * 24 * 60 * 60 * 1000; // yoy
+
+  const timeMin = nowMs - rangeWindowMs;
+  const timeMax = nowMs;
   const timeRange = timeMax - timeMin || 1;
 
   // Scale functions
@@ -337,7 +349,8 @@ export default function ForecastMiniChart({
   
   const xTickCandidates: Array<{ point: ChartPoint; index: number; x: number; label: string }> = [];
   
-  // Generate candidate ticks evenly distributed
+  // Generate candidate ticks evenly distributed (from data points),
+  // then we will force domain start/end labels below.
   const candidateIndices: number[] = [];
   if (displayPoints.length <= maxXTickCount) {
     // If we have fewer points than max ticks, use all points
@@ -378,12 +391,12 @@ export default function ForecastMiniChart({
     return acc;
   }, []);
 
-  // Ensure first and last labels are present (helps weekly/monthly show the end date)
+  // Ensure domain start/end labels are present (prevents "monthly shows only today" axis issue)
   if (displayPoints.length > 0) {
-    const firstPoint = displayPoints[0];
-    const lastPoint = displayPoints[displayPoints.length - 1];
-    const firstTick = { point: firstPoint, x: scaleX(firstPoint.t), label: formatTime(firstPoint.t) };
-    const lastTick = { point: lastPoint, x: scaleX(lastPoint.t), label: formatTime(lastPoint.t) };
+    const firstTickPoint = { t: timeMin, v: displayPoints[0].v };
+    const lastTickPoint = { t: timeMax, v: displayPoints[displayPoints.length - 1].v };
+    const firstTick = { point: firstTickPoint, x: scaleX(timeMin), label: formatTime(timeMin) };
+    const lastTick = { point: lastTickPoint, x: scaleX(timeMax), label: formatTime(timeMax) };
 
     if (xTicks.length === 0) {
       xTicks = [firstTick, lastTick];
