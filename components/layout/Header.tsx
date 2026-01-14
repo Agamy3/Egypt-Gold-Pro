@@ -16,13 +16,16 @@ interface HeaderProps {
 
 export default function Header({ title, subtitle, showLogo = true }: HeaderProps) {
   const { lang } = useLang();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true); // Default to collapsed (hidden)
 
   useEffect(() => {
     // Sync with sidebar state from localStorage
     const saved = localStorage.getItem('sidebarCollapsed');
-    if (saved === '1') {
-      setSidebarCollapsed(true);
+    // If no saved state, default to collapsed (true)
+    if (saved !== null) {
+      setSidebarCollapsed(saved === '1');
+    } else {
+      localStorage.setItem('sidebarCollapsed', '1'); // Default to collapsed
     }
 
     // Listen for sidebar collapse changes
@@ -81,17 +84,6 @@ export default function Header({ title, subtitle, showLogo = true }: HeaderProps
                     className="object-contain"
                     priority
                     sizes="(max-width: 640px) 48px, 56px"
-                    onError={(e) => {
-                      // Fallback: hide image and show text
-                      const target = e.target as HTMLImageElement;
-                      if (target.parentElement) {
-                        target.style.display = 'none';
-                        const fallback = document.createElement('span');
-                        fallback.className = 'text-gold-400 font-bold text-xl';
-                        fallback.textContent = 'EGP';
-                        target.parentElement.appendChild(fallback);
-                      }
-                    }}
                   />
                 </div>
                 {(title || !showLogo) && (

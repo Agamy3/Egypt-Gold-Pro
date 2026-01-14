@@ -19,14 +19,20 @@ function classNames(...classes: Array<string | false | null | undefined>): strin
 export default function Sidebar() {
   const pathname = usePathname() || '/';
   const { lang } = useLang();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true); // Default to collapsed (hidden)
   const [isAdmin, setIsAdmin] = useState(false);
 
   // Load collapsed state from localStorage on mount and listen for changes
   useEffect(() => {
     const updateCollapsed = () => {
       const saved = localStorage.getItem('sidebarCollapsed');
-      setCollapsed(saved === '1');
+      // If no saved state, default to collapsed (true)
+      if (saved !== null) {
+        setCollapsed(saved === '1');
+      } else {
+        setCollapsed(true); // Default to collapsed
+        localStorage.setItem('sidebarCollapsed', '1');
+      }
     };
 
     // Initial load

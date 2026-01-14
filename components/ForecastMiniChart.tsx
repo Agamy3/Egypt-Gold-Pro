@@ -53,6 +53,7 @@ export default function ForecastMiniChart({
   } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(height || 260);
   const heightRef = useRef<number>(height || 260);
 
@@ -72,6 +73,9 @@ export default function ForecastMiniChart({
         if (rect.height > 100) {
           setContainerHeight(rect.height);
           heightRef.current = rect.height;
+          if (rect.width > 100) {
+            setContainerWidth(rect.width);
+          }
         } else {
           // Use the ref value to maintain previous height
           setContainerHeight(heightRef.current);
@@ -94,10 +98,14 @@ export default function ForecastMiniChart({
       const resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
           const newHeight = entry.contentRect.height;
+          const newWidth = entry.contentRect.width;
           // Only update if we get a valid height that's not too small
           if (newHeight > 100) {
             setContainerHeight(newHeight);
             heightRef.current = newHeight;
+          }
+          if (newWidth > 100) {
+            setContainerWidth(newWidth);
           }
         }
       });
@@ -143,7 +151,12 @@ export default function ForecastMiniChart({
   const padBottom = 28;
 
   // Chart dimensions
-  const width = 800; // Base width, will be responsive via viewBox
+  // Match SVG viewBox aspect ratio to the container to avoid letterboxing (which looks "small"),
+  // while using preserveAspectRatio="xMidYMid meet" to avoid stretching.
+  const width =
+    containerWidth > 0 && chartHeight > 0
+      ? Math.max(720, Math.round((containerWidth / chartHeight) * chartHeight))
+      : 800;
   const w = width - padLeft - padRight;
   const h = chartHeight - padTop - padBottom;
 
@@ -154,7 +167,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMidYMid meet"
         >
           <text
             x={width / 2}
@@ -176,7 +189,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMidYMid meet"
         >
           <text
             x={width / 2}
@@ -208,7 +221,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMidYMid meet"
           style={{ width: '100%', height: '100%' }}
         >
           <text
@@ -352,7 +365,7 @@ export default function ForecastMiniChart({
   // Filter ticks to avoid overlap
   // Approximate label width: ~40px for "HH:mm", ~60px for "MMM DD"
   const minLabelSpacing = range === 'daily' ? 50 : 70;
-  const xTicks = xTickCandidates.reduce<Array<{ point: ChartPoint; x: number; label: string }>>((acc, candidate) => {
+  let xTicks = xTickCandidates.reduce<Array<{ point: ChartPoint; x: number; label: string }>>((acc, candidate) => {
     if (acc.length === 0) {
       acc.push({ point: candidate.point, x: candidate.x, label: candidate.label });
     } else {
@@ -364,6 +377,31 @@ export default function ForecastMiniChart({
     }
     return acc;
   }, []);
+
+  // Ensure first and last labels are present (helps weekly/monthly show the end date)
+  if (displayPoints.length > 0) {
+    const firstPoint = displayPoints[0];
+    const lastPoint = displayPoints[displayPoints.length - 1];
+    const firstTick = { point: firstPoint, x: scaleX(firstPoint.t), label: formatTime(firstPoint.t) };
+    const lastTick = { point: lastPoint, x: scaleX(lastPoint.t), label: formatTime(lastPoint.t) };
+
+    if (xTicks.length === 0) {
+      xTicks = [firstTick, lastTick];
+    } else {
+      if (xTicks[0].point.t !== firstTick.point.t) {
+        xTicks.unshift(firstTick);
+      }
+
+      const currentLast = xTicks[xTicks.length - 1];
+      if (currentLast.point.t !== lastTick.point.t) {
+        if (xTicks.length >= 2 && Math.abs(lastTick.x - currentLast.x) < minLabelSpacing) {
+          xTicks[xTicks.length - 1] = lastTick;
+        } else {
+          xTicks.push(lastTick);
+        }
+      }
+    }
+  }
 
   // Generate path for line (using displayPoints for downsampled data)
   const pathData = displayPoints
@@ -377,8 +415,8 @@ export default function ForecastMiniChart({
   // Determine if we should show circles (only if <= 60 points, check displayPoints length)
   const showCircles = displayPoints.length <= 60;
 
-  // Convert screen coords -> SVG viewBox coords.
-  // Note: the main chart SVG uses preserveAspectRatio="none" so scaling is linear (no letterboxing).
+  // Convert screen coords -> SVG viewBox coords accounting for preserveAspectRatio="xMidYMid meet"
+  // (defensive against any remaining letterboxing).
   const getSvgCoords = (clientX: number, clientY: number): { svgX: number; svgY: number } | null => {
     const svg = svgRef.current;
     if (!svg) return null;
@@ -387,10 +425,14 @@ export default function ForecastMiniChart({
     const x = clientX - rect.left;
     const y = clientY - rect.top;
 
-    const scaleX = rect.width / width;
-    const scaleY = rect.height / chartHeight;
-    const svgX = x / scaleX;
-    const svgY = y / scaleY;
+    const scale = Math.min(rect.width / width, rect.height / chartHeight);
+    const drawnW = width * scale;
+    const drawnH = chartHeight * scale;
+    const offsetX = (rect.width - drawnW) / 2;
+    const offsetY = (rect.height - drawnH) / 2;
+
+    const svgX = (x - offsetX) / scale;
+    const svgY = (y - offsetY) / scale;
     return { svgX, svgY };
   };
 
@@ -499,9 +541,14 @@ export default function ForecastMiniChart({
     const svg = svgRef.current;
     const rect = svg.getBoundingClientRect();
     
-    // Convert SVG coordinates to pixel coordinates
-    const pixelX = (hover.svgX / width) * rect.width;
-    const pixelY = (hover.svgY / chartHeight) * rect.height;
+    // Convert SVG coordinates to pixel coordinates (account for preserveAspectRatio="xMidYMid meet")
+    const scale = Math.min(rect.width / width, rect.height / chartHeight);
+    const drawnW = width * scale;
+    const drawnH = chartHeight * scale;
+    const offsetX = (rect.width - drawnW) / 2;
+    const offsetY = (rect.height - drawnH) / 2;
+    const pixelX = offsetX + hover.svgX * scale;
+    const pixelY = offsetY + hover.svgY * scale;
     
     // Tooltip dimensions (approximate)
     const tooltipWidth = 140;
@@ -529,7 +576,7 @@ export default function ForecastMiniChart({
         ref={svgRef}
         viewBox={`0 0 ${width} ${chartHeight}`}
         className="w-full h-full"
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
         style={{ width: '100%', height: '100%', display: 'block', position: 'relative' }}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
