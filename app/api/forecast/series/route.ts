@@ -312,6 +312,55 @@ export async function GET(request: Request) {
             }
           }
         }
+
+        // EG-local history coverage fallback (weekly/monthly/yoy):
+        // If the local table doesn't contain enough historical points to cover the requested window,
+        // fall back to GLOBAL spot converted to EGP (temporary) so the monthly chart isn't "only today".
+        if (
+          country === 'EG' &&
+          (rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy') &&
+          goldSpotHistory.length > 0
+        ) {
+          const desiredWindowMs = windowMs;
+          const coverageMs =
+            points.length > 1 ? (points[points.length - 1].t - points[0].t) : 0;
+
+          // If coverage is less than 60% of desired window, treat it as insufficient history.
+          if (coverageMs < desiredWindowMs * 0.6) {
+            try {
+              const egpRate =
+                latestFx ??
+                (await (async () => {
+                  const { getUsdEgpRate } = await import('@/lib/fx');
+                  const fxResult = await getUsdEgpRate();
+                  return fxResult.rate;
+                })());
+
+              if (egpRate && egpRate > 0) {
+                const sortedSpot = [...goldSpotHistory].sort((a, b) => a.fetched_at - b.fetched_at);
+                const fallbackPoints = sortedSpot.map((spot) => {
+                  // Convert XAU/USD (per oz) -> USD per gram -> EGP per gram (24k)
+                  const pricePerGramUsd = spot.xau_spot_usd_oz / 31.1035;
+                  const pricePerGramEgp = pricePerGramUsd * egpRate;
+                  return { t: spot.fetched_at, v: pricePerGramEgp };
+                });
+
+                if (fallbackPoints.length > 1) {
+                  points = fallbackPoints;
+                  fallbackUsed = true;
+                  fallbackSource = 'global_spot_egp_estimate_history';
+                  console.log('[Forecast Series] Using EG monthly history fallback:', {
+                    originalPointsCount,
+                    windowDays: Math.round(windowMs / (24 * 60 * 60 * 1000)),
+                    spotPoints: fallbackPoints.length,
+                  });
+                }
+              }
+            } catch (error) {
+              console.error('[Forecast Series] Failed EG history fallback:', error);
+            }
+          }
+        }
         
         console.log('[Forecast Series] Local market data for country', country, ':', points.length, 'points', fallbackUsed ? `(fallback: ${fallbackSource})` : '');
       }

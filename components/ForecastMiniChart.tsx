@@ -154,7 +154,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="none"
         >
           <text
             x={width / 2}
@@ -176,7 +176,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="none"
         >
           <text
             x={width / 2}
@@ -208,7 +208,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="none"
           style={{ width: '100%', height: '100%' }}
         >
           <text
@@ -377,7 +377,8 @@ export default function ForecastMiniChart({
   // Determine if we should show circles (only if <= 60 points, check displayPoints length)
   const showCircles = displayPoints.length <= 60;
 
-  // Convert screen coords -> SVG viewBox coords accounting for preserveAspectRatio="xMidYMid meet"
+  // Convert screen coords -> SVG viewBox coords.
+  // Note: the main chart SVG uses preserveAspectRatio="none" so scaling is linear (no letterboxing).
   const getSvgCoords = (clientX: number, clientY: number): { svgX: number; svgY: number } | null => {
     const svg = svgRef.current;
     if (!svg) return null;
@@ -386,15 +387,10 @@ export default function ForecastMiniChart({
     const x = clientX - rect.left;
     const y = clientY - rect.top;
 
-    // Compute the actual rendered viewBox scale + letterbox offsets
-    const scale = Math.min(rect.width / width, rect.height / chartHeight);
-    const drawnW = width * scale;
-    const drawnH = chartHeight * scale;
-    const offsetX = (rect.width - drawnW) / 2;
-    const offsetY = (rect.height - drawnH) / 2;
-
-    const svgX = (x - offsetX) / scale;
-    const svgY = (y - offsetY) / scale;
+    const scaleX = rect.width / width;
+    const scaleY = rect.height / chartHeight;
+    const svgX = x / scaleX;
+    const svgY = y / scaleY;
     return { svgX, svgY };
   };
 
@@ -533,7 +529,7 @@ export default function ForecastMiniChart({
         ref={svgRef}
         viewBox={`0 0 ${width} ${chartHeight}`}
         className="w-full h-full"
-        preserveAspectRatio="xMidYMid meet"
+        preserveAspectRatio="none"
         style={{ width: '100%', height: '100%', display: 'block', position: 'relative' }}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
