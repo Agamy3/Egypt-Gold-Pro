@@ -7,7 +7,7 @@
 
 import 'server-only';
 import db from '../supabase';
-import { fetchGlobalSpot } from '../spot-fetch';
+import { fetchGlobalSpot, fetchStooqHistoryDaily } from '../spot-fetch';
 import { fetchImpliedOunce } from '../implied-ounce';
 
 export interface GoldSpotData {
@@ -104,8 +104,30 @@ export async function getGoldSpotHistory(
     const now = Date.now();
     const lastAt = rows.length > 0 ? rows[rows.length - 1].fetched_at : null;
     const STALE_AFTER_MS = 10 * 60 * 1000; // 10 minutes
+    const VERY_STALE_AFTER_MS = 6 * 60 * 60 * 1000; // 6 hours
 
     if (lastAt === null || now - lastAt > STALE_AFTER_MS) {
+      // If we are very stale, backfill a few daily points from Stooq history so weekly/monthly
+      // doesn't degrade into a misleading flat line.
+      if (lastAt === null || now - lastAt > VERY_STALE_AFTER_MS) {
+        const hist = await fetchStooqHistoryDaily(14);
+        if (hist.points.length > 0) {
+          for (const pt of hist.points) {
+            if (pt.t < windowStartMs) continue;
+            // Skip if already have a point on the same day (UTC) to avoid duplicates.
+            const dayKey = new Date(pt.t).toISOString().slice(0, 10);
+            const already = rows.some((r) => new Date(r.fetched_at).toISOString().slice(0, 10) === dayKey);
+            if (already) continue;
+            try {
+              await insertGoldSpot(pt.v, 'StooqHistory', pt.t, false);
+            } catch {
+              // ignore cache failures
+            }
+            rows.push({ xau_spot_usd_oz: pt.v, fetched_at: pt.t });
+          }
+        }
+      }
+
       // Prefer gold-api.com (free, no key) for a fresher moving series.
       // If that fails, fall back to fetchGlobalSpot (GoldAPI.io -> Stooq).
       const implied = await fetchImpliedOunce();

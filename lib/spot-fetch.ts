@@ -16,6 +16,11 @@ export interface SpotFetchResult {
   error: string | null;
 }
 
+export interface SpotHistoryPoint {
+  t: number; // epoch ms
+  v: number; // USD per oz
+}
+
 export interface GoldApiError {
   status?: number;
   message: string;
@@ -228,6 +233,71 @@ async function fetchStooq(): Promise<{ price: number | null; error: string | nul
       price: null,
       error: `Stooq fetch failed: ${errorMessage}`,
     };
+  }
+}
+
+/**
+ * Fetch daily historical closes from Stooq (no API key required).
+ * Endpoint: https://stooq.com/q/d/l/?s=xauusd&i=d
+ * Returns CSV with header: Date,Open,High,Low,Close,Volume
+ */
+export async function fetchStooqHistoryDaily(days: number): Promise<{ points: SpotHistoryPoint[]; error: string | null }> {
+  try {
+    const response = await fetch('https://stooq.com/q/d/l/?s=xauusd&i=d', {
+      headers: {
+        'Content-Type': 'text/csv',
+        'User-Agent': 'Mozilla/5.0 (compatible; EgyptGold-Pro/1.0)',
+      },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      return {
+        points: [],
+        error: `Stooq history HTTP ${response.status}: ${response.statusText}. Response: ${text.substring(0, 200)}`,
+      };
+    }
+
+    const csv = (await response.text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    const lines = csv.split('\n').filter((l) => l.trim().length > 0);
+    if (lines.length < 2) {
+      return { points: [], error: 'Stooq history response too short' };
+    }
+
+    const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+    const dateIdx = header.indexOf('date');
+    const closeIdx = header.indexOf('close');
+    if (dateIdx === -1 || closeIdx === -1) {
+      return { points: [], error: `Stooq history missing Date/Close columns. Header: ${lines[0].substring(0, 200)}` };
+    }
+
+    // Take last N rows (most recent days)
+    const dataLines = lines.slice(1);
+    const recent = dataLines.slice(Math.max(0, dataLines.length - Math.max(1, days)));
+
+    const points: SpotHistoryPoint[] = [];
+    for (const line of recent) {
+      const cols = line.split(',').map((c) => c.trim());
+      if (cols.length <= Math.max(dateIdx, closeIdx)) continue;
+      const dateStr = cols[dateIdx];
+      const close = parseFloat(cols[closeIdx]);
+      if (!dateStr || !isFinite(close) || close <= 0) continue;
+
+      // Use noon UTC to avoid timezone edge issues
+      const t = Date.parse(`${dateStr}T12:00:00Z`);
+      if (!isFinite(t)) continue;
+
+      // Validate a reasonable range
+      if (close < 2000 || close > 3000) continue;
+      points.push({ t, v: close });
+    }
+
+    points.sort((a, b) => a.t - b.t);
+    return { points, error: null };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { points: [], error: `Stooq history fetch failed: ${errorMessage}` };
   }
 }
 
