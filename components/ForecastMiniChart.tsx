@@ -377,8 +377,8 @@ export default function ForecastMiniChart({
   // Determine if we should show circles (only if <= 60 points, check displayPoints length)
   const showCircles = displayPoints.length <= 60;
 
-  // Handle mouse move to find nearest point
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+  // Handle pointer move within plot area to find nearest point
+  const handlePointerMove = (e: React.PointerEvent<SVGRectElement>) => {
     if (!svgRef.current || displayPoints.length === 0) return;
 
     const svg = svgRef.current;
@@ -390,7 +390,7 @@ export default function ForecastMiniChart({
     const svgX = (mouseX / rect.width) * width;
     const svgY = (mouseY / rect.height) * chartHeight;
 
-    // Check if inside plot area
+    // Safety: ensure inside plot area bounds
     if (svgX < padLeft || svgX > width - padRight || svgY < padTop || svgY > padTop + h) {
       setHover(null);
       return;
@@ -448,7 +448,7 @@ export default function ForecastMiniChart({
     });
   };
 
-  const handleMouseLeave = () => {
+  const handlePointerLeave = () => {
     setHover(null);
   };
 
@@ -519,8 +519,6 @@ export default function ForecastMiniChart({
         className="w-full h-full"
         preserveAspectRatio="xMidYMid meet"
         style={{ width: '100%', height: '100%', display: 'block', position: 'relative' }}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
       >
         {/* Unit label (top-left or top-right inside plot area depending on RTL) */}
         <text
@@ -598,6 +596,19 @@ export default function ForecastMiniChart({
             <rect x={padLeft} y={padTop} width={w} height={h} />
           </clipPath>
         </defs>
+
+        {/* Interactive hitbox: capture pointer events ONLY inside plot area */}
+        <rect
+          x={padLeft}
+          y={padTop}
+          width={w}
+          height={h}
+          fill="transparent"
+          style={{ cursor: 'crosshair' }}
+          onPointerMove={handlePointerMove}
+          onPointerLeave={handlePointerLeave}
+          onPointerCancel={handlePointerLeave}
+        />
 
         {/* Chart line and points (clipped to plot area) */}
         <g clipPath="url(#chart-clip)">
