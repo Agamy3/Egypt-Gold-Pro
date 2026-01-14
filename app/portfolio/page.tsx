@@ -358,15 +358,16 @@ function PortfolioContent() {
           </div>
         )}
 
-        {/* Ad at bottom of page (for free users only) - only when portfolio has at least 3 rows */}
-        {portfolio && (
+        {/* Ad at bottom of page (for free users only) - only when portfolio has data */}
+        {portfolio && holdingsCount > 0 && (
           <div className="mt-8 mb-4">
             <AdGateClient
               adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
               format="auto"
               className="w-full"
-              contentItemCount={holdingsCount}
-              minItems={3}
+              // Require at least a few rows to consider this meaningful content
+              hasMeaningfulContent={holdingsCount >= 3}
+              requireScroll
             />
           </div>
         )}

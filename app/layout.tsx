@@ -4,6 +4,8 @@ import './globals.css'
 import { LanguageProvider } from '@/components/LanguageProvider'
 import { Analytics } from '@vercel/analytics/next'
 import CookieConsentBanner from '@/components/CookieConsentBanner'
+import Sidebar from '@/components/layout/Sidebar'
+import MobileDrawer from '@/components/layout/MobileDrawer'
 
 // Get site URL from environment or use fallback
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com'
@@ -65,8 +67,18 @@ export default function RootLayout({
           crossOrigin="anonymous"
         />
       </head>
-      <body className="touch-pan-y">
-        <LanguageProvider>{children}</LanguageProvider>
+      <body className="touch-pan-y bg-black">
+        <LanguageProvider>
+          <div className="min-h-screen flex bg-black">
+            <Sidebar />
+            <div className="flex-1 flex flex-col">
+              <div className="px-4 pt-3 flex items-center justify-between lg:hidden">
+                <MobileDrawer />
+              </div>
+              {children}
+            </div>
+          </div>
+        </LanguageProvider>
         <CookieConsentBanner />
         <Analytics />
       </body>

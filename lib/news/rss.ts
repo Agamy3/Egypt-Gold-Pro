@@ -96,26 +96,51 @@ export async function fetchRssFeed(feedUrl: string): Promise<NewsItem[]> {
  * Fetch all RSS feeds for a country
  */
 export async function fetchRssForCountry(country: string): Promise<NewsItem[]> {
-  const feedsJson = process.env.NEWS_RSS_FEEDS_JSON;
-  if (!feedsJson) {
-    return [];
-  }
+  const raw = (process.env.NEWS_RSS_FEEDS_JSON ?? '').trim();
 
-  try {
-    const feeds = JSON.parse(feedsJson) as Record<string, string[]>;
-    const countryFeeds = feeds[country] || feeds['GLOBAL'] || [];
-    
-    const allItems: NewsItem[] = [];
-    
-    for (const feedUrl of countryFeeds) {
-      const items = await fetchRssFeed(feedUrl);
-      allItems.push(...items);
+  const DEFAULT_FEEDS: Record<string, string[]> = {
+    GLOBAL: [
+      // Kitco Gold News RSS
+      'https://www.kitco.com/rss/gold.xml',
+      // Reuters Business / Markets RSS
+      'https://feeds.reuters.com/reuters/businessNews',
+    ],
+    US: [
+      // Investing.com Gold News (or similar US-focused gold feed)
+      'https://www.investing.com/rss/news_301.rss',
+    ],
+    EG: [],
+    AE: [],
+    SA: [],
+  };
+
+  let feedsConfig: Record<string, string[]> = DEFAULT_FEEDS;
+
+  if (raw.length > 0) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === 'object') {
+        feedsConfig = {
+          ...DEFAULT_FEEDS,
+          ...(parsed as Record<string, string[]>),
+        };
+      }
+    } catch (error) {
+      // If parsing fails, log and fall back to DEFAULT_FEEDS
+      // eslint-disable-next-line no-console
+      console.error('[RSS] Failed to parse NEWS_RSS_FEEDS_JSON, using defaults:', error);
     }
-
-    return allItems;
-  } catch (error) {
-    console.error(`[RSS] Error parsing feeds config for ${country}:`, error);
-    return [];
   }
+
+  const countryFeeds = feedsConfig[country] || feedsConfig.GLOBAL || [];
+
+  const allItems: NewsItem[] = [];
+
+  for (const feedUrl of countryFeeds) {
+    const items = await fetchRssFeed(feedUrl);
+    allItems.push(...items);
+  }
+
+  return allItems;
 }
 

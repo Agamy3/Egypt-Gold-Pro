@@ -34,6 +34,8 @@ export default function NewsPage() {
   const [publicItems, setPublicItems] = useState<PublicNewsItem[]>([]);
   const [premiumItemsByUrl, setPremiumItemsByUrl] = useState<Record<string, PremiumNewsItem>>({});
   const [error, setError] = useState<string | null>(null);
+  const [lastIngestedAt, setLastIngestedAt] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     // Detect premium status via existing endpoint that uses getUserStatus server-side
@@ -43,6 +45,18 @@ export default function NewsPage() {
         setIsPremium(Boolean(data.status?.isPremium));
       })
       .catch(() => setIsPremium(false));
+  }, []);
+
+  useEffect(() => {
+    // Check admin status for ingest CTA
+    fetch('/api/user/is-admin')
+      .then((res) => res.json())
+      .then((data) => {
+        setIsAdmin(Boolean(data.isAdmin));
+      })
+      .catch(() => {
+        setIsAdmin(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -58,6 +72,7 @@ export default function NewsPage() {
         }
 
         setPublicItems(publicData.items || []);
+        setLastIngestedAt(publicData.last_ingested_at || null);
 
         if (isPremium) {
           const premiumRes = await fetch(`/api/news/premium?country=${country}&limit=20`);
@@ -245,9 +260,100 @@ export default function NewsPage() {
             })}
 
             {publicItems.length === 0 && !loading && !error && (
-              <p className="text-center text-gray-500 text-sm">
-                {lang === 'ar' ? 'لا توجد عناوين حديثة حالياً. يرجى التحقق لاحقاً.' : 'No recent headlines yet. Check back soon.'}
-              </p>
+              <div className="max-w-3xl mx-auto mt-8">
+                <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 sm:p-6 lg:p-8 space-y-4">
+                  <h2 className="text-xl sm:text-2xl font-semibold text-gold-400">
+                    {lang === 'ar' ? 'لا توجد أخبار منشورة بعد لهذه الدولة' : 'No news published yet for this country'}
+                  </h2>
+                  <p className="text-sm text-gray-300">
+                    {lang === 'ar'
+                      ? 'نبني موجزاً لأخبار الذهب والاقتصاد من مصادر عالمية ومحلية موثوقة. ستجد هنا عناوين تساعدك على فهم ما يحرك أسعار الذهب، التضخم، أسعار الفائدة، وسعر الصرف.'
+                      : 'We are building a curated stream of gold and macro news from trusted global and local sources. This page will highlight headlines that explain what is moving gold, inflation, interest rates, and FX.'}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-300">
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-gray-100">
+                        {lang === 'ar' ? 'أمثلة على المصادر' : 'Example sources'}
+                      </h3>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li>Kitco Gold News</li>
+                        <li>Reuters Markets &amp; Economy</li>
+                        <li>Investing.com Gold</li>
+                      </ul>
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-gray-100">
+                        {lang === 'ar' ? 'ماذا ستجد هنا؟' : 'What you will see here'}
+                      </h3>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li>
+                          {lang === 'ar'
+                            ? 'عناوين مترابطة مع تحركات سوق الذهب المحلي والعالمي.'
+                            : 'Headlines connected to local and global gold price moves.'}
+                        </li>
+                        <li>
+                          {lang === 'ar'
+                            ? 'قصص عن التضخم، أسعار الفائدة، وسعر الصرف التي تؤثر على مدخراتك بالذهب.'
+                            : 'Stories on inflation, interest rates, and FX that impact your gold savings.'}
+                        </li>
+                        <li>
+                          {lang === 'ar'
+                            ? 'سياق مميز للمشتركين يشرح لماذا يهم كل خبر.'
+                            : 'Premium context that explains why each headline matters.'}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                  {lastIngestedAt && (
+                    <p className="text-xs text-gray-500">
+                      {lang === 'ar'
+                        ? `آخر عملية استيراد للأخبار من قاعدة البيانات: ${new Date(lastIngestedAt).toLocaleString()}`
+                        : `Last news ingestion recorded in the database: ${new Date(lastIngestedAt).toLocaleString()}`}
+                    </p>
+                  )}
+                  <div className="pt-2 border-t border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/admin/news/ingest', {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                              },
+                              body: JSON.stringify({ country }),
+                            });
+                            const data = await res.json();
+                            // Optimistically refetch news after ingest
+                            if (res.ok && data.ok) {
+                              window.location.reload();
+                            }
+                          } catch {
+                            // Swallow errors in UI; admins can retry
+                          }
+                        }}
+                        className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-white rounded-md text-sm font-semibold"
+                      >
+                        {lang === 'ar' ? 'استيراد أحدث الأخبار الآن' : 'Ingest latest news now'}
+                      </button>
+                    ) : (
+                      <span className="text-sm text-gray-400">
+                        {lang === 'ar'
+                          ? 'يتم تحضير موجز أخبار الذهب حالياً. يرجى العودة قريباً.'
+                          : 'We are preparing the gold news feed for this country. Please check back soon.'}
+                      </span>
+                    )}
+                    {!isAdmin && lastIngestedAt && (
+                      <span className="text-xs text-gray-500">
+                        {lang === 'ar'
+                          ? `آخر تحديث للأخبار: ${new Date(lastIngestedAt).toLocaleString()}`
+                          : `Last news refresh: ${new Date(lastIngestedAt).toLocaleString()}`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         )}

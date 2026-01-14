@@ -637,17 +637,6 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         </div>
       </div>
       {/* Dashboard Ad - only when enough content is available and user is non-premium */}
-      {!isPremium && (
-        <div className="mt-6">
-          <AdGateClient
-            adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
-            format="auto"
-            className="w-full"
-            contentItemCount={dashboardContentCount}
-            minItems={3}
-          />
-        </div>
-      )}
     </div>
   );
 }

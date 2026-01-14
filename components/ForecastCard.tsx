@@ -203,7 +203,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
 
   if (insufficientData || !forecast || forecastLoading) {
     return (
-      <div className={`bg-gray-900 rounded-lg shadow p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-400`}>
+      <div className={`bg-gray-900 rounded-lg shadow p-6 overflow-hidden ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-400`}>
         <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
           <h3 className={`text-lg font-semibold text-gray-100 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
             {displayTitle}
@@ -284,7 +284,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
   };
 
   return (
-    <div className={`bg-gray-900 rounded-lg shadow p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} ${directionColors[forecast.direction]}`}>
+    <div className={`bg-gray-900 rounded-lg shadow p-6 overflow-hidden ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} ${directionColors[forecast.direction]}`}>
       <div className={`flex items-center justify-between mb-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
         <h3 className={`text-lg font-semibold text-gray-800 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
           {displayTitle}

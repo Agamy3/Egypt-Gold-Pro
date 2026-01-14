@@ -10,6 +10,7 @@ import LanguageToggle from '@/components/LanguageToggle';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import AccountMenu from '@/components/AccountMenu';
 import Footer from '@/components/Footer';
+import AdGateClient from '@/components/ads/AdGateClient';
 import { useLang } from '@/components/LanguageProvider';
 import { t } from '@/lib/i18n';
 import { useSearchParams } from 'next/navigation';
@@ -241,6 +242,17 @@ function HomeContent() {
                 />
               </div>
             )}
+            {/* Dashboard Ad - far down the page, only once we have a full snapshot */}
+            <div className="mt-6 sm:mt-8 lg:mt-10">
+              <AdGateClient
+                adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
+                format="auto"
+                className="w-full"
+                // Snapshot + dashboard cards + calculator + forecast = rich content
+                hasMeaningfulContent={Boolean(snapshot)}
+                requireScroll
+              />
+            </div>
           </>
         )}
       </main>

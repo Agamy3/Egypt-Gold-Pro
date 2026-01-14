@@ -34,6 +34,15 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(limit);
 
+    // Get last ingestion timestamp (per-country) if available
+    const { data: lastIngestedRow } = await supabase
+      .from('news_items')
+      .select('created_at')
+      .eq('country', country)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     if (error) {
       console.error('[API /news] Error:', error);
       return NextResponse.json(
@@ -45,6 +54,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       items: data || [],
+      last_ingested_at: lastIngestedRow?.created_at ?? null,
     });
   } catch (error: any) {
     console.error('[API /news] Error:', error);

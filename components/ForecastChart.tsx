@@ -69,7 +69,7 @@ export default function ForecastChart({ minutes = 120 }: ForecastChartProps) {
 
   if (loading) {
     return (
-      <div className="h-64 flex items-center justify-center text-gray-500 text-sm">
+      <div className="w-full h-[280px] md:h-[340px] lg:h-[420px] flex items-center justify-center text-gray-500 text-sm overflow-hidden">
         Loading chart data...
       </div>
     );
@@ -77,8 +77,8 @@ export default function ForecastChart({ minutes = 120 }: ForecastChartProps) {
 
   if (error || !seriesData || seriesData.points.length === 0) {
     return (
-      <div className="h-64 flex items-center justify-center text-gray-500 text-sm">
-        Insufficient data for graph
+      <div className="w-full h-[280px] md:h-[340px] lg:h-[420px] flex flex-col items-center justify-center text-gray-500 text-sm overflow-hidden">
+        <span>Insufficient data for graph</span>
         {error && <div className="text-xs text-red-500 mt-1">{error}</div>}
       </div>
     );
@@ -99,7 +99,7 @@ export default function ForecastChart({ minutes = 120 }: ForecastChartProps) {
 
   if (validChartData.length === 0) {
     return (
-      <div className="h-64 flex items-center justify-center text-gray-500 text-sm">
+      <div className="w-full h-[280px] md:h-[340px] lg:h-[420px] flex items-center justify-center text-gray-500 text-sm overflow-hidden">
         Insufficient data for graph (no global ounce data available)
       </div>
     );
@@ -114,8 +114,8 @@ export default function ForecastChart({ minutes = 120 }: ForecastChartProps) {
   const maxPrice = allOuncePrices.length > 0 ? Math.max(...allOuncePrices) * 1.005 : 5000;
 
   return (
-    <div className="mt-4">
-      <ResponsiveContainer width="100%" height={200}>
+    <div className="mt-4 w-full h-[280px] md:h-[340px] lg:h-[420px] overflow-hidden">
+      <ResponsiveContainer width="100%" height="100%">
         <LineChart data={validChartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis
