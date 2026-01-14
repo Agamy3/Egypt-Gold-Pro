@@ -118,6 +118,19 @@ export default function ForecastMiniChart({
     }
   }, []); // Empty deps - only run on mount/unmount
 
+  // Measure once before paint to avoid the initial "small/letterboxed" render.
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.height > 100) {
+      setContainerHeight(rect.height);
+      heightRef.current = rect.height;
+    }
+    if (rect.width > 100) {
+      setContainerWidth(rect.width);
+    }
+  }, []);
+
   // Recalculate height when points change (after data loads)
   useEffect(() => {
     if (!loading && points && points.length > 0) {
@@ -257,11 +270,16 @@ export default function ForecastMiniChart({
   // Downsample points if too many (for monthly/yoy ranges)
   let displayPoints = validPoints;
   if (validPoints.length > 120) {
-    const step = validPoints.length / 120;
     displayPoints = [];
-    for (let i = 0; i < 120; i++) {
-      const idx = Math.floor(i * step);
-      displayPoints.push(validPoints[idx]);
+    const maxPoints = 120;
+    const lastIdx = validPoints.length - 1;
+    const seen = new Set<number>();
+    for (let i = 0; i < maxPoints; i++) {
+      const idx = Math.round((i * lastIdx) / (maxPoints - 1)); // guarantees 0 and lastIdx
+      if (!seen.has(idx)) {
+        seen.add(idx);
+        displayPoints.push(validPoints[idx]);
+      }
     }
   }
 
@@ -280,8 +298,10 @@ export default function ForecastMiniChart({
           ? 30 * 24 * 60 * 60 * 1000
           : 365 * 24 * 60 * 60 * 1000; // yoy
 
-  const dataMin = displayPoints[0].t;
-  const dataMax = displayPoints[displayPoints.length - 1].t;
+  // IMPORTANT: domain must be computed from full data, not downsampled displayPoints,
+  // otherwise we can "lose" the real last point and make it look like data didn't load.
+  const dataMin = validPoints[0].t;
+  const dataMax = validPoints[validPoints.length - 1].t;
 
   const domainEnd = range === 'daily' ? nowMs : dataMax;
   const domainStart = Math.max(domainEnd - rangeWindowMs, dataMin);
