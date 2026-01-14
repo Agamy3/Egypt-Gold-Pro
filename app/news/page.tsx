@@ -1,0 +1,244 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import AccountMenu from '@/components/AccountMenu';
+import Footer from '@/components/Footer';
+import CountryCurrencySelector from '@/components/CountryCurrencySelector';
+import LanguageToggle from '@/components/LanguageToggle';
+import { useLang } from '@/components/LanguageProvider';
+
+interface PublicNewsItem {
+  id: number;
+  title: string;
+  url: string;
+  source: string | null;
+  published_at: string | null;
+  image_url: string | null;
+  country: string | null;
+}
+
+interface PremiumNewsItem extends PublicNewsItem {
+  summary: string | null;
+  tags: string[];
+  whyItMatters: string[];
+  contextTags: string[];
+}
+
+export default function NewsPage() {
+  const { lang } = useLang();
+  const [country, setCountry] = useState<'EG' | 'AE' | 'SA' | 'US' | 'GLOBAL'>('EG');
+  const [isPremium, setIsPremium] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [publicItems, setPublicItems] = useState<PublicNewsItem[]>([]);
+  const [premiumItemsByUrl, setPremiumItemsByUrl] = useState<Record<string, PremiumNewsItem>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Detect premium status via existing endpoint that uses getUserStatus server-side
+    fetch('/api/user/premium-status')
+      .then((res) => res.json())
+      .then((data) => {
+        setIsPremium(Boolean(data.status?.isPremium));
+      })
+      .catch(() => setIsPremium(false));
+  }, []);
+
+  useEffect(() => {
+    const fetchNews = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const publicRes = await fetch(`/api/news?country=${country}&limit=20`);
+        const publicData = await publicRes.json();
+        if (!publicRes.ok || !publicData.ok) {
+          throw new Error(publicData.error || 'Failed to load news');
+        }
+
+        setPublicItems(publicData.items || []);
+
+        if (isPremium) {
+          const premiumRes = await fetch(`/api/news/premium?country=${country}&limit=20`);
+          const premiumData = await premiumRes.json();
+
+          if (premiumRes.ok && premiumData.ok) {
+            const byUrl: Record<string, PremiumNewsItem> = {};
+            (premiumData.items || []).forEach((item: PremiumNewsItem) => {
+              if (item.url) {
+                byUrl[item.url] = item;
+              }
+            });
+            setPremiumItemsByUrl(byUrl);
+          } else if (premiumRes.status === 403) {
+            setPremiumItemsByUrl({});
+          }
+        } else {
+          setPremiumItemsByUrl({});
+        }
+      } catch (err: any) {
+        setError(err.message || 'Failed to load news');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchNews();
+  }, [country, isPremium]);
+
+  const formatTimeAgo = (iso: string | null): string => {
+    if (!iso) return '';
+    const date = new Date(iso);
+    const diffMs = Date.now() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `${diffMins} min ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} d ago`;
+  };
+
+  const pageTitle = lang === 'ar' ? 'أخبار الذهب' : 'Gold News';
+
+  return (
+    <div className="min-h-screen bg-black flex flex-col">
+      <header className="bg-gray-900 shadow-sm border-b border-gray-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 justify-between">
+            <Link href="/" className="flex items-center gap-3 flex-1 min-w-0">
+              <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gold-400 truncate">
+                {pageTitle}
+              </span>
+              {!isPremium && (
+                <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-gold-900 text-gold-300 border border-gold-500">
+                  {lang === 'ar' ? 'محتوى مميز متاح' : 'Premium context available'}
+                </span>
+              )}
+            </Link>
+            <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
+              <CountryCurrencySelector />
+              <LanguageToggle />
+              <AccountMenu />
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-10 flex-1 w-full">
+        {error && (
+          <div className="mb-4 bg-red-900/60 border border-red-700 text-red-100 px-4 py-3 rounded text-sm">
+            {error}
+          </div>
+        )}
+
+        {loading && !publicItems.length ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gold-600 mx-auto mb-4" />
+              <p className="text-gray-400 text-sm">{lang === 'ar' ? 'جاري تحميل الأخبار...' : 'Loading news...'}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {publicItems.map((item) => {
+              const premium = item.url ? premiumItemsByUrl[item.url] : undefined;
+
+              return (
+                <article
+                  key={item.id}
+                  className="bg-gray-900 rounded-lg border border-gray-800 p-4 sm:p-5 shadow-sm"
+                >
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    {item.image_url && (
+                      <div className="w-full sm:w-32 h-24 bg-gray-800 rounded overflow-hidden flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-3 mb-1">
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-base sm:text-lg font-semibold text-gray-100 hover:text-gold-400 line-clamp-2"
+                        >
+                          {item.title}
+                        </a>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400 mb-3">
+                        {item.source && <span>{item.source}</span>}
+                        {item.published_at && (
+                          <span className="text-gray-500">{formatTimeAgo(item.published_at)}</span>
+                        )}
+                        {item.country && (
+                          <span className="px-2 py-0.5 rounded border border-gray-700 text-gray-300">
+                            {item.country}
+                          </span>
+                        )}
+                      </div>
+
+                      {premium ? (
+                        <div className="mt-2 space-y-2">
+                          {premium.summary && (
+                            <p className="text-sm text-gray-300 line-clamp-3">{premium.summary}</p>
+                          )}
+                          {premium.whyItMatters.length > 0 && (
+                            <div className="mt-2">
+                              <h3 className="text-xs font-semibold text-gray-400 mb-1">
+                                {lang === 'ar' ? 'لماذا يهم هذا:' : 'Why this matters:'}
+                              </h3>
+                              <ul className="list-disc list-inside space-y-1 text-xs text-gray-300">
+                                {premium.whyItMatters.map((b, idx) => (
+                                  <li key={idx}>{b}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {(premium.tags.length > 0 || premium.contextTags.length > 0) && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {[...premium.tags, ...premium.contextTags].map((tag, idx) => (
+                                <span
+                                  key={idx}
+                                  className="px-2 py-0.5 rounded-full bg-gray-800 text-[10px] text-gray-300 border border-gray-700"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-2 bg-gray-800/60 border border-dashed border-gray-700 rounded-md p-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-400 text-sm">🔒</span>
+                            <p className="text-xs text-gray-300">
+                              {lang === 'ar'
+                                ? 'افتح السياق والعوامل الرئيسية وراء العنوان مع العضوية المميزة.'
+                                : 'Unlock context & key drivers behind the headline with Premium.'}
+                            </p>
+                          </div>
+                          <Link
+                            href="/premium"
+                            className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-white text-xs rounded-md font-semibold whitespace-nowrap"
+                          >
+                            {lang === 'ar' ? 'ترقية' : 'Upgrade'}
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+
+            {publicItems.length === 0 && !loading && !error && (
+              <p className="text-center text-gray-500 text-sm">
+                {lang === 'ar' ? 'لا توجد عناوين حديثة حالياً. يرجى التحقق لاحقاً.' : 'No recent headlines yet. Check back soon.'}
+              </p>
+            )}
+          </div>
+        )}
+      </main>
+
+      <Footer />
+    </div>
+  );
+}

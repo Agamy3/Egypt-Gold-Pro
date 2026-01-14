@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createServerSupabaseClient();
     const { data, error } = await supabase
       .from('news_items')
-      .select('id, title, url, source, published_at, summary, image_url, tags, created_at')
+      .select('id, title, url, source, published_at, image_url, country, created_at')
       .eq('country', country)
       .order('published_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
