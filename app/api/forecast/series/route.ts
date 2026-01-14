@@ -13,6 +13,9 @@ import { getCountryCurrency } from '@/lib/fx-multi';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+// Bump this when changing behavior so production can be verified via curl.
+const API_VERSION = '2026-01-14T23:18Z';
+
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
   const url = new URL(request.url);
@@ -120,6 +123,7 @@ export async function GET(request: Request) {
     let points: Array<{ t: number; v: number }> = [];
     let fallbackUsed = false;
     let fallbackSource: string | null = null;
+    let lastDataAtMs: number | null = null;
     
     if (scope === 'global') {
       // Global scope: return global ounce price series
@@ -218,6 +222,7 @@ export async function GET(request: Request) {
         }
         
         originalPointsCount = points.length;
+        lastDataAtMs = points.length > 0 ? points[points.length - 1].t : null;
         
         // Check staleness for EG local: if latest point is > 6 hours old, use fallback
         if (country === 'EG' && points.length > 0) {
@@ -280,6 +285,7 @@ export async function GET(request: Request) {
                   points = fallbackPoints;
                   fallbackUsed = true;
                   fallbackSource = 'aggregated';
+                  lastDataAtMs = points.length > 0 ? points[points.length - 1].t : lastDataAtMs;
                   console.log('[Forecast Series] Using aggregated fallback for EG:', fallbackPoints.length, 'points');
                 }
               }
@@ -311,6 +317,7 @@ export async function GET(request: Request) {
                     points = fallbackPoints.sort((a, b) => a.t - b.t);
                     fallbackUsed = true;
                     fallbackSource = 'global_spot_egp_estimate';
+                    lastDataAtMs = points.length > 0 ? points[points.length - 1].t : lastDataAtMs;
                     console.log('[Forecast Series] Using GLOBAL spot + EGP estimate fallback for EG:', fallbackPoints.length, 'points');
                   }
                 }
@@ -357,6 +364,7 @@ export async function GET(request: Request) {
                   points = fallbackPoints;
                   fallbackUsed = true;
                   fallbackSource = 'global_spot_egp_estimate_history';
+                  lastDataAtMs = points.length > 0 ? points[points.length - 1].t : lastDataAtMs;
                   console.log('[Forecast Series] Using EG monthly history fallback:', {
                     originalPointsCount,
                     windowDays: Math.round(windowMs / (24 * 60 * 60 * 1000)),
@@ -367,6 +375,26 @@ export async function GET(request: Request) {
             } catch (error) {
               console.error('[Forecast Series] Failed EG history fallback:', error);
             }
+          }
+        }
+
+        // Ensure the returned series covers the requested window (avoid empty tails/heads in charts).
+        // We ONLY do this for EG local, to match the desired UX behavior:
+        // - daily: last 24h ending at "now"
+        // - weekly/monthly/yoy: last N days ending at "now"
+        // We keep the true last observed data time in meta.lastDataAt.
+        if (country === 'EG' && scope === 'local' && points.length > 0) {
+          points.sort((a, b) => a.t - b.t);
+          const first = points[0];
+          const last = points[points.length - 1];
+
+          // Carry-back to windowStart if needed
+          if (first.t > windowStart) {
+            points = [{ t: windowStart, v: first.v }, ...points];
+          }
+          // Carry-forward to now if needed
+          if (last.t < now) {
+            points = [...points, { t: now, v: last.v }];
           }
         }
         
@@ -421,10 +449,10 @@ export async function GET(request: Request) {
     // Determine range label
     const rangeLabel = rangeParam || 'custom';
 
-    // Calculate lastPointAt (ISO timestamp of the latest point, or null if no points)
-    const lastPointAt = points.length > 0 
-      ? new Date(points[points.length - 1].t).toISOString()
-      : null;
+    // Calculate lastPointAt (ISO timestamp of the latest point we are returning),
+    // and lastDataAt (ISO timestamp of the latest *observed* data point, before carry-forward).
+    const lastPointAt = points.length > 0 ? new Date(points[points.length - 1].t).toISOString() : null;
+    const lastDataAt = lastDataAtMs !== null ? new Date(lastDataAtMs).toISOString() : null;
 
     // Server timestamp (when this response was generated)
     const serverAsOf = new Date().toISOString();
@@ -438,12 +466,14 @@ export async function GET(request: Request) {
       timestamp: Date.now(),
       points,
       meta: {
+        apiVersion: API_VERSION,
         scope,
         range: rangeLabel,
         unit,
         country,
         serverAsOf,
         lastPointAt,
+        lastDataAt,
         pointsCount: points.length,
         source,
         fallbackUsed: fallbackUsed || false,
@@ -455,6 +485,7 @@ export async function GET(request: Request) {
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
+    response.headers.set('x-egp-forecast-series-version', API_VERSION);
 
     return response;
   } catch (error) {
