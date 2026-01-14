@@ -227,27 +227,35 @@ export async function GET(request: Request) {
           if (hoursSinceLatest > 6) {
             console.warn(`[Forecast Series] EG local data is stale (${hoursSinceLatest.toFixed(1)} hours old). Attempting fallback...`);
             
-            // Fallback 1: Try to get EG market median (aggregated source with recent data)
+            // Fallback 1: Try to get EG market median (aggregated source) across the requested window
             const { data: fallbackData, error: fallbackError } = await supabase
               .from('market_snapshots_norm')
               .select('karat, price, created_at, source')
               .eq('country', 'EG')
               .eq('source', 'aggregated')
-              .gte('created_at', new Date(now - 24 * 60 * 60 * 1000).toISOString()) // Last 24 hours
+              .gte('created_at', new Date(windowStart).toISOString())
               .eq('karat', 24)
-              .order('created_at', { ascending: false })
-              .limit(100);
+              .order('created_at', { ascending: true })
+              .range(0, 4999);
             
             if (!fallbackError && fallbackData && fallbackData.length > 0) {
-              // Use aggregated source data
+              // Use aggregated source data (bucket more coarsely for long ranges to preserve window coverage)
               const fallbackBuckets = new Map<number, number[]>();
+              const bucketMs =
+                rangeParam === 'daily'
+                  ? 60_000
+                  : rangeParam === 'weekly'
+                    ? 10 * 60_000
+                    : rangeParam === 'monthly'
+                      ? 60 * 60_000
+                      : 6 * 60 * 60_000;
               for (const row of fallbackData) {
                 const price = Number(row.price);
                 if (isFinite(price) && price > 0) {
                   const createdAt = typeof row.created_at === 'string' 
                     ? new Date(row.created_at).getTime()
                     : (typeof row.created_at === 'number' ? row.created_at : 0);
-                  const bucketKey = Math.floor(createdAt / 10000) * 10000;
+                  const bucketKey = Math.floor(createdAt / bucketMs) * bucketMs;
                   
                   if (!fallbackBuckets.has(bucketKey)) {
                     fallbackBuckets.set(bucketKey, []);
