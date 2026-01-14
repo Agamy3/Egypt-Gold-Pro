@@ -6,6 +6,7 @@ import Footer from '@/components/Footer';
 import { useLang } from '@/components/LanguageProvider';
 import AdGateClient from '@/components/ads/AdGateClient';
 import Header from '@/components/layout/Header';
+import { htmlToText } from '@/lib/html-text-converter';
 
 interface PublicNewsItem {
   id: number;
@@ -105,11 +106,15 @@ export default function NewsPage() {
     const date = new Date(iso);
     const diffMs = Date.now() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffMins < 60) {
+      return lang === 'ar' ? `منذ ${diffMins} دقيقة` : `${diffMins} min ago`;
+    }
     const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours} h ago`;
+    if (diffHours < 24) {
+      return lang === 'ar' ? `منذ ${diffHours} ساعة` : `${diffHours} h ago`;
+    }
     const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays} d ago`;
+    return lang === 'ar' ? `منذ ${diffDays} يوم` : `${diffDays} d ago`;
   };
 
   const pageTitle = lang === 'ar' ? 'أخبار الذهب' : 'Gold News';
@@ -176,7 +181,7 @@ export default function NewsPage() {
                         {premium ? (
                           <div className="mt-2 space-y-2">
                             {premium.summary && (
-                              <p className="text-sm text-gray-300 line-clamp-3">{premium.summary}</p>
+                              <p className="text-sm text-gray-300 line-clamp-3">{htmlToText(premium.summary)}</p>
                             )}
                             {premium.whyItMatters.length > 0 && (
                               <div className="mt-2">

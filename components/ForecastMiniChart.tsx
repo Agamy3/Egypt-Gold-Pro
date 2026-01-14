@@ -166,9 +166,11 @@ export default function ForecastMiniChart({
   // Chart dimensions
   // Match SVG viewBox aspect ratio to the container to avoid letterboxing (which looks "small"),
   // while using preserveAspectRatio="xMidYMid meet" to avoid stretching.
+  // Use containerWidth directly to keep viewBox aspect aligned with the real container.
+  // Avoid a large minimum (like 720) which can re-introduce letterboxing on narrow layouts.
   const width =
     containerWidth > 0 && chartHeight > 0
-      ? Math.max(720, Math.round((containerWidth / chartHeight) * chartHeight))
+      ? Math.max(320, Math.round(containerWidth))
       : 800;
   const w = width - padLeft - padRight;
   const h = chartHeight - padTop - padBottom;
@@ -375,32 +377,19 @@ export default function ForecastMiniChart({
     maxXTickCount = w < 520 ? 3 : 4;
   }
   
+  // Generate X ticks from the *domain* (not from data points) so we never "lose" the end date
+  // due to downsampling / sparse data.
   const xTickCandidates: Array<{ point: ChartPoint; index: number; x: number; label: string }> = [];
-  
-  // Generate candidate ticks evenly distributed (from data points),
-  // then we will force domain start/end labels below.
-  const candidateIndices: number[] = [];
-  if (displayPoints.length <= maxXTickCount) {
-    // If we have fewer points than max ticks, use all points
-    for (let i = 0; i < displayPoints.length; i++) {
-      candidateIndices.push(i);
-    }
-  } else {
-    // Distribute ticks evenly
-    for (let i = 0; i < maxXTickCount; i++) {
-      const idx = Math.floor((i / (maxXTickCount - 1)) * (displayPoints.length - 1));
-      candidateIndices.push(idx);
-    }
-  }
-  
-  // Create candidates with their positions
-  for (const idx of candidateIndices) {
-    if (idx >= 0 && idx < displayPoints.length) {
-      const point = displayPoints[idx];
-      const x = scaleX(point.t);
-      const label = formatTime(point.t);
-      xTickCandidates.push({ point, index: idx, x, label });
-    }
+  const tickCount = Math.max(2, maxXTickCount);
+  for (let i = 0; i < tickCount; i++) {
+    const t = timeMin + (timeRange * i) / (tickCount - 1);
+    const x = scaleX(t);
+    xTickCandidates.push({
+      point: { t, v: 0 },
+      index: i,
+      x,
+      label: formatTime(t),
+    });
   }
   
   // Filter ticks to avoid overlap
