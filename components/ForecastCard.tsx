@@ -115,7 +115,9 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
   const [serverAsOf, setServerAsOf] = useState<string | null>(null);
   const [lastPointAt, setLastPointAt] = useState<string | null>(null);
   const [latestPoint, setLatestPoint] = useState<{ value: number; time: number } | null>(null);
-  const [debugMeta, setDebugMeta] = useState<{ serverAsOf?: string; lastPointAt?: string; pointsCount?: number; source?: string } | null>(null);
+  const [fallbackUsed, setFallbackUsed] = useState<boolean>(false);
+  const [fallbackSource, setFallbackSource] = useState<string | null>(null);
+  const [debugMeta, setDebugMeta] = useState<{ serverAsOf?: string; lastPointAt?: string; pointsCount?: number; source?: string; fallbackUsed?: boolean; fallbackSource?: string | null } | null>(null);
 
   // Fetch series data when dropdowns change
   useEffect(() => {
@@ -162,6 +164,8 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
         if (data.meta) {
           setServerAsOf(data.meta.serverAsOf || null);
           setLastPointAt(data.meta.lastPointAt || null);
+          setFallbackUsed(data.meta.fallbackUsed || false);
+          setFallbackSource(data.meta.fallbackSource || null);
           
           // Store debug meta (dev-only will be checked in render)
           if (process.env.NODE_ENV !== 'production') {
@@ -170,6 +174,8 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
               lastPointAt: data.meta.lastPointAt,
               pointsCount: data.meta.pointsCount,
               source: data.meta.source,
+              fallbackUsed: data.meta.fallbackUsed,
+              fallbackSource: data.meta.fallbackSource,
             });
           }
         }
@@ -337,6 +343,28 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
                 />
                 {/* Latest point and update timestamp - using API meta timestamps */}
                 <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-1 text-xs text-gray-400 bg-black/60 px-2 py-1 rounded">
+                  {/* Staleness badge */}
+                  {lastPointAt && (() => {
+                    const lastPointTime = new Date(lastPointAt).getTime();
+                    const hoursSinceLatest = (Date.now() - lastPointTime) / (1000 * 60 * 60);
+                    const isStale = hoursSinceLatest > 6;
+                    
+                    if (isStale) {
+                      return (
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="px-2 py-0.5 rounded bg-yellow-900/60 text-yellow-300 text-[10px] font-medium">
+                            {lang === 'ar' ? 'تأخر البيانات' : 'Data delayed'}
+                          </span>
+                          {fallbackUsed && fallbackSource && (
+                            <span className="text-[10px] text-gray-500">
+                              {lang === 'ar' ? 'مصدر بديل:' : 'Fallback:'} {fallbackSource === 'aggregated' ? (lang === 'ar' ? 'متوسط' : 'Median') : (lang === 'ar' ? 'تقدير عالمي' : 'Global estimate')}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   {latestPoint && (
                     <div className="flex items-center justify-between">
                       <span>
@@ -373,6 +401,12 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
                       <div>lastPointAt: {debugMeta.lastPointAt || 'null'}</div>
                       <div>pointsCount: {debugMeta.pointsCount}</div>
                       <div>source: {debugMeta.source}</div>
+                      {debugMeta.fallbackUsed !== undefined && (
+                        <>
+                          <div>fallbackUsed: {String(debugMeta.fallbackUsed)}</div>
+                          <div>fallbackSource: {debugMeta.fallbackSource || 'null'}</div>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -492,6 +526,28 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
           />
           {/* Latest point and update timestamp - using API meta timestamps */}
           <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-1 text-xs text-gray-400 bg-black/60 px-2 py-1 rounded">
+            {/* Staleness badge */}
+            {lastPointAt && (() => {
+              const lastPointTime = new Date(lastPointAt).getTime();
+              const hoursSinceLatest = (Date.now() - lastPointTime) / (1000 * 60 * 60);
+              const isStale = hoursSinceLatest > 6;
+              
+              if (isStale) {
+                return (
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="px-2 py-0.5 rounded bg-yellow-900/60 text-yellow-300 text-[10px] font-medium">
+                      {lang === 'ar' ? 'تأخر البيانات' : 'Data delayed'}
+                    </span>
+                    {fallbackUsed && fallbackSource && (
+                      <span className="text-[10px] text-gray-500">
+                        {lang === 'ar' ? 'مصدر بديل:' : 'Fallback:'} {fallbackSource === 'aggregated' ? (lang === 'ar' ? 'متوسط' : 'Median') : (lang === 'ar' ? 'تقدير عالمي' : 'Global estimate')}
+                      </span>
+                    )}
+                  </div>
+                );
+              }
+              return null;
+            })()}
             {latestPoint && (
               <div className="flex items-center justify-between">
                 <span>
@@ -528,6 +584,12 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
                 <div>lastPointAt: {debugMeta.lastPointAt || 'null'}</div>
                 <div>pointsCount: {debugMeta.pointsCount}</div>
                 <div>source: {debugMeta.source}</div>
+                {debugMeta.fallbackUsed !== undefined && (
+                  <>
+                    <div>fallbackUsed: {String(debugMeta.fallbackUsed)}</div>
+                    <div>fallbackSource: {debugMeta.fallbackSource || 'null'}</div>
+                  </>
+                )}
               </div>
             )}
           </div>

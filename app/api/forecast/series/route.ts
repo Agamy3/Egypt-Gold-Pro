@@ -118,6 +118,8 @@ export async function GET(request: Request) {
 
     // Build series points based on scope
     let points: Array<{ t: number; v: number }> = [];
+    let fallbackUsed = false;
+    let fallbackSource: string | null = null;
     
     if (scope === 'global') {
       // Global scope: return global ounce price series
@@ -133,6 +135,8 @@ export async function GET(request: Request) {
       // Local scope: return local market buy price series using normalized schema
       // Query market_snapshots_norm directly with country filter
       const supabase = getServerClient();
+      let originalPointsCount = 0;
+      
       if (!supabase) {
         console.error('[Forecast Series] Database client unavailable');
         points = [];
@@ -213,7 +217,103 @@ export async function GET(request: Request) {
           }
         }
         
-        console.log('[Forecast Series] Local market data for country', country, ':', points.length, 'points');
+        originalPointsCount = points.length;
+        
+        // Check staleness for EG local: if latest point is > 6 hours old, use fallback
+        if (country === 'EG' && points.length > 0) {
+          const latestPointTime = points[points.length - 1].t;
+          const hoursSinceLatest = (now - latestPointTime) / (1000 * 60 * 60);
+          
+          if (hoursSinceLatest > 6) {
+            console.warn(`[Forecast Series] EG local data is stale (${hoursSinceLatest.toFixed(1)} hours old). Attempting fallback...`);
+            
+            // Fallback 1: Try to get EG market median (aggregated source with recent data)
+            const { data: fallbackData, error: fallbackError } = await supabase
+              .from('market_snapshots_norm')
+              .select('karat, price, created_at, source')
+              .eq('country', 'EG')
+              .eq('source', 'aggregated')
+              .gte('created_at', new Date(now - 24 * 60 * 60 * 1000).toISOString()) // Last 24 hours
+              .eq('karat', 24)
+              .order('created_at', { ascending: false })
+              .limit(100);
+            
+            if (!fallbackError && fallbackData && fallbackData.length > 0) {
+              // Use aggregated source data
+              const fallbackBuckets = new Map<number, number[]>();
+              for (const row of fallbackData) {
+                const price = Number(row.price);
+                if (isFinite(price) && price > 0) {
+                  const createdAt = typeof row.created_at === 'string' 
+                    ? new Date(row.created_at).getTime()
+                    : (typeof row.created_at === 'number' ? row.created_at : 0);
+                  const bucketKey = Math.floor(createdAt / 10000) * 10000;
+                  
+                  if (!fallbackBuckets.has(bucketKey)) {
+                    fallbackBuckets.set(bucketKey, []);
+                  }
+                  fallbackBuckets.get(bucketKey)!.push(price);
+                }
+              }
+              
+              const fallbackPoints = Array.from(fallbackBuckets.entries())
+                .map(([t, prices]) => ({
+                  t,
+                  v: prices.reduce((sum, p) => sum + p, 0) / prices.length,
+                }))
+                .sort((a, b) => a.t - b.t);
+              
+              if (fallbackPoints.length > 0) {
+                const fallbackLatestTime = fallbackPoints[fallbackPoints.length - 1].t;
+                const fallbackHoursSince = (now - fallbackLatestTime) / (1000 * 60 * 60);
+                
+                // Only use fallback if it's fresher than original
+                if (fallbackHoursSince < hoursSinceLatest) {
+                  points = fallbackPoints;
+                  fallbackUsed = true;
+                  fallbackSource = 'aggregated';
+                  console.log('[Forecast Series] Using aggregated fallback for EG:', fallbackPoints.length, 'points');
+                }
+              }
+            }
+            
+            // Fallback 2: If aggregated also stale, use GLOBAL spot + USD/EGP estimate
+            if (!fallbackUsed && goldSpotHistory.length > 0) {
+              try {
+                const { getUsdEgpRate } = await import('@/lib/fx');
+                const fxResult = await getUsdEgpRate();
+                const egpRate = fxResult.rate;
+                
+                if (egpRate && egpRate > 0) {
+                  // Convert global spot to EGP using FX rate
+                  const fallbackPoints: Array<{ t: number; v: number }> = [];
+                  for (const spot of goldSpotHistory) {
+                    // Convert XAU/USD to EGP per gram (24k)
+                    // 1 oz = 31.1035 grams
+                    const pricePerGramUsd = spot.xau_spot_usd_oz / 31.1035;
+                    const pricePerGramEgp = pricePerGramUsd * egpRate;
+                    // 24k price in EGP
+                    fallbackPoints.push({
+                      t: spot.fetched_at,
+                      v: pricePerGramEgp,
+                    });
+                  }
+                  
+                  if (fallbackPoints.length > 0) {
+                    points = fallbackPoints.sort((a, b) => a.t - b.t);
+                    fallbackUsed = true;
+                    fallbackSource = 'global_spot_egp_estimate';
+                    console.log('[Forecast Series] Using GLOBAL spot + EGP estimate fallback for EG:', fallbackPoints.length, 'points');
+                  }
+                }
+              } catch (fxError) {
+                console.error('[Forecast Series] Failed to get FX rate for fallback:', fxError);
+              }
+            }
+          }
+        }
+        
+        console.log('[Forecast Series] Local market data for country', country, ':', points.length, 'points', fallbackUsed ? `(fallback: ${fallbackSource})` : '');
       }
     }
 
@@ -289,6 +389,8 @@ export async function GET(request: Request) {
         lastPointAt,
         pointsCount: points.length,
         source,
+        fallbackUsed: fallbackUsed || false,
+        fallbackSource: fallbackSource || null,
       },
     });
 
