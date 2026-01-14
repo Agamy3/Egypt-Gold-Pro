@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useLang } from '@/components/LanguageProvider';
@@ -22,22 +21,26 @@ export default function Sidebar() {
   const { lang } = useLang();
   const [collapsed, setCollapsed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [logoError, setLogoError] = useState(false);
 
-  // Load collapsed state from localStorage on mount
+  // Load collapsed state from localStorage on mount and listen for changes
   useEffect(() => {
-    const saved = localStorage.getItem('sidebarCollapsed');
-    if (saved === '1') {
-      setCollapsed(true);
-    }
+    const updateCollapsed = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setCollapsed(saved === '1');
+    };
+
+    // Initial load
+    updateCollapsed();
+
+    // Listen for changes from Header button
+    window.addEventListener('sidebarToggle', updateCollapsed);
+    window.addEventListener('storage', updateCollapsed);
+
+    return () => {
+      window.removeEventListener('sidebarToggle', updateCollapsed);
+      window.removeEventListener('storage', updateCollapsed);
+    };
   }, []);
-
-  // Persist collapsed state to localStorage and dispatch event
-  useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
-    // Dispatch custom event for header sync
-    window.dispatchEvent(new Event('sidebarToggle'));
-  }, [collapsed]);
 
   useEffect(() => {
     // Check admin status for admin links
@@ -113,55 +116,6 @@ export default function Sidebar() {
       )}
     >
       <div className="flex-1 flex flex-col py-4">
-        <div className="flex items-center justify-between px-4 mb-4">
-          {collapsed ? (
-            <div className="relative w-8 h-8 flex-shrink-0 flex items-center justify-center">
-              {logoError ? (
-                <span className="text-gold-400 font-bold text-sm">EGP</span>
-              ) : (
-                <Image
-                  src="/brand/logo.png"
-                  alt="EgyptGold Pro"
-                  fill
-                  className="object-contain"
-                  priority
-                  sizes="32px"
-                  onError={() => setLogoError(true)}
-                />
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <div className="relative w-8 h-8 flex-shrink-0 flex items-center justify-center">
-                {logoError ? (
-                  <span className="text-gold-400 font-bold text-sm">EGP</span>
-                ) : (
-                  <Image
-                    src="/brand/logo.png"
-                    alt="EgyptGold Pro"
-                    fill
-                    className="object-contain"
-                    priority
-                    sizes="32px"
-                    onError={() => setLogoError(true)}
-                  />
-                )}
-              </div>
-              <span className="text-sm font-semibold text-gold-400 truncate">
-                {lang === 'ar' ? 'EgyptGold Pro' : 'EgyptGold Pro'}
-              </span>
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => setCollapsed((prev) => !prev)}
-            className="p-1 rounded-md hover:bg-gray-900 text-gray-400 transition-colors"
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? (lang === 'ar' ? 'توسيع القائمة' : 'Expand sidebar') : (lang === 'ar' ? 'طي القائمة' : 'Collapse sidebar')}
-          >
-            {collapsed ? '›' : '‹'}
-          </button>
-        </div>
         <nav className="flex-1 px-2 space-y-1">
           {allItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
