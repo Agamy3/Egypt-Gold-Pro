@@ -269,27 +269,7 @@ export default function ForecastMiniChart({
   minV -= rangeV * 0.05;
   maxV += rangeV * 0.05;
 
-  // Downsample points if too many (for monthly/yoy ranges)
-  let displayPoints = validPoints;
-  if (validPoints.length > 120) {
-    displayPoints = [];
-    const maxPoints = 120;
-    const lastIdx = validPoints.length - 1;
-    const seen = new Set<number>();
-    for (let i = 0; i < maxPoints; i++) {
-      const idx = Math.round((i * lastIdx) / (maxPoints - 1)); // guarantees 0 and lastIdx
-      if (!seen.has(idx)) {
-        seen.add(idx);
-        displayPoints.push(validPoints[idx]);
-      }
-    }
-  }
-
-  // Calculate X-axis domain (time)
-  // Requirements:
-  // - daily: last 24h anchored to "now"
-  // - weekly/monthly/yoy: show up to latest available point (no empty tail),
-  //   and start at max(windowStart, oldestData) (no empty head).
+  // Determine requested window (ms)
   const nowMs = Date.now();
   const rangeWindowMs =
     range === 'daily'
@@ -300,17 +280,52 @@ export default function ForecastMiniChart({
           ? 30 * 24 * 60 * 60 * 1000
           : 365 * 24 * 60 * 60 * 1000; // yoy
 
-  // IMPORTANT: domain must be computed from full data, not downsampled displayPoints,
-  // otherwise we can "lose" the real last point and make it look like data didn't load.
+  // Domain rules (per your table):
+  // - Daily: last 24h ending at "now"
+  // - Weekly/Monthly/YoY: last N days ending at "today/now" BUT do not show empty graph:
+  //   we will "carry-forward" the last value to the domain end, and "carry-back" the first
+  //   value to the domain start if needed.
   const dataMin = validPoints[0].t;
   const dataMax = validPoints[validPoints.length - 1].t;
 
-  const domainEnd = range === 'daily' ? nowMs : dataMax;
-  const domainStart = Math.max(domainEnd - rangeWindowMs, dataMin);
+  const domainEnd = nowMs;
+  const domainStart = Math.max(nowMs - rangeWindowMs, dataMin);
 
   const timeMin = domainStart;
   const timeMax = domainEnd;
   const timeRange = timeMax - timeMin || 1;
+
+  // Slice points to domain and add carried endpoints so we never render an "empty" tail/head.
+  const inWindow = validPoints.filter((p) => p.t >= timeMin && p.t <= timeMax);
+  let pointsForRender = inWindow.length > 0 ? inWindow : validPoints;
+
+  if (pointsForRender.length > 0) {
+    const first = pointsForRender[0];
+    const last = pointsForRender[pointsForRender.length - 1];
+
+    if (first.t > timeMin) {
+      pointsForRender = [{ t: timeMin, v: first.v }, ...pointsForRender];
+    }
+    if (last.t < timeMax) {
+      pointsForRender = [...pointsForRender, { t: timeMax, v: last.v }];
+    }
+  }
+
+  // Downsample rendered points if too many (keep first+last)
+  let displayPoints = pointsForRender;
+  if (pointsForRender.length > 120) {
+    displayPoints = [];
+    const maxPoints = 120;
+    const lastIdx = pointsForRender.length - 1;
+    const seen = new Set<number>();
+    for (let i = 0; i < maxPoints; i++) {
+      const idx = Math.round((i * lastIdx) / (maxPoints - 1)); // guarantees 0 and lastIdx
+      if (!seen.has(idx)) {
+        seen.add(idx);
+        displayPoints.push(pointsForRender[idx]);
+      }
+    }
+  }
 
   // Scale functions
   const scaleX = (timestamp: number) => {
