@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Footer from '@/components/Footer';
 import { useLang } from '@/components/LanguageProvider';
@@ -25,9 +26,13 @@ interface PremiumNewsItem extends PublicNewsItem {
   contextTags: string[];
 }
 
-export default function NewsPage() {
+function NewsPageContent() {
   const { lang } = useLang();
-  const [country, setCountry] = useState<'EG' | 'AE' | 'SA' | 'US' | 'GLOBAL'>('EG');
+  const searchParams = useSearchParams();
+  const urlCountry = searchParams.get('country') as 'EG' | 'AE' | 'SA' | 'US' | 'GLOBAL' | null;
+  const [country, setCountry] = useState<'EG' | 'AE' | 'SA' | 'US' | 'GLOBAL'>(
+    (urlCountry && ['EG', 'AE', 'SA', 'US', 'GLOBAL'].includes(urlCountry)) ? urlCountry : 'EG'
+  );
   const [isPremium, setIsPremium] = useState(false);
   const [loading, setLoading] = useState(true);
   const [publicItems, setPublicItems] = useState<PublicNewsItem[]>([]);
@@ -35,6 +40,14 @@ export default function NewsPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastIngestedAt, setLastIngestedAt] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // Sync country with URL params
+  useEffect(() => {
+    const urlCountry = searchParams.get('country') as 'EG' | 'AE' | 'SA' | 'US' | 'GLOBAL' | null;
+    if (urlCountry && ['EG', 'AE', 'SA', 'US', 'GLOBAL'].includes(urlCountry)) {
+      setCountry(urlCountry);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     // Detect premium status via existing endpoint that uses getUserStatus server-side
@@ -376,5 +389,17 @@ export default function NewsPage() {
 
       <Footer />
     </div>
+  );
+}
+
+export default function NewsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    }>
+      <NewsPageContent />
+    </Suspense>
   );
 }

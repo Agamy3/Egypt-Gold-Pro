@@ -109,6 +109,12 @@ export default function Sidebar() {
           labelAr: 'طلبات المميز',
           icon: <span>🛠️</span>,
         },
+        {
+          href: '/admin/news',
+          labelEn: 'News Admin',
+          labelAr: 'إدارة الأخبار',
+          icon: <span>📰</span>,
+        },
       ]
     : [];
 
