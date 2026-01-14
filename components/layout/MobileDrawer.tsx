@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useLang } from '@/components/LanguageProvider';
 
@@ -21,6 +22,29 @@ export default function MobileDrawer() {
     // Close drawer on route change
     setOpen(false);
   }, [pathname]);
+
+  // Close drawer on Esc key
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && open) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [open]);
+
+  // Prevent body scroll when drawer is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [open]);
 
   useEffect(() => {
     fetch('/api/user/is-admin')
@@ -66,13 +90,25 @@ export default function MobileDrawer() {
           />
           <div className="absolute inset-y-0 left-0 w-72 bg-black border-r border-gray-900 shadow-xl p-4 flex flex-col">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-sm font-semibold text-gold-400">
-                {lang === 'ar' ? 'القائمة' : 'Navigation'}
-              </span>
+              <div className="flex items-center gap-2">
+                <div className="relative w-8 h-8 flex-shrink-0">
+                  <Image
+                    src="/brand/logo.png"
+                    alt="EgyptGold Pro"
+                    fill
+                    className="object-contain"
+                    priority
+                    sizes="32px"
+                  />
+                </div>
+                <span className="text-sm font-semibold text-gold-400">
+                  {lang === 'ar' ? 'EgyptGold Pro' : 'EgyptGold Pro'}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="p-1 rounded-md hover:bg-gray-900 text-gray-400"
+                className="p-1 rounded-md hover:bg-gray-900 text-gray-400 transition-colors"
                 aria-label="Close navigation"
               >
                 ✕

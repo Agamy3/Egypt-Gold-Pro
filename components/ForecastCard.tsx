@@ -112,10 +112,21 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
     fetchForecast();
   }, [timeRange, scope, country]);
 
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [latestPoint, setLatestPoint] = useState<{ value: number; time: number } | null>(null);
+
   // Fetch series data when dropdowns change
   useEffect(() => {
+    let abortController: AbortController | null = null;
+
     const fetchSeries = async () => {
       try {
+        // Abort previous request if still pending
+        if (abortController) {
+          abortController.abort();
+        }
+        abortController = new AbortController();
+
         setLoading(true);
         // Get trusted mode preference from localStorage
         const trustedMode = typeof window !== 'undefined' && localStorage.getItem('egyptTrustedOnlyMode') === 'true';
@@ -128,6 +139,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
             'x-trusted-mode': trustedMode ? 'true' : 'false',
           },
           cache: 'no-store', // Ensure fresh data on every fetch
+          signal: abortController.signal,
         });
         
         if (!res.ok) {
@@ -144,7 +156,19 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
           samplePoints: data.points?.slice(0, 3)
         });
         setSeriesData(data);
-      } catch (err) {
+        setLastUpdated(Date.now());
+        
+        // Extract latest point for display
+        if (data.points && data.points.length > 0) {
+          const sortedPoints = [...data.points].sort((a: SeriesPoint, b: SeriesPoint) => a.t - b.t);
+          const latest = sortedPoints[sortedPoints.length - 1];
+          setLatestPoint({ value: latest.v, time: latest.t });
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          // Request was aborted, ignore
+          return;
+        }
         console.error('Failed to fetch series:', err);
         setSeriesData({ points: [], meta: { scope, range: timeRange, unit: scope === 'global' ? 'USD' : 'EGP' } });
       } finally {
@@ -154,12 +178,34 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
 
     fetchSeries();
     
-    // Also refresh series data every 30 seconds
+    // Refresh series data every 30 seconds (or 15s for daily range)
+    const refreshInterval = timeRange === 'daily' ? 15000 : 30000;
     const interval = setInterval(() => {
       fetchSeries();
-    }, 30000);
+    }, refreshInterval);
+
+    // Refresh on window focus/visibility change
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchSeries();
+      }
+    };
+
+    const handleFocus = () => {
+      fetchSeries();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      if (abortController) {
+        abortController.abort();
+      }
+    };
   }, [timeRange, scope, country]);
 
   // Filter and transform reasons to remove provider names
@@ -249,13 +295,39 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
           </div>
           <div className="w-full h-[240px] md:h-[340px] lg:h-[380px] relative" style={{ minHeight: '240px' }}>
             {seriesData ? (
-              <ForecastMiniChart
-                points={seriesData.points || []}
-                unit={chartUnit}
-                range={chartRange}
-                loading={loading}
-                strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
-              />
+              <>
+                <ForecastMiniChart
+                  points={seriesData.points || []}
+                  unit={chartUnit}
+                  range={chartRange}
+                  loading={loading}
+                  strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
+                />
+                {/* Latest point and update timestamp */}
+                {latestPoint && (
+                  <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-xs text-gray-400 bg-black/60 px-2 py-1 rounded">
+                    <span>
+                      {lang === 'ar' ? 'أحدث:' : 'Latest:'} {latestPoint.value.toLocaleString('en-US', { 
+                        minimumFractionDigits: chartUnit === 'USD' ? 2 : 0,
+                        maximumFractionDigits: chartUnit === 'USD' ? 2 : 0,
+                      })} {chartUnit} @ {new Date(latestPoint.time).toLocaleTimeString('en-US', { 
+                        hour: '2-digit', 
+                        minute: '2-digit',
+                        second: '2-digit',
+                      })}
+                    </span>
+                    {lastUpdated && (
+                      <span>
+                        {lang === 'ar' ? 'تم التحديث:' : 'Updated:'} {new Date(lastUpdated).toLocaleTimeString('en-US', { 
+                          hour: '2-digit', 
+                          minute: '2-digit',
+                          second: '2-digit',
+                        })}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </>
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400">
                 {loading ? t(lang, 'loading') : 'No chart data'}
@@ -369,6 +441,30 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
             loading={loading}
             strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
           />
+          {/* Latest point and update timestamp */}
+          <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-xs text-gray-400 bg-black/60 px-2 py-1 rounded">
+            {latestPoint && (
+              <span>
+                {lang === 'ar' ? 'أحدث:' : 'Latest:'} {latestPoint.value.toLocaleString('en-US', { 
+                  minimumFractionDigits: chartUnit === 'USD' ? 2 : 0,
+                  maximumFractionDigits: chartUnit === 'USD' ? 2 : 0,
+                })} {chartUnit} @ {new Date(latestPoint.time).toLocaleTimeString('en-US', { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  second: '2-digit',
+                })}
+              </span>
+            )}
+            {lastUpdated && (
+              <span>
+                {lang === 'ar' ? 'تم التحديث:' : 'Updated:'} {new Date(lastUpdated).toLocaleTimeString('en-US', { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  second: '2-digit',
+                })}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

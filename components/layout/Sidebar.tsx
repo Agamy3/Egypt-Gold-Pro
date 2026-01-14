@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useLang } from '@/components/LanguageProvider';
@@ -21,6 +22,19 @@ export default function Sidebar() {
   const { lang } = useLang();
   const [collapsed, setCollapsed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // Load collapsed state from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('sidebarCollapsed');
+    if (saved === '1') {
+      setCollapsed(true);
+    }
+  }, []);
+
+  // Persist collapsed state to localStorage
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+  }, [collapsed]);
 
   useEffect(() => {
     // Check admin status for admin links
@@ -89,17 +103,48 @@ export default function Sidebar() {
   const allItems = [...navItems, ...adminItems];
 
   return (
-    <aside className="hidden lg:flex lg:flex-col lg:w-56 xl:w-64 bg-black border-r border-gray-900">
+    <aside 
+      className={classNames(
+        'hidden lg:flex lg:flex-col bg-black border-r border-gray-900 transition-all duration-300',
+        collapsed ? 'w-16' : 'w-56 xl:w-64'
+      )}
+    >
       <div className="flex-1 flex flex-col py-4">
         <div className="flex items-center justify-between px-4 mb-4">
-          <span className="text-sm font-semibold text-gold-400 truncate">
-            {lang === 'ar' ? 'EgyptGold Pro' : 'EgyptGold Pro'}
-          </span>
+          {collapsed ? (
+            <div className="relative w-8 h-8 flex-shrink-0">
+              <Image
+                src="/brand/logo.png"
+                alt="EgyptGold Pro"
+                fill
+                className="object-contain"
+                priority
+                sizes="32px"
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="relative w-8 h-8 flex-shrink-0">
+                <Image
+                  src="/brand/logo.png"
+                  alt="EgyptGold Pro"
+                  fill
+                  className="object-contain"
+                  priority
+                  sizes="32px"
+                />
+              </div>
+              <span className="text-sm font-semibold text-gold-400 truncate">
+                {lang === 'ar' ? 'EgyptGold Pro' : 'EgyptGold Pro'}
+              </span>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setCollapsed((prev) => !prev)}
-            className="p-1 rounded-md hover:bg-gray-900 text-gray-400"
+            className="p-1 rounded-md hover:bg-gray-900 text-gray-400 transition-colors"
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? (lang === 'ar' ? 'توسيع القائمة' : 'Expand sidebar') : (lang === 'ar' ? 'طي القائمة' : 'Collapse sidebar')}
           >
             {collapsed ? '›' : '‹'}
           </button>
@@ -113,12 +158,14 @@ export default function Sidebar() {
                 href={item.href}
                 className={classNames(
                   'group flex items-center gap-3 px-2 py-2 rounded-md text-sm font-medium transition-colors',
+                  collapsed ? 'justify-center' : '',
                   active
                     ? 'bg-gray-900 text-gold-300'
                     : 'text-gray-300 hover:bg-gray-900 hover:text-gold-200'
                 )}
+                title={collapsed ? (lang === 'ar' ? item.labelAr : item.labelEn) : undefined}
               >
-                <span className="text-base">{item.icon}</span>
+                <span className="text-base flex-shrink-0">{item.icon}</span>
                 {!collapsed && (
                   <span className="truncate">
                     {lang === 'ar' ? item.labelAr : item.labelEn}

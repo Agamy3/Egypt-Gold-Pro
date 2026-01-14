@@ -264,7 +264,7 @@ export async function GET(request: Request) {
     // Determine range label
     const rangeLabel = rangeParam || 'custom';
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       timestamp: Date.now(),
       points,
       meta: {
@@ -274,11 +274,18 @@ export async function GET(request: Request) {
         country,
       },
     });
+
+    // Ensure no caching
+    response.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Forecast series API error:', errorMessage);
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         timestamp: Date.now(),
         error: 'Failed to fetch forecast series',
@@ -287,6 +294,13 @@ export async function GET(request: Request) {
       },
       { status: 200 } // Always return 200, even on error
     );
+
+    // Ensure no caching
+    response.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
   }
 }
 
