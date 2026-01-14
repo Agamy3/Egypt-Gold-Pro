@@ -112,21 +112,25 @@ export async function fetchRssFeed(feedUrl: string): Promise<NewsItem[]> {
 
 /**
  * Default RSS feeds fallback
+ * These match the NEWS_RSS_FEEDS_JSON environment variable configuration
  */
 const DEFAULT_FEEDS: Record<string, string[]> = {
   GLOBAL: [
-    // Kitco Gold News RSS
-    'https://www.kitco.com/rss/gold.xml',
-    // Reuters Business / Markets RSS
+    'https://www.kitco.com/rss/news',
     'https://feeds.reuters.com/reuters/businessNews',
   ],
   US: [
-    // Investing.com Gold News
     'https://www.investing.com/rss/news_285.rss',
   ],
-  EG: [],
-  AE: [],
-  SA: [],
+  EG: [
+    'https://www.dailynewsegypt.com/feed/',
+  ],
+  AE: [
+    'https://www.khaleejtimes.com/rss',
+  ],
+  SA: [
+    'https://english.alarabiya.net/rss.xml',
+  ],
 };
 
 /**
