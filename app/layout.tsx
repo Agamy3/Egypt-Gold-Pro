@@ -69,14 +69,12 @@ export default function RootLayout({
       </head>
       <body className="touch-pan-y bg-black">
         <LanguageProvider>
-          <div className="min-h-screen flex bg-black">
-            <Sidebar />
-            <div className="flex-1 flex flex-col min-w-0">
-              <div className="px-4 pt-3 flex items-center justify-between lg:hidden">
-                <MobileDrawer />
-              </div>
-              {children}
+          <Sidebar />
+          <div className="min-h-screen flex flex-col bg-black">
+            <div className="px-4 pt-3 flex items-center justify-between lg:hidden">
+              <MobileDrawer />
             </div>
+            {children}
           </div>
         </LanguageProvider>
         <CookieConsentBanner />

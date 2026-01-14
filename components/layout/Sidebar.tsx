@@ -114,15 +114,20 @@ export default function Sidebar() {
 
   const allItems = [...navItems, ...adminItems];
 
+  // Don't render if collapsed (hidden)
+  if (collapsed) {
+    return null;
+  }
+
   return (
     <aside 
       className={classNames(
-        'hidden lg:flex lg:flex-col bg-black border-r border-gray-900 transition-all duration-300',
-        collapsed ? 'w-16' : 'w-56 xl:w-64'
+        'hidden lg:block fixed top-0 left-0 right-0 z-40 bg-black border-b border-gray-900 transition-all duration-300',
+        lang === 'ar' ? 'text-right' : 'text-left'
       )}
     >
-      <div className="flex-1 flex flex-col py-4">
-        <nav className="flex-1 px-2 space-y-1">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+        <nav className="flex flex-wrap items-center gap-2 sm:gap-4">
           {allItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
@@ -130,20 +135,16 @@ export default function Sidebar() {
                 key={item.href}
                 href={item.href}
                 className={classNames(
-                  'group flex items-center gap-3 px-2 py-2 rounded-md text-sm font-medium transition-colors',
-                  collapsed ? 'justify-center' : '',
+                  'group flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                   active
                     ? 'bg-gray-900 text-gold-300'
                     : 'text-gray-300 hover:bg-gray-900 hover:text-gold-200'
                 )}
-                title={collapsed ? (lang === 'ar' ? item.labelAr : item.labelEn) : undefined}
               >
                 <span className="text-base flex-shrink-0">{item.icon}</span>
-                {!collapsed && (
-                  <span className="truncate">
-                    {lang === 'ar' ? item.labelAr : item.labelEn}
-                  </span>
-                )}
+                <span className="truncate">
+                  {lang === 'ar' ? item.labelAr : item.labelEn}
+                </span>
               </Link>
             );
           })}
