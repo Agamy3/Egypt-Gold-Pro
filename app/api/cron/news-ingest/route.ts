@@ -21,6 +21,8 @@ export async function GET(request: NextRequest) {
     const expectedSecret = process.env.CRON_SECRET;
 
     if (!expectedSecret || secret !== expectedSecret) {
+      // eslint-disable-next-line no-console
+      console.warn('[API /cron/news-ingest] Unauthorized access attempt');
       return NextResponse.json(
         { ok: false, error: 'Unauthorized' },
         { status: 401 }
@@ -29,25 +31,36 @@ export async function GET(request: NextRequest) {
 
     const countries = ['EG', 'AE', 'SA', 'US', 'GLOBAL'];
     const results: Record<string, {
-      gdelt?: { inserted: number; updated: number; skipped: number; errors: string[] };
-      rss?: { inserted: number; updated: number; skipped: number; errors: string[] };
+      gdelt?: { inserted: number; updated: number; skipped: number; errors: string[]; fetchedCount?: number };
+      rss?: { inserted: number; updated: number; skipped: number; errors: string[]; fetchedCount?: number; feedsCount?: number };
       total?: { inserted: number; updated: number; skipped: number; errors: string[] };
       error?: string;
     }> = {};
 
+    // eslint-disable-next-line no-console
+    console.log('[API /cron/news-ingest] Starting ingestion for countries:', countries.join(', '));
+
     for (const country of countries) {
       try {
-        // Fetch GDELT
+        // Fetch GDELT (continues even if it fails)
         const gdeltItems = await fetchGdelt(country);
         const gdeltResult = await upsertNewsItems(gdeltItems, country);
 
-        // Fetch RSS
+        // Fetch RSS (continues even if it fails)
         const rssItems = await fetchRssForCountry(country);
         const rssResult = await upsertNewsItems(rssItems, country);
 
         results[country] = {
-          gdelt: gdeltResult,
-          rss: rssResult,
+          gdelt: {
+            ...gdeltResult,
+            fetchedCount: gdeltItems.length,
+          },
+          rss: {
+            ...rssResult,
+            fetchedCount: rssItems.length,
+            // Note: feedsCount would require passing it from fetchRssForCountry
+            // For now, we log it in the RSS function itself
+          },
           total: {
             inserted: gdeltResult.inserted + rssResult.inserted,
             updated: gdeltResult.updated + rssResult.updated,
@@ -55,22 +68,41 @@ export async function GET(request: NextRequest) {
             errors: [...gdeltResult.errors, ...rssResult.errors],
           },
         };
-      } catch (error: any) {
+
+        // eslint-disable-next-line no-console
+        console.log(`[API /cron/news-ingest] ${country}: GDELT ${gdeltItems.length} fetched → ${gdeltResult.inserted} inserted, RSS ${rssItems.length} fetched → ${rssResult.inserted} inserted`);
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        // eslint-disable-next-line no-console
+        console.error(`[API /cron/news-ingest] Error processing ${country}:`, errorMsg);
         results[country] = {
-          error: error.message || 'Unknown error',
+          error: errorMsg,
         };
       }
     }
+
+    const totalInserted = Object.values(results).reduce((sum, r) => sum + (r.total?.inserted || 0), 0);
+    const totalErrors = Object.values(results).reduce((sum, r) => sum + (r.total?.errors?.length || 0), 0);
+
+    // eslint-disable-next-line no-console
+    console.log(`[API /cron/news-ingest] Complete: ${totalInserted} total items inserted, ${totalErrors} total errors`);
 
     return NextResponse.json({
       ok: true,
       results,
       timestamp: new Date().toISOString(),
+      summary: {
+        totalInserted,
+        totalErrors,
+        countriesProcessed: countries.length,
+      },
     });
-  } catch (error: any) {
-    console.error('[API /cron/news-ingest] Error:', error);
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : 'Internal server error';
+    // eslint-disable-next-line no-console
+    console.error('[API /cron/news-ingest] Fatal error:', errorMsg);
     return NextResponse.json(
-      { ok: false, error: error.message || 'Internal server error' },
+      { ok: false, error: errorMsg },
       { status: 500 }
     );
   }

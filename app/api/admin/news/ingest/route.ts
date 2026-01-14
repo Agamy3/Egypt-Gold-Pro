@@ -45,24 +45,35 @@ export async function POST(request: NextRequest) {
     const results: Record<
       string,
       {
-        gdelt?: { inserted: number; updated: number; skipped: number; errors: string[] };
-        rss?: { inserted: number; updated: number; skipped: number; errors: string[] };
+        gdelt?: { inserted: number; updated: number; skipped: number; errors: string[]; fetchedCount?: number };
+        rss?: { inserted: number; updated: number; skipped: number; errors: string[]; fetchedCount?: number };
         total?: { inserted: number; updated: number; skipped: number; errors: string[] };
         error?: string;
       }
     > = {};
 
+    // eslint-disable-next-line no-console
+    console.log(`[API /admin/news/ingest] Starting ingestion for: ${targetCountries.join(', ')}`);
+
     for (const country of targetCountries) {
       try {
+        // Fetch GDELT (continues even if it fails)
         const gdeltItems = await fetchGdelt(country);
         const gdeltResult = await upsertNewsItems(gdeltItems, country);
 
+        // Fetch RSS (continues even if it fails)
         const rssItems = await fetchRssForCountry(country);
         const rssResult = await upsertNewsItems(rssItems, country);
 
         results[country] = {
-          gdelt: gdeltResult,
-          rss: rssResult,
+          gdelt: {
+            ...gdeltResult,
+            fetchedCount: gdeltItems.length,
+          },
+          rss: {
+            ...rssResult,
+            fetchedCount: rssItems.length,
+          },
           total: {
             inserted: gdeltResult.inserted + rssResult.inserted,
             updated: gdeltResult.updated + rssResult.updated,
@@ -70,16 +81,30 @@ export async function POST(request: NextRequest) {
             errors: [...gdeltResult.errors, ...rssResult.errors],
           },
         };
+
+        // eslint-disable-next-line no-console
+        console.log(`[API /admin/news/ingest] ${country}: GDELT ${gdeltItems.length} fetched → ${gdeltResult.inserted} inserted, RSS ${rssItems.length} fetched → ${rssResult.inserted} inserted`);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Unknown error';
+        // eslint-disable-next-line no-console
+        console.error(`[API /admin/news/ingest] Error processing ${country}:`, message);
         results[country] = { error: message };
       }
     }
+
+    const totalInserted = Object.values(results).reduce((sum, r) => sum + (r.total?.inserted || 0), 0);
+    // eslint-disable-next-line no-console
+    console.log(`[API /admin/news/ingest] Complete: ${totalInserted} total items inserted`);
 
     return NextResponse.json({
       ok: true,
       results,
       timestamp: new Date().toISOString(),
+      summary: {
+        totalInserted: Object.values(results).reduce((sum, r) => sum + (r.total?.inserted || 0), 0),
+        totalErrors: Object.values(results).reduce((sum, r) => sum + (r.total?.errors?.length || 0), 0),
+        countriesProcessed: targetCountries.length,
+      },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Internal server error';

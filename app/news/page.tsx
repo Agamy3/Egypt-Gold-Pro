@@ -317,6 +317,11 @@ export default function NewsPage() {
                         type="button"
                         onClick={async () => {
                           try {
+                            const button = document.activeElement as HTMLButtonElement;
+                            const originalText = button.textContent;
+                            button.disabled = true;
+                            button.textContent = lang === 'ar' ? 'جاري الاستيراد...' : 'Ingesting...';
+                            
                             const res = await fetch('/api/admin/news/ingest', {
                               method: 'POST',
                               headers: {
@@ -325,12 +330,36 @@ export default function NewsPage() {
                               body: JSON.stringify({ country }),
                             });
                             const data = await res.json();
-                            // Optimistically refetch news after ingest
+                            
                             if (res.ok && data.ok) {
-                              window.location.reload();
+                              const inserted = data.summary?.totalInserted || 0;
+                              button.textContent = lang === 'ar' 
+                                ? `تم الاستيراد (${inserted} عنصر)`
+                                : `Ingested (${inserted} items)`;
+                              button.className = 'px-4 py-2 bg-green-600 text-white rounded-md text-sm font-semibold';
+                              
+                              // Reload after 1.5s to show new items
+                              setTimeout(() => {
+                                window.location.reload();
+                              }, 1500);
+                            } else {
+                              button.textContent = lang === 'ar' ? 'فشل الاستيراد' : 'Ingest failed';
+                              button.className = 'px-4 py-2 bg-red-600 text-white rounded-md text-sm font-semibold';
+                              setTimeout(() => {
+                                button.disabled = false;
+                                button.textContent = originalText;
+                                button.className = 'px-4 py-2 bg-gold-600 hover:bg-gold-700 text-white rounded-md text-sm font-semibold';
+                              }, 3000);
                             }
-                          } catch {
-                            // Swallow errors in UI; admins can retry
+                          } catch (err) {
+                            const button = document.activeElement as HTMLButtonElement;
+                            button.disabled = false;
+                            button.textContent = lang === 'ar' ? 'خطأ في الاستيراد' : 'Ingest error';
+                            button.className = 'px-4 py-2 bg-red-600 text-white rounded-md text-sm font-semibold';
+                            setTimeout(() => {
+                              button.textContent = lang === 'ar' ? 'استيراد أحدث الأخبار الآن' : 'Ingest latest news now';
+                              button.className = 'px-4 py-2 bg-gold-600 hover:bg-gold-700 text-white rounded-md text-sm font-semibold';
+                            }, 3000);
                           }
                         }}
                         className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-white rounded-md text-sm font-semibold"

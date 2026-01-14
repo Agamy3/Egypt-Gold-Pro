@@ -93,52 +93,104 @@ export async function fetchRssFeed(feedUrl: string): Promise<NewsItem[]> {
 }
 
 /**
+ * Default RSS feeds fallback
+ */
+const DEFAULT_FEEDS: Record<string, string[]> = {
+  GLOBAL: [
+    // Kitco Gold News RSS
+    'https://www.kitco.com/rss/gold.xml',
+    // Reuters Business / Markets RSS
+    'https://feeds.reuters.com/reuters/businessNews',
+  ],
+  US: [
+    // Investing.com Gold News
+    'https://www.investing.com/rss/news_285.rss',
+  ],
+  EG: [],
+  AE: [],
+  SA: [],
+};
+
+/**
+ * Parse NEWS_RSS_FEEDS_JSON with robust error handling
+ * Handles BOM, whitespace, newlines, and malformed JSON
+ */
+function parseFeedsConfig(): Record<string, string[]> {
+  const raw = process.env.NEWS_RSS_FEEDS_JSON ?? '';
+  
+  // Remove BOM and trim whitespace/newlines
+  const cleaned = raw.trim().replace(/^\uFEFF/, '').replace(/\n/g, '').replace(/\r/g, '');
+  
+  if (cleaned.length === 0) {
+    // eslint-disable-next-line no-console
+    console.log('[RSS] NEWS_RSS_FEEDS_JSON is empty, using DEFAULT_FEEDS');
+    return DEFAULT_FEEDS;
+  }
+
+  try {
+    const parsed = JSON.parse(cleaned) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      // Merge with defaults to ensure all countries have at least GLOBAL fallback
+      const merged: Record<string, string[]> = { ...DEFAULT_FEEDS };
+      for (const [key, value] of Object.entries(parsed)) {
+        if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
+          merged[key] = value;
+        }
+      }
+      // eslint-disable-next-line no-console
+      console.log('[RSS] Parsed NEWS_RSS_FEEDS_JSON successfully');
+      return merged;
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[RSS] Failed to parse NEWS_RSS_FEEDS_JSON, using DEFAULT_FEEDS:', error instanceof Error ? error.message : String(error));
+  }
+
+  return DEFAULT_FEEDS;
+}
+
+/**
  * Fetch all RSS feeds for a country
+ * 
+ * If country has 0 feeds, falls back to GLOBAL feeds
  */
 export async function fetchRssForCountry(country: string): Promise<NewsItem[]> {
-  const raw = (process.env.NEWS_RSS_FEEDS_JSON ?? '').trim();
+  const feedsConfig = parseFeedsConfig();
+  
+  // Get country feeds, fallback to GLOBAL if empty
+  let countryFeeds = feedsConfig[country] || [];
+  if (countryFeeds.length === 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[RSS] No feeds configured for ${country}, falling back to GLOBAL feeds`);
+    countryFeeds = feedsConfig.GLOBAL || [];
+  }
 
-  const DEFAULT_FEEDS: Record<string, string[]> = {
-    GLOBAL: [
-      // Kitco Gold News RSS
-      'https://www.kitco.com/rss/gold.xml',
-      // Reuters Business / Markets RSS
-      'https://feeds.reuters.com/reuters/businessNews',
-    ],
-    US: [
-      // Investing.com Gold News (or similar US-focused gold feed)
-      'https://www.investing.com/rss/news_301.rss',
-    ],
-    EG: [],
-    AE: [],
-    SA: [],
-  };
+  if (countryFeeds.length === 0) {
+    // eslint-disable-next-line no-console
+    console.warn('[RSS] No feeds available for', country, 'or GLOBAL fallback');
+    return [];
+  }
 
-  let feedsConfig: Record<string, string[]> = DEFAULT_FEEDS;
+  const allItems: NewsItem[] = [];
+  const errors: string[] = [];
 
-  if (raw.length > 0) {
+  for (const feedUrl of countryFeeds) {
     try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (parsed && typeof parsed === 'object') {
-        feedsConfig = {
-          ...DEFAULT_FEEDS,
-          ...(parsed as Record<string, string[]>),
-        };
-      }
-    } catch (error) {
-      // If parsing fails, log and fall back to DEFAULT_FEEDS
+      const items = await fetchRssFeed(feedUrl);
+      allItems.push(...items);
       // eslint-disable-next-line no-console
-      console.error('[RSS] Failed to parse NEWS_RSS_FEEDS_JSON, using defaults:', error);
+      console.log(`[RSS] Fetched ${items.length} items from ${feedUrl}`);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      errors.push(`Failed to fetch ${feedUrl}: ${errorMsg}`);
+      // eslint-disable-next-line no-console
+      console.error(`[RSS] Error fetching ${feedUrl}:`, errorMsg);
     }
   }
 
-  const countryFeeds = feedsConfig[country] || feedsConfig.GLOBAL || [];
-
-  const allItems: NewsItem[] = [];
-
-  for (const feedUrl of countryFeeds) {
-    const items = await fetchRssFeed(feedUrl);
-    allItems.push(...items);
+  if (errors.length > 0 && allItems.length === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(`[RSS] All feeds failed for ${country}:`, errors);
   }
 
   return allItems;

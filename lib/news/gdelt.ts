@@ -57,6 +57,8 @@ export function buildGdeltQuery(country: string): string {
 
 /**
  * Fetch GDELT news for a country
+ * 
+ * Returns empty array on failure (does not throw) so RSS can continue
  */
 export async function fetchGdelt(country: string): Promise<NewsItem[]> {
   try {
@@ -73,30 +75,64 @@ export async function fetchGdelt(country: string): Promise<NewsItem[]> {
     url.searchParams.set('enddatetime', now.toISOString().split('T')[0]);
 
     const response = await fetch(url.toString(), {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; EgyptGoldPro/1.0; +https://egyptgoldpro.com)',
+      },
       next: { revalidate: 1800 }, // Cache for 30 minutes
     });
 
     if (!response.ok) {
-      console.error(`[GDELT] Failed to fetch for ${country}: ${response.status}`);
+      // eslint-disable-next-line no-console
+      console.error(`[GDELT] Failed to fetch for ${country}: ${response.status} ${response.statusText}`);
       return [];
     }
 
-    const data = await response.json();
-    const articles = data.articles || [];
+    const data = await response.json().catch((parseError) => {
+      // eslint-disable-next-line no-console
+      console.error(`[GDELT] Failed to parse JSON for ${country}:`, parseError);
+      return { articles: [] };
+    });
 
-    return articles.slice(0, 25).map((article: any, index: number) => ({
-      title: article.title || article.snippet || 'Untitled',
-      url: article.url || '',
-      source: article.source || null,
-      published_at: article.seen || article.published || null,
-      summary: article.snippet || null,
-      image_url: article.image || null,
-      tags: article.tags || null,
-      provider: 'gdelt' as const,
-      provider_id: article.url ? new URL(article.url).pathname : `gdelt_${index}`,
-    })).filter((item: NewsItem) => item.url && item.title);
+    const articles = Array.isArray(data.articles) ? data.articles : (data.articles || []);
+
+    const items = articles.slice(0, 25).map((article: any, index: number) => {
+      // Parse published_at with fallbacks
+      let publishedAt: string | null = null;
+      if (article.seen) {
+        try {
+          publishedAt = new Date(article.seen).toISOString();
+        } catch {
+          // Invalid date, leave as null
+        }
+      } else if (article.published) {
+        try {
+          publishedAt = new Date(article.published).toISOString();
+        } catch {
+          // Invalid date, leave as null
+        }
+      }
+
+      return {
+        title: (article.title || article.snippet || 'Untitled').trim(),
+        url: (article.url || '').trim(),
+        source: article.source ? String(article.source).trim() : null,
+        published_at: publishedAt,
+        summary: article.snippet ? String(article.snippet).trim().substring(0, 500) : null,
+        image_url: article.image ? String(article.image).trim() : null,
+        tags: Array.isArray(article.tags) ? article.tags : null,
+        provider: 'gdelt' as const,
+        provider_id: article.url ? new URL(article.url).pathname : `gdelt_${index}`,
+      };
+    }).filter((item: NewsItem) => item.url && item.title && item.url.length > 0 && item.title.length > 0);
+
+    // eslint-disable-next-line no-console
+    console.log(`[GDELT] Fetched ${items.length} valid items for ${country}`);
+    return items;
   } catch (error) {
-    console.error(`[GDELT] Error fetching for ${country}:`, error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.error(`[GDELT] Error fetching for ${country}:`, errorMsg);
+    // Return empty array so RSS can continue
     return [];
   }
 }
