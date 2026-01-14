@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useLang } from '@/components/LanguageProvider';
 
@@ -18,6 +18,7 @@ function classNames(...classes: Array<string | false | null | undefined>): strin
 
 export default function Sidebar() {
   const pathname = usePathname() || '/';
+  const searchParams = useSearchParams();
   const { lang } = useLang();
   const [collapsed, setCollapsed] = useState(true); // Default to collapsed (hidden)
   const [isAdmin, setIsAdmin] = useState(false);
@@ -136,10 +137,17 @@ export default function Sidebar() {
         <nav className="flex-1 px-2 space-y-1">
           {allItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            // Preserve country parameter when navigating to /news
+            const href = item.href === '/news' 
+              ? (() => {
+                  const country = searchParams.get('country');
+                  return country ? `/news?country=${country}` : '/news';
+                })()
+              : item.href;
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={href}
                 className={classNames(
                   'group flex items-center gap-3 px-2 py-2 rounded-md text-sm font-medium transition-colors',
                   active
