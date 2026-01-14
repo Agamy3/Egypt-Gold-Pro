@@ -266,8 +266,10 @@ export default function ForecastMiniChart({
   }
 
   // Calculate X-axis domain (time)
-  // Use the full selected range window ending at "now" so weekly/monthly axes show the end date
-  // even if the last data point is older.
+  // Requirements:
+  // - daily: last 24h anchored to "now"
+  // - weekly/monthly/yoy: show up to latest available point (no empty tail),
+  //   and start at max(windowStart, oldestData) (no empty head).
   const nowMs = Date.now();
   const rangeWindowMs =
     range === 'daily'
@@ -278,8 +280,14 @@ export default function ForecastMiniChart({
           ? 30 * 24 * 60 * 60 * 1000
           : 365 * 24 * 60 * 60 * 1000; // yoy
 
-  const timeMin = nowMs - rangeWindowMs;
-  const timeMax = nowMs;
+  const dataMin = displayPoints[0].t;
+  const dataMax = displayPoints[displayPoints.length - 1].t;
+
+  const domainEnd = range === 'daily' ? nowMs : dataMax;
+  const domainStart = Math.max(domainEnd - rangeWindowMs, dataMin);
+
+  const timeMin = domainStart;
+  const timeMax = domainEnd;
   const timeRange = timeMax - timeMin || 1;
 
   // Scale functions
@@ -391,7 +399,7 @@ export default function ForecastMiniChart({
     return acc;
   }, []);
 
-  // Ensure domain start/end labels are present (prevents "monthly shows only today" axis issue)
+  // Ensure domain start/end labels are present
   if (displayPoints.length > 0) {
     const firstTickPoint = { t: timeMin, v: displayPoints[0].v };
     const lastTickPoint = { t: timeMax, v: displayPoints[displayPoints.length - 1].v };
