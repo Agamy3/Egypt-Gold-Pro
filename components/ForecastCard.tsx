@@ -112,13 +112,6 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
     fetchForecast();
   }, [timeRange, scope, country]);
 
-  const [serverAsOf, setServerAsOf] = useState<string | null>(null);
-  const [lastPointAt, setLastPointAt] = useState<string | null>(null);
-  const [latestPoint, setLatestPoint] = useState<{ value: number; time: number } | null>(null);
-  const [fallbackUsed, setFallbackUsed] = useState<boolean>(false);
-  const [fallbackSource, setFallbackSource] = useState<string | null>(null);
-  const [debugMeta, setDebugMeta] = useState<{ serverAsOf?: string; lastPointAt?: string; pointsCount?: number; source?: string; fallbackUsed?: boolean; fallbackSource?: string | null } | null>(null);
-
   // Fetch series data when dropdowns change
   useEffect(() => {
     let abortController: AbortController | null = null;
@@ -159,46 +152,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
           lastPoint: data.points?.[data.points?.length - 1],
           samplePoints: data.points?.slice(0, 3)
         });
-        
-        // Use API meta timestamps (server-side truth)
-        if (data.meta) {
-          setServerAsOf(data.meta.serverAsOf || null);
-          setLastPointAt(data.meta.lastPointAt || null);
-          setFallbackUsed(data.meta.fallbackUsed || false);
-          setFallbackSource(data.meta.fallbackSource || null);
-          
-          // Store debug meta (dev-only will be checked in render)
-          if (process.env.NODE_ENV !== 'production') {
-            setDebugMeta({
-              serverAsOf: data.meta.serverAsOf,
-              lastPointAt: data.meta.lastPointAt,
-              pointsCount: data.meta.pointsCount,
-              source: data.meta.source,
-              fallbackUsed: data.meta.fallbackUsed,
-              fallbackSource: data.meta.fallbackSource,
-            });
-          }
-        }
-        
         setSeriesData(data);
-        
-        // Extract latest point for display (use meta.lastPointAt if available, otherwise compute from points)
-        if (data.points && data.points.length > 0) {
-          // Ensure points are sorted ascending by timestamp
-          const sortedPoints = [...data.points].sort((a: SeriesPoint, b: SeriesPoint) => a.t - b.t);
-          const latest = sortedPoints[sortedPoints.length - 1];
-          setLatestPoint({ value: latest.v, time: latest.t });
-          
-          // Validate: if meta.lastPointAt exists, it should match the latest point timestamp
-          if (data.meta?.lastPointAt) {
-            const metaTimestamp = new Date(data.meta.lastPointAt).getTime();
-            if (Math.abs(metaTimestamp - latest.t) > 1000) {
-              console.warn('[ForecastCard] Mismatch: meta.lastPointAt', data.meta.lastPointAt, 'vs latest point time', new Date(latest.t).toISOString());
-            }
-          }
-        } else {
-          setLatestPoint(null);
-        }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') {
           // Request was aborted, ignore
@@ -206,9 +160,6 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
         }
         console.error('Failed to fetch series:', err);
         setSeriesData({ points: [], meta: { scope, range: timeRange, unit: scope === 'global' ? 'USD' : 'EGP' } });
-        setServerAsOf(null);
-        setLastPointAt(null);
-        setLatestPoint(null);
       } finally {
         setLoading(false);
       }
@@ -344,81 +295,6 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
                     height={typeof window !== 'undefined' && window.innerWidth >= 1024 ? 360 : (window.innerWidth >= 768 ? 320 : 260)}
                   />
                 </div>
-                {/* Latest point and update timestamp - using API meta timestamps */}
-                <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-1 text-xs text-gray-400 bg-black/60 px-2 py-1 rounded">
-                  {/* Staleness badge */}
-                  {lastPointAt && (() => {
-                    const lastPointTime = new Date(lastPointAt).getTime();
-                    const hoursSinceLatest = (Date.now() - lastPointTime) / (1000 * 60 * 60);
-                    const isStale = hoursSinceLatest > 6;
-                    
-                    if (isStale) {
-                      return (
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="px-2 py-0.5 rounded bg-yellow-900/60 text-yellow-300 text-[10px] font-medium">
-                            {lang === 'ar' ? 'تأخر البيانات' : 'Data delayed'}
-                          </span>
-                          {fallbackUsed && fallbackSource && (
-                            <span className="text-[10px] text-gray-500">
-                              {lang === 'ar' ? 'مصدر بديل:' : 'Fallback:'} {fallbackSource === 'aggregated' ? (lang === 'ar' ? 'متوسط' : 'Median') : (lang === 'ar' ? 'تقدير عالمي' : 'Global estimate')}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                  {latestPoint && (
-                    <div className="flex items-center justify-between">
-                      <span>
-                        {lang === 'ar' ? 'أحدث:' : 'Latest:'} {latestPoint.value.toLocaleString('en-US', { 
-                          minimumFractionDigits: chartUnit === 'USD' ? 2 : 0,
-                          maximumFractionDigits: chartUnit === 'USD' ? 2 : 0,
-                        })} {chartUnit} @ {lastPointAt ? new Date(lastPointAt).toLocaleTimeString('en-US', { 
-                          hour: '2-digit', 
-                          minute: '2-digit',
-                          second: '2-digit',
-                        }) : new Date(latestPoint.time).toLocaleTimeString('en-US', { 
-                          hour: '2-digit', 
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                  )}
-                  {serverAsOf && (
-                    <div className="flex items-center justify-between">
-                      <span>
-                        {lang === 'ar' ? 'تم التحديث:' : 'Updated:'} {new Date(serverAsOf).toLocaleTimeString('en-US', { 
-                          hour: '2-digit', 
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                  )}
-                  {/* Debug panel (dev-only) */}
-                  {process.env.NODE_ENV !== 'production' && seriesData && seriesData.points && seriesData.points.length > 0 && (
-                    <div className="mt-1 pt-1 border-t border-gray-700 text-[10px] text-gray-500 font-mono">
-                      <div>
-                        Range: {chartRange} | Points: {seriesData.points.length} | First: {new Date(seriesData.points[0].t).toISOString()} | Last: {new Date(seriesData.points[seriesData.points.length - 1].t).toISOString()}
-                      </div>
-                      {debugMeta && (
-                        <>
-                          <div>serverAsOf: {debugMeta.serverAsOf}</div>
-                          <div>lastPointAt: {debugMeta.lastPointAt || 'null'}</div>
-                          <div>source: {debugMeta.source}</div>
-                          {debugMeta.fallbackUsed !== undefined && (
-                            <>
-                              <div>fallbackUsed: {String(debugMeta.fallbackUsed)}</div>
-                              <div>fallbackSource: {debugMeta.fallbackSource || 'null'}</div>
-                            </>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
               </>
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -535,81 +411,6 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
               strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
               height={typeof window !== 'undefined' && window.innerWidth >= 1024 ? 360 : (window.innerWidth >= 768 ? 320 : 260)}
             />
-          </div>
-          {/* Latest point and update timestamp - using API meta timestamps */}
-          <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-1 text-xs text-gray-400 bg-black/60 px-2 py-1 rounded">
-            {/* Staleness badge */}
-            {lastPointAt && (() => {
-              const lastPointTime = new Date(lastPointAt).getTime();
-              const hoursSinceLatest = (Date.now() - lastPointTime) / (1000 * 60 * 60);
-              const isStale = hoursSinceLatest > 6;
-              
-              if (isStale) {
-                return (
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="px-2 py-0.5 rounded bg-yellow-900/60 text-yellow-300 text-[10px] font-medium">
-                      {lang === 'ar' ? 'تأخر البيانات' : 'Data delayed'}
-                    </span>
-                    {fallbackUsed && fallbackSource && (
-                      <span className="text-[10px] text-gray-500">
-                        {lang === 'ar' ? 'مصدر بديل:' : 'Fallback:'} {fallbackSource === 'aggregated' ? (lang === 'ar' ? 'متوسط' : 'Median') : (lang === 'ar' ? 'تقدير عالمي' : 'Global estimate')}
-                      </span>
-                    )}
-                  </div>
-                );
-              }
-              return null;
-            })()}
-            {latestPoint && (
-              <div className="flex items-center justify-between">
-                <span>
-                  {lang === 'ar' ? 'أحدث:' : 'Latest:'} {latestPoint.value.toLocaleString('en-US', { 
-                    minimumFractionDigits: chartUnit === 'USD' ? 2 : 0,
-                    maximumFractionDigits: chartUnit === 'USD' ? 2 : 0,
-                  })} {chartUnit} @ {lastPointAt ? new Date(lastPointAt).toLocaleTimeString('en-US', { 
-                    hour: '2-digit', 
-                    minute: '2-digit',
-                    second: '2-digit',
-                  }) : new Date(latestPoint.time).toLocaleTimeString('en-US', { 
-                    hour: '2-digit', 
-                    minute: '2-digit',
-                    second: '2-digit',
-                  })}
-                </span>
-              </div>
-            )}
-            {serverAsOf && (
-              <div className="flex items-center justify-between">
-                <span>
-                  {lang === 'ar' ? 'تم التحديث:' : 'Updated:'} {new Date(serverAsOf).toLocaleTimeString('en-US', { 
-                    hour: '2-digit', 
-                    minute: '2-digit',
-                    second: '2-digit',
-                  })}
-                </span>
-              </div>
-            )}
-            {/* Debug panel (dev-only) */}
-            {process.env.NODE_ENV !== 'production' && seriesData && seriesData.points && seriesData.points.length > 0 && (
-              <div className="mt-1 pt-1 border-t border-gray-700 text-[10px] text-gray-500 font-mono">
-                <div>
-                  Range: {chartRange} | Points: {seriesData.points.length} | First: {new Date(seriesData.points[0].t).toISOString()} | Last: {new Date(seriesData.points[seriesData.points.length - 1].t).toISOString()}
-                </div>
-                {debugMeta && (
-                  <>
-                    <div>serverAsOf: {debugMeta.serverAsOf}</div>
-                    <div>lastPointAt: {debugMeta.lastPointAt || 'null'}</div>
-                    <div>source: {debugMeta.source}</div>
-                    {debugMeta.fallbackUsed !== undefined && (
-                      <>
-                        <div>fallbackUsed: {String(debugMeta.fallbackUsed)}</div>
-                        <div>fallbackSource: {debugMeta.fallbackSource || 'null'}</div>
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>

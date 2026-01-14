@@ -10,11 +10,6 @@ import MobileDrawer from '@/components/layout/MobileDrawer'
 // Get site URL from environment or use fallback
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com'
 
-// Build stamp configuration (evaluated at build time on the server)
-const fullCommitSha = process.env.VERCEL_GIT_COMMIT_SHA || 'dev'
-const shortCommitSha = fullCommitSha.slice(0, 7)
-const buildTimeIso = process.env.NEXT_PUBLIC_BUILD_TIME || new Date().toISOString()
-
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: 'EgyptGold Pro - Egyptian Gold Market Analysis',
@@ -84,10 +79,6 @@ export default function RootLayout({
             </div>
           </div>
         </LanguageProvider>
-        {/* Global build stamp - visible on all pages, bottom-right */}
-        <div className="fixed bottom-2 right-4 text-[11px] text-gray-500 font-mono bg-black/70 px-2 py-1 rounded border border-gray-800 z-40">
-          Build: {shortCommitSha} • {buildTimeIso}
-        </div>
         <CookieConsentBanner />
         <Analytics />
       </body>
