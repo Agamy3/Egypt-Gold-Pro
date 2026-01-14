@@ -7,6 +7,7 @@ import Footer from '@/components/Footer';
 import CountryCurrencySelector from '@/components/CountryCurrencySelector';
 import LanguageToggle from '@/components/LanguageToggle';
 import { useLang } from '@/components/LanguageProvider';
+import AdGateClient from '@/components/ads/AdGateClient';
 
 interface PublicNewsItem {
   id: number;
@@ -140,92 +141,106 @@ export default function NewsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {publicItems.map((item) => {
+            {publicItems.map((item, index) => {
               const premium = item.url ? premiumItemsByUrl[item.url] : undefined;
+              const showNewsAd = index === 2 && publicItems.length >= 4;
 
               return (
-                <article
-                  key={item.id}
-                  className="bg-gray-900 rounded-lg border border-gray-800 p-4 sm:p-5 shadow-sm"
-                >
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    {item.image_url && (
-                      <div className="w-full sm:w-32 h-24 bg-gray-800 rounded overflow-hidden flex-shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-3 mb-1">
-                        <a
-                          href={item.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-base sm:text-lg font-semibold text-gray-100 hover:text-gold-400 line-clamp-2"
-                        >
-                          {item.title}
-                        </a>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400 mb-3">
-                        {item.source && <span>{item.source}</span>}
-                        {item.published_at && (
-                          <span className="text-gray-500">{formatTimeAgo(item.published_at)}</span>
-                        )}
-                        {item.country && (
-                          <span className="px-2 py-0.5 rounded border border-gray-700 text-gray-300">
-                            {item.country}
-                          </span>
-                        )}
-                      </div>
-
-                      {premium ? (
-                        <div className="mt-2 space-y-2">
-                          {premium.summary && (
-                            <p className="text-sm text-gray-300 line-clamp-3">{premium.summary}</p>
-                          )}
-                          {premium.whyItMatters.length > 0 && (
-                            <div className="mt-2">
-                              <h3 className="text-xs font-semibold text-gray-400 mb-1">
-                                {lang === 'ar' ? 'لماذا يهم هذا:' : 'Why this matters:'}
-                              </h3>
-                              <ul className="list-disc list-inside space-y-1 text-xs text-gray-300">
-                                {premium.whyItMatters.map((b, idx) => (
-                                  <li key={idx}>{b}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {(premium.tags.length > 0 || premium.contextTags.length > 0) && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {[...premium.tags, ...premium.contextTags].map((tag, idx) => (
-                                <span
-                                  key={idx}
-                                  className="px-2 py-0.5 rounded-full bg-gray-800 text-[10px] text-gray-300 border border-gray-700"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="mt-2 bg-gray-800/60 border border-dashed border-gray-700 rounded-md p-3 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-gray-400 text-sm">🔒</span>
-                            <p className="text-xs text-gray-300">
-                              {lang === 'ar'
-                                ? 'افتح السياق والعوامل الرئيسية وراء العنوان مع العضوية المميزة.'
-                                : 'Unlock context & key drivers behind the headline with Premium.'}
-                            </p>
-                          </div>
-                          <Link
-                            href="/premium"
-                            className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-white text-xs rounded-md font-semibold whitespace-nowrap"
-                          >
-                            {lang === 'ar' ? 'ترقية' : 'Upgrade'}
-                          </Link>
-                        </div>
+                <div key={item.id} className="space-y-4">
+                  <article
+                    className="bg-gray-900 rounded-lg border border-gray-800 p-4 sm:p-5 shadow-sm"
+                  >
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      {item.image_url && (
+                        <div className="w-full sm:w-32 h-24 bg-gray-800 rounded overflow-hidden flex-shrink-0" />
                       )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-3 mb-1">
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-base sm:text-lg font-semibold text-gray-100 hover:text-gold-400 line-clamp-2"
+                          >
+                            {item.title}
+                          </a>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400 mb-3">
+                          {item.source && <span>{item.source}</span>}
+                          {item.published_at && (
+                            <span className="text-gray-500">{formatTimeAgo(item.published_at)}</span>
+                          )}
+                          {item.country && (
+                            <span className="px-2 py-0.5 rounded border border-gray-700 text-gray-300">
+                              {item.country}
+                            </span>
+                          )}
+                        </div>
+
+                        {premium ? (
+                          <div className="mt-2 space-y-2">
+                            {premium.summary && (
+                              <p className="text-sm text-gray-300 line-clamp-3">{premium.summary}</p>
+                            )}
+                            {premium.whyItMatters.length > 0 && (
+                              <div className="mt-2">
+                                <h3 className="text-xs font-semibold text-gray-400 mb-1">
+                                  {lang === 'ar' ? 'لماذا يهم هذا:' : 'Why this matters:'}
+                                </h3>
+                                <ul className="list-disc list-inside space-y-1 text-xs text-gray-300">
+                                  {premium.whyItMatters.map((b, idx) => (
+                                    <li key={idx}>{b}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {(premium.tags.length > 0 || premium.contextTags.length > 0) && (
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {[...premium.tags, ...premium.contextTags].map((tag, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="px-2 py-0.5 rounded-full bg-gray-800 text-[10px] text-gray-300 border border-gray-700"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="mt-2 bg-gray-800/60 border border-dashed border-gray-700 rounded-md p-3 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-400 text-sm">🔒</span>
+                              <p className="text-xs text-gray-300">
+                                {lang === 'ar'
+                                  ? 'افتح السياق والعوامل الرئيسية وراء العنوان مع العضوية المميزة.'
+                                  : 'Unlock context & key drivers behind the headline with Premium.'}
+                              </p>
+                            </div>
+                            <Link
+                              href="/premium"
+                              className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-white text-xs rounded-md font-semibold whitespace-nowrap"
+                            >
+                              {lang === 'ar' ? 'ترقية' : 'Upgrade'}
+                            </Link>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </article>
+                  </article>
+
+                  {showNewsAd && (
+                    <div className="mt-4">
+                      <AdGateClient
+                        adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
+                        format="auto"
+                        className="w-full"
+                        contentItemCount={publicItems.length}
+                        minItems={4}
+                      />
+                    </div>
+                  )}
+                </div>
               );
             })}
 

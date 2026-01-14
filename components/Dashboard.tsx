@@ -150,6 +150,15 @@ export default function Dashboard({ snapshot }: DashboardProps) {
   const [isPremium, setIsPremium] = useState<boolean>(false);
   const country = snapshot.country || 'EG';
 
+  const dashboardContentSignals = [
+    snapshot.market?.median?.market21Buy,
+    snapshot.market?.median?.market24Buy,
+    snapshot.pricing?.usdPerGram24,
+    snapshot.pricing?.usdPerGram21,
+  ].filter((v) => typeof v === 'number' && v !== null && !Number.isNaN(v as number));
+
+  const dashboardContentCount = dashboardContentSignals.length;
+
   useEffect(() => {
     // Check premium status
     fetch('/api/user/premium-status')
@@ -627,7 +636,20 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           </div>
         </div>
       </div>
+      {/* Dashboard Ad - only when enough content is available and user is non-premium */}
+      {!isPremium && (
+        <div className="mt-6">
+          <AdGateClient
+            adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
+            format="auto"
+            className="w-full"
+            contentItemCount={dashboardContentCount}
+            minItems={3}
+          />
+        </div>
+      )}
     </div>
   );
 }
+
 

@@ -7,27 +7,45 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
+
+interface DebugInfo {
+  adsbygoogleExists: boolean;
+  scriptLoaded: boolean;
+  consent: string | null;
+  userStatus: any;
+  pathname: string;
+  adUnitCount: number;
+}
 
 export default function AdsDebugPage() {
-  const [debugInfo, setDebugInfo] = useState<{
-    adsbygoogleExists: boolean;
-    scriptLoaded: boolean;
-    consent: string | null;
-    userStatus: any;
-  }>({
+  const pathname = usePathname() || '/';
+  const [debugInfo, setDebugInfo] = useState<DebugInfo>({
     adsbygoogleExists: false,
     scriptLoaded: false,
     consent: null,
     userStatus: null,
+    pathname,
+    adUnitCount: 0,
   });
 
   useEffect(() => {
+    // Only run in browser
+    if (typeof window === 'undefined') return;
+
     // Check if adsbygoogle exists
-    const adsbygoogleExists = typeof window !== 'undefined' && typeof (window as any).adsbygoogle !== 'undefined';
+    const adsbygoogleExists = typeof (window as any).adsbygoogle !== 'undefined';
     
     // Check if script is loaded (look for script tag)
-    const scriptLoaded = typeof document !== 'undefined' && 
+    const scriptLoaded =
+      typeof document !== 'undefined' &&
       document.querySelector('script[id="adsense-base"]') !== null;
+
+    // Count current ad units on page
+    const adUnitCount =
+      typeof document !== 'undefined'
+        ? document.querySelectorAll('ins.adsbygoogle').length
+        : 0;
 
     // Check consent
     const cookieConsent = document.cookie
@@ -46,6 +64,8 @@ export default function AdsDebugPage() {
           scriptLoaded,
           consent,
           userStatus: data,
+          pathname: window.location.pathname,
+          adUnitCount,
         });
       })
       .catch((error) => {
@@ -55,6 +75,8 @@ export default function AdsDebugPage() {
           scriptLoaded,
           consent,
           userStatus: { error: error.message },
+          pathname: window.location.pathname,
+          adUnitCount,
         });
       });
   }, []);
@@ -87,6 +109,22 @@ export default function AdsDebugPage() {
                 <span className="font-medium">window.adsbygoogle Exists:</span>{' '}
                 <span className={debugInfo.adsbygoogleExists ? 'text-green-400' : 'text-red-400'}>
                   {debugInfo.adsbygoogleExists ? 'Yes' : 'No'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-xl font-semibold mb-2">Current Route & Ad Units</h2>
+            <div className="space-y-2 text-sm">
+              <div>
+                <span className="font-medium">Pathname:</span>{' '}
+                <span className="text-gray-300">{debugInfo.pathname}</span>
+              </div>
+              <div>
+                <span className="font-medium">Ad units on page (ins.adsbygoogle):</span>{' '}
+                <span className={debugInfo.adUnitCount > 0 ? 'text-green-400' : 'text-yellow-400'}>
+                  {debugInfo.adUnitCount}
                 </span>
               </div>
             </div>

@@ -28,7 +28,7 @@ export default function AdSenseUnit({
   format = 'auto',
   fullWidthResponsive = true,
   className = '',
-  style = { display: 'block' },
+  style = { display: 'block', minHeight: '90px' },
 }: AdSenseUnitProps) {
   const insRef = useRef<HTMLModElement>(null);
   const pushedRef = useRef(false);

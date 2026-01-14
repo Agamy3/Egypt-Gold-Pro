@@ -143,6 +143,8 @@ function PortfolioContent() {
     );
   }
 
+  const holdingsCount = portfolio?.holdings?.length ?? 0;
+
   return (
     <div className="min-h-screen bg-black">
       <header className="bg-gray-900 shadow-sm border-b border-gray-800">
@@ -175,7 +177,7 @@ function PortfolioContent() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 sm:py-8 lg:py-10">
-        {portfolio && (
+        {portfolio && holdingsCount > 0 && (
           <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -289,14 +291,85 @@ function PortfolioContent() {
           </div>
         )}
 
-        {/* Ad at bottom of page (for free users only) */}
-        <div className="mt-8 mb-4">
-          <AdGateClient
-            adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
-            format="auto"
-            className="w-full"
-          />
-        </div>
+        {/* Empty portfolio state (no holdings yet) */}
+        {portfolio && holdingsCount === 0 && (
+          <div className="mt-6 sm:mt-8 lg:mt-10 max-w-3xl mx-auto">
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 sm:p-6 lg:p-8 space-y-4">
+              <h2 className="text-xl sm:text-2xl font-semibold text-gold-400">
+                {lang === 'ar' ? 'ابدأ في بناء محفظة الذهب الخاصة بك' : 'Start building your gold portfolio'}
+              </h2>
+              <p className="text-sm text-gray-300">
+                {lang === 'ar'
+                  ? 'لا توجد أي ممتلكات مسجلة حتى الآن. استخدم أداة إضافة المقتنيات لإدخال وزن الذهب الذي تملكه وسعر الشراء لتتبع الأداء بمرور الوقت.'
+                  : 'You don’t have any holdings recorded yet. Use the add holdings tool to enter the gold you own and your purchase prices so you can track your performance over time.'}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-300">
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-gray-100">
+                    {lang === 'ar' ? 'ماذا تفعل المحفظة؟' : 'What does the portfolio do?'}
+                  </h3>
+                  <ul className="list-disc list-inside space-y-1 text-gray-300">
+                    <li>
+                      {lang === 'ar'
+                        ? 'تحسب القيمة الحالية لممتلكاتك بناءً على أسعار السوق المحلية.'
+                        : 'Calculates the current value of your holdings using live local market prices.'}
+                    </li>
+                    <li>
+                      {lang === 'ar'
+                        ? 'تظهر لك الربح أو الخسارة لكل عيار وكذلك للمحفظة بالكامل.'
+                        : 'Shows your profit or loss by karat and for your portfolio overall.'}
+                    </li>
+                    <li>
+                      {lang === 'ar'
+                        ? 'تساعدك على فهم تأثير تغيّر الأسعار وسعر الصرف على استثماراتك.'
+                        : 'Helps you understand how local prices and FX moves impact your gold savings.'}
+                    </li>
+                  </ul>
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-gray-100">
+                    {lang === 'ar' ? 'كيف أبدأ؟' : 'How do I get started?'}
+                  </h3>
+                  <ul className="list-disc list-inside space-y-1 text-gray-300">
+                    <li>
+                      {lang === 'ar'
+                        ? 'اضغط على زر \"+ إضافة\" في أعلى الجدول لإضافة أول عملية شراء.'
+                        : 'Click the “+ Add” button above the table to add your first purchase.'}
+                    </li>
+                    <li>
+                      {lang === 'ar'
+                        ? 'أدخل العيار، الوزن بالجرام، وسعر الشراء لكل جرام.'
+                        : 'Enter karat, grams, and your purchase price per gram.'}
+                    </li>
+                    <li>
+                      {lang === 'ar'
+                        ? 'يمكنك تعديل أو حذف أي عملية لاحقاً مع تغيّر استراتيجيتك.'
+                        : 'You can edit or remove entries later as your strategy changes.'}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                {lang === 'ar'
+                  ? 'ملاحظة: هذه الأداة تعليمية ولا تُعتبر نصيحة استثمارية.'
+                  : 'Note: This tool is for educational purposes only and is not investment advice.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Ad at bottom of page (for free users only) - only when portfolio has at least 3 rows */}
+        {portfolio && (
+          <div className="mt-8 mb-4">
+            <AdGateClient
+              adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
+              format="auto"
+              className="w-full"
+              contentItemCount={holdingsCount}
+              minItems={3}
+            />
+          </div>
+        )}
       </main>
       <Footer />
     </div>
