@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server-auth';
 
 export const dynamic = 'force-dynamic';
-export const revalidate = 300; // Revalidate every 5 minutes
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,34 +34,68 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    // Get last ingestion timestamp (per-country) if available
+    if (error) {
+      console.error('[API /news] Error:', error);
+      const errorResponse = NextResponse.json(
+        { ok: false, error: 'Failed to fetch news' },
+        { status: 500 }
+      );
+      errorResponse.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+      errorResponse.headers.set('Pragma', 'no-cache');
+      errorResponse.headers.set('Expires', '0');
+      return errorResponse;
+    }
+
+    let items = data || [];
+    let effectiveCountry = country;
+
+    // Fallback: if no items for specific country, use GLOBAL feed
+    if (items.length === 0 && country !== 'GLOBAL') {
+      const { data: globalData, error: globalError } = await supabase
+        .from('news_items')
+        .select('id, title, url, source, published_at, image_url, country, created_at')
+        .eq('country', 'GLOBAL')
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (!globalError && globalData) {
+        items = globalData;
+        effectiveCountry = 'GLOBAL';
+      }
+    }
+
+    // Get last ingestion timestamp (per-effective-country) if available
     const { data: lastIngestedRow } = await supabase
       .from('news_items')
       .select('created_at')
-      .eq('country', country)
+      .eq('country', effectiveCountry)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (error) {
-      console.error('[API /news] Error:', error);
-      return NextResponse.json(
-        { ok: false, error: 'Failed to fetch news' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
-      items: data || [],
+      items,
+      country: effectiveCountry,
       last_ingested_at: lastIngestedRow?.created_at ?? null,
     });
+
+    response.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
   } catch (error: any) {
     console.error('[API /news] Error:', error);
-    return NextResponse.json(
+    const response = NextResponse.json(
       { ok: false, error: 'Internal server error' },
       { status: 500 }
     );
+    response.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    return response;
   }
 }
 

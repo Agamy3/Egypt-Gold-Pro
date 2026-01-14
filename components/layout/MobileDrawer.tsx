@@ -17,6 +17,7 @@ export default function MobileDrawer() {
   const [isAdmin, setIsAdmin] = useState(false);
   const pathname = usePathname() || '/';
   const { lang } = useLang();
+  const [logoError, setLogoError] = useState(false);
 
   useEffect(() => {
     // Close drawer on route change
@@ -91,15 +92,20 @@ export default function MobileDrawer() {
           <div className="absolute inset-y-0 left-0 w-72 bg-black border-r border-gray-900 shadow-xl p-4 flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <div className="relative w-8 h-8 flex-shrink-0">
-                  <Image
-                    src="/brand/logo.png"
-                    alt="EgyptGold Pro"
-                    fill
-                    className="object-contain"
-                    priority
-                    sizes="32px"
-                  />
+                <div className="relative w-8 h-8 flex-shrink-0 flex items-center justify-center">
+                  {logoError ? (
+                    <span className="text-gold-400 font-bold text-sm">EGP</span>
+                  ) : (
+                    <Image
+                      src="/brand/logo.png"
+                      alt="EgyptGold Pro"
+                      fill
+                      className="object-contain"
+                      priority
+                      sizes="32px"
+                      onError={() => setLogoError(true)}
+                    />
+                  )}
                 </div>
                 <span className="text-sm font-semibold text-gold-400">
                   {lang === 'ar' ? 'EgyptGold Pro' : 'EgyptGold Pro'}
