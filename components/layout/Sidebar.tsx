@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useLang } from '@/components/LanguageProvider';
 
@@ -18,10 +18,10 @@ function classNames(...classes: Array<string | false | null | undefined>): strin
 
 export default function Sidebar() {
   const pathname = usePathname() || '/';
-  const searchParams = useSearchParams();
   const { lang } = useLang();
   const [collapsed, setCollapsed] = useState(true); // Default to collapsed (hidden)
   const [isAdmin, setIsAdmin] = useState(false);
+  const [currentCountry, setCurrentCountry] = useState<string | null>(null);
 
   // Load collapsed state from localStorage on mount and listen for changes
   useEffect(() => {
@@ -55,7 +55,14 @@ export default function Sidebar() {
       .then((res) => res.json())
       .then((data) => setIsAdmin(Boolean(data.isAdmin)))
       .catch(() => setIsAdmin(false));
-  }, []);
+    
+    // Get country from URL on client side
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const country = urlParams.get('country');
+      setCurrentCountry(country);
+    }
+  }, [pathname]);
 
   const navItems: NavItem[] = [
     {
@@ -138,11 +145,8 @@ export default function Sidebar() {
           {allItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             // Preserve country parameter when navigating to /news
-            const href = item.href === '/news' 
-              ? (() => {
-                  const country = searchParams.get('country');
-                  return country ? `/news?country=${country}` : '/news';
-                })()
+            const href = item.href === '/news' && currentCountry
+              ? `/news?country=${currentCountry}`
               : item.href;
             return (
               <Link
