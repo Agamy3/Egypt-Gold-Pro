@@ -95,12 +95,12 @@ async function evaluateRule(
   // Get user profile to check notification preferences
   const { data: profile } = await supabaseAdmin
     .from('user_profiles')
-    .select('email_notifications_enabled, push_notifications_enabled')
+    .select('email_notifications_enabled, app_notifications_enabled, push_notifications_enabled')
     .eq('id', rule.user_id)
     .single();
 
   const emailEnabled = profile?.email_notifications_enabled ?? true;
-  const pushEnabled = profile?.push_notifications_enabled ?? true; // Enable push by default
+  const pushEnabled = (profile?.push_notifications_enabled ?? profile?.app_notifications_enabled ?? true); // Enable push by default
 
   let emailSent = false;
   let pushSent = false;
