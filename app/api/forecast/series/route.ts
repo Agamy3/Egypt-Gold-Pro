@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-15T20:38Z';
+const API_VERSION = '2026-01-15T20:44Z';
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
@@ -234,6 +234,14 @@ export async function GET(request: Request) {
 
           let wideRowsCount: number | null = null;
           let widePointsCount: number | null = null;
+          let wideHas24Count: number | null = null;
+          let wideHas21Count: number | null = null;
+          let wideHas18Count: number | null = null;
+          let wideHas14Count: number | null = null;
+          let wideLastAt24: number | null = null;
+          let wideLastAt21: number | null = null;
+          let wideLastAt18: number | null = null;
+          let wideLastAt14: number | null = null;
           let egyptMarketRowsCount: number | null = null;
           let egyptMarketPointsCount: number | null = null;
           let egyptMarketLatestAtMs: number | null = null;
@@ -244,7 +252,7 @@ export async function GET(request: Request) {
               const { data: wideData, error: wideError } = await supabase
                 .from('market_snapshots')
                 // NOTE: wide table uses quoted/camelCase columns in Postgres ("createdAt", "market24Buy", ...)
-                .select('source, createdAt, market24Buy, market21Buy, error')
+                .select('source, createdAt, market24Buy, market21Buy, market18Buy, market14Buy, error')
                 .gte('createdAt', windowStart)
                 .is('error', null)
                 .order('createdAt', { ascending: true })
@@ -252,6 +260,10 @@ export async function GET(request: Request) {
 
               if (!wideError && wideData && wideData.length > 0) {
                 wideRowsCount = wideData.length;
+                wideHas24Count = 0;
+                wideHas21Count = 0;
+                wideHas18Count = 0;
+                wideHas14Count = 0;
                 const bucketMs =
                   rangeParam === 'daily'
                     ? 60_000
@@ -265,9 +277,33 @@ export async function GET(request: Request) {
                 for (const row of wideData) {
                   const t = typeof row.createdAt === 'number' ? row.createdAt : Number(row.createdAt);
                   if (!isFinite(t) || t <= 0) continue;
-                  const vRaw = row.market24Buy ?? row.market21Buy;
-                  const v = Number(vRaw);
-                  if (!isFinite(v) || v <= 0) continue;
+                  // Prefer true 24k; if missing, estimate 24k from other karats.
+                  // This avoids huge "gaps" when only some karats are ingested for a period.
+                  const v24 = Number(row.market24Buy);
+                  const v21 = Number(row.market21Buy);
+                  const v18 = Number(row.market18Buy);
+                  const v14 = Number(row.market14Buy);
+
+                  let v: number | null = null;
+                  if (isFinite(v24) && v24 > 0) {
+                    v = v24;
+                    wideHas24Count! += 1;
+                    wideLastAt24 = t;
+                  } else if (isFinite(v21) && v21 > 0) {
+                    v = (v21 * 24) / 21;
+                    wideHas21Count! += 1;
+                    wideLastAt21 = t;
+                  } else if (isFinite(v18) && v18 > 0) {
+                    v = (v18 * 24) / 18;
+                    wideHas18Count! += 1;
+                    wideLastAt18 = t;
+                  } else if (isFinite(v14) && v14 > 0) {
+                    v = (v14 * 24) / 14;
+                    wideHas14Count! += 1;
+                    wideLastAt14 = t;
+                  }
+
+                  if (v === null || !isFinite(v) || v <= 0) continue;
                   const key = Math.floor(t / bucketMs) * bucketMs;
                   if (!buckets.has(key)) buckets.set(key, []);
                   buckets.get(key)!.push(v);
@@ -547,6 +583,14 @@ export async function GET(request: Request) {
           // Only set when EG local attempted.
           (request as any).__egWideRowsCount = wideRowsCount;
           (request as any).__egWidePointsCount = widePointsCount;
+          (request as any).__egWideHas24Count = wideHas24Count;
+          (request as any).__egWideHas21Count = wideHas21Count;
+          (request as any).__egWideHas18Count = wideHas18Count;
+          (request as any).__egWideHas14Count = wideHas14Count;
+          (request as any).__egWideLastAt24 = wideLastAt24 ? new Date(wideLastAt24).toISOString() : null;
+          (request as any).__egWideLastAt21 = wideLastAt21 ? new Date(wideLastAt21).toISOString() : null;
+          (request as any).__egWideLastAt18 = wideLastAt18 ? new Date(wideLastAt18).toISOString() : null;
+          (request as any).__egWideLastAt14 = wideLastAt14 ? new Date(wideLastAt14).toISOString() : null;
           (request as any).__egEgyptMarketRowsCount = egyptMarketRowsCount;
           (request as any).__egEgyptMarketPointsCount = egyptMarketPointsCount;
           (request as any).__egEgyptMarketLatestAt = egyptMarketLatestAtMs
@@ -693,6 +737,14 @@ export async function GET(request: Request) {
         fallbackSource: fallbackSource || null,
         egWideRowsCount: (request as any).__egWideRowsCount ?? null,
         egWidePointsCount: (request as any).__egWidePointsCount ?? null,
+        egWideHas24Count: (request as any).__egWideHas24Count ?? null,
+        egWideHas21Count: (request as any).__egWideHas21Count ?? null,
+        egWideHas18Count: (request as any).__egWideHas18Count ?? null,
+        egWideHas14Count: (request as any).__egWideHas14Count ?? null,
+        egWideLastAt24: (request as any).__egWideLastAt24 ?? null,
+        egWideLastAt21: (request as any).__egWideLastAt21 ?? null,
+        egWideLastAt18: (request as any).__egWideLastAt18 ?? null,
+        egWideLastAt14: (request as any).__egWideLastAt14 ?? null,
         egEgyptMarketRowsCount: (request as any).__egEgyptMarketRowsCount ?? null,
         egEgyptMarketPointsCount: (request as any).__egEgyptMarketPointsCount ?? null,
         egEgyptMarketLatestAt: (request as any).__egEgyptMarketLatestAt ?? null,
