@@ -165,7 +165,7 @@ export default function ForecastMiniChart({
 
   // Chart dimensions
   // Match SVG viewBox aspect ratio to the container to avoid letterboxing (which looks "small"),
-  // while using preserveAspectRatio="xMidYMid meet" to avoid stretching.
+  // while using preserveAspectRatio="none" so the SVG always fills its wrapper.
   // Use containerWidth directly to keep viewBox aspect aligned with the real container.
   // Avoid a large minimum (like 720) which can re-introduce letterboxing on narrow layouts.
   const width =
@@ -182,7 +182,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="none"
         >
           <text
             x={width / 2}
@@ -204,7 +204,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="none"
         >
           <text
             x={width / 2}
@@ -236,7 +236,7 @@ export default function ForecastMiniChart({
         <svg
           viewBox={`0 0 ${width} ${chartHeight}`}
           className="w-full h-full"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="none"
           style={{ width: '100%', height: '100%' }}
         >
           <text
@@ -298,11 +298,13 @@ export default function ForecastMiniChart({
   const inWindow = validPoints.filter((p) => p.t >= timeMin && p.t <= timeMax);
   const pointsForRender = inWindow.length > 0 ? inWindow : validPoints;
 
-  // Downsample rendered points if too many (keep first+last)
+  // Downsample rendered points if too many (keep first+last).
+  // Use a cap based on pixel width so we don't throw away too much shape detail on desktop.
   let displayPoints = pointsForRender;
-  if (pointsForRender.length > 120) {
+  const maxPointsByWidth = Math.min(500, Math.max(120, Math.floor(w / 3))); // ~1 point per 3px, clamped
+  if (pointsForRender.length > maxPointsByWidth) {
     displayPoints = [];
-    const maxPoints = 120;
+    const maxPoints = maxPointsByWidth;
     const lastIdx = pointsForRender.length - 1;
     const seen = new Set<number>();
     for (let i = 0; i < maxPoints; i++) {
@@ -435,12 +437,35 @@ export default function ForecastMiniChart({
     }
   }
 
-  // Generate path for line (using displayPoints for downsampled data)
+  // Generate path for line (using displayPoints for downsampled data).
+  // IMPORTANT: Do not connect across large time gaps (missing data).
+  const gapThresholdMs = (() => {
+    if (displayPoints.length < 3) return Infinity;
+    const dts: number[] = [];
+    for (let i = 1; i < displayPoints.length; i++) {
+      const dt = displayPoints[i].t - displayPoints[i - 1].t;
+      if (dt > 0) dts.push(dt);
+    }
+    dts.sort((a, b) => a - b);
+    const median = dts.length > 0 ? dts[Math.floor(dts.length / 2)] : 0;
+    const rangeFloor =
+      range === 'daily'
+        ? 30 * 60 * 1000 // 30m
+        : range === 'weekly'
+          ? 6 * 60 * 60 * 1000 // 6h
+          : range === 'monthly'
+            ? 36 * 60 * 60 * 1000 // 36h
+            : 14 * 24 * 60 * 60 * 1000; // 14d
+    return Math.max(rangeFloor, median * 8);
+  })();
+
   const pathData = displayPoints
     .map((point, index) => {
       const x = scaleX(point.t);
       const y = scaleY(point.v);
-      return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
+      if (index === 0) return `M ${x} ${y}`;
+      const dt = point.t - displayPoints[index - 1].t;
+      return dt > gapThresholdMs ? `M ${x} ${y}` : `L ${x} ${y}`;
     })
     .join(' ');
 
@@ -448,8 +473,7 @@ export default function ForecastMiniChart({
   const showCircles = displayPoints.length <= 60;
 
   // Convert screen coords -> SVG viewBox coords.
-  // We use preserveAspectRatio="xMidYMid meet"; viewBox is chosen to match container ratio,
-  // but we still handle potential offsets/scale robustly.
+  // We use preserveAspectRatio="none" so scaling is linear.
   const getSvgCoords = (clientX: number, clientY: number): { svgX: number; svgY: number } | null => {
     const svg = svgRef.current;
     if (!svg) return null;
@@ -457,27 +481,9 @@ export default function ForecastMiniChart({
     const rect = svg.getBoundingClientRect();
     const px = clientX - rect.left;
     const py = clientY - rect.top;
-
     if (rect.width <= 0 || rect.height <= 0) return null;
-
-    const viewW = width;
-    const viewH = chartHeight;
-    const sx = rect.width / viewW;
-    const sy = rect.height / viewH;
-    const s = Math.min(sx, sy);
-    const drawnW = viewW * s;
-    const drawnH = viewH * s;
-    const offX = (rect.width - drawnW) / 2;
-    const offY = (rect.height - drawnH) / 2;
-
-    const xIn = px - offX;
-    const yIn = py - offY;
-
-    // If pointer is in letterboxed padding, treat as outside.
-    if (xIn < 0 || yIn < 0 || xIn > drawnW || yIn > drawnH) return null;
-
-    const svgX = xIn / s;
-    const svgY = yIn / s;
+    const svgX = (px / rect.width) * width;
+    const svgY = (py / rect.height) * chartHeight;
     return { svgX, svgY };
   };
 
@@ -618,7 +624,7 @@ export default function ForecastMiniChart({
         ref={svgRef}
         viewBox={`0 0 ${width} ${chartHeight}`}
         className="w-full h-full"
-        preserveAspectRatio="xMidYMid meet"
+        preserveAspectRatio="none"
         style={{ width: '100%', height: '100%', display: 'block', position: 'relative' }}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
