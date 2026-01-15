@@ -81,6 +81,29 @@ export default function RootLayout({
         </LanguageProvider>
         <CookieConsentBanner />
         <Analytics />
+        <Script
+          id="service-worker-registration"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator && typeof window !== 'undefined') {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .then((registration) => {
+                      console.log('[SW] Service Worker registered:', registration.scope);
+                      // Check for updates every hour
+                      setInterval(() => {
+                        registration.update();
+                      }, 3600000);
+                    })
+                    .catch((error) => {
+                      console.error('[SW] Service Worker registration failed:', error);
+                    });
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   )

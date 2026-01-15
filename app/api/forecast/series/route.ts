@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-15T11:22Z';
+const API_VERSION = '2026-01-15T20:21Z';
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
@@ -232,18 +232,22 @@ export async function GET(request: Request) {
           const hoursSinceLatest =
             latestPointTime !== null ? (now - latestPointTime) / (1000 * 60 * 60) : Infinity;
 
+          let wideRowsCount: number | null = null;
+          let widePointsCount: number | null = null;
+
           if (points.length === 0 || hoursSinceLatest > 6) {
             try {
               const { data: wideData, error: wideError } = await supabase
                 .from('market_snapshots')
+                // NOTE: wide table uses quoted/camelCase columns in Postgres ("createdAt", "market24Buy", ...)
                 .select('source, createdAt, market24Buy, market21Buy, error')
                 .gte('createdAt', windowStart)
                 .is('error', null)
-                .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
                 .order('createdAt', { ascending: true })
                 .range(0, 9999);
 
               if (!wideError && wideData && wideData.length > 0) {
+                wideRowsCount = wideData.length;
                 const bucketMs =
                   rangeParam === 'daily'
                     ? 60_000
@@ -268,6 +272,7 @@ export async function GET(request: Request) {
                 const widePoints = Array.from(buckets.entries())
                   .map(([t, arr]) => ({ t, v: arr.reduce((s, x) => s + x, 0) / arr.length }))
                   .sort((a, b) => a.t - b.t);
+                widePointsCount = widePoints.length;
 
                 if (widePoints.length > 0) {
                   const wideLatest = widePoints[widePoints.length - 1].t;
@@ -436,6 +441,11 @@ export async function GET(request: Request) {
             // Close: if (hoursSinceAfter > 6)
             }
           }
+
+          // Expose minimal proof/debug in meta (helps validate "DB has rows but API didn't use them")
+          // Only set when EG local attempted.
+          (request as any).__egWideRowsCount = wideRowsCount;
+          (request as any).__egWidePointsCount = widePointsCount;
         }
 
         // EG-local history coverage fallback (weekly/monthly/yoy):
@@ -574,6 +584,8 @@ export async function GET(request: Request) {
         source,
         fallbackUsed: fallbackUsed || false,
         fallbackSource: fallbackSource || null,
+        egWideRowsCount: (request as any).__egWideRowsCount ?? null,
+        egWidePointsCount: (request as any).__egWidePointsCount ?? null,
       },
     });
 
