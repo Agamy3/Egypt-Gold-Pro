@@ -82,12 +82,31 @@ export default function AdminNewsPage() {
       if (res.ok && data.ok) {
         setIngestResult(data);
         const totalInserted = data.summary?.totalInserted || 0;
-        setMessage({
-          type: 'success',
-          text: lang === 'ar'
-            ? `تم استيراد ${totalInserted} عنصر بنجاح`
-            : `Successfully ingested ${totalInserted} items`,
-        });
+        const totalUpdated = Object.values(data.results || {}).reduce((sum, r) => sum + (r.total?.updated || 0), 0);
+        const totalFetched = Object.values(data.results || {}).reduce((sum, r) => sum + (r.gdelt?.fetchedCount || 0) + (r.rss?.fetchedCount || 0), 0);
+        
+        if (totalInserted > 0 || totalUpdated > 0) {
+          setMessage({
+            type: 'success',
+            text: lang === 'ar'
+              ? `تم معالجة ${totalInserted} عنصر جديد و ${totalUpdated} عنصر محدث من ${totalFetched} عنصر مُجلب`
+              : `Processed ${totalInserted} new items and ${totalUpdated} updated items from ${totalFetched} fetched`,
+          });
+        } else if (totalFetched > 0) {
+          setMessage({
+            type: 'success',
+            text: lang === 'ar'
+              ? `تم جلب ${totalFetched} عنصر (جميعها موجودة مسبقاً)`
+              : `Fetched ${totalFetched} items (all already exist)`,
+          });
+        } else {
+          setMessage({
+            type: 'error',
+            text: lang === 'ar'
+              ? 'لم يتم جلب أي عناصر - تحقق من إعدادات RSS أو GDELT'
+              : 'No items fetched - check RSS or GDELT configuration',
+          });
+        }
       } else {
         setMessage({
           type: 'error',

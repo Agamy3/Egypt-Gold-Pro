@@ -1,13 +1,9 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import LanguageToggle from '@/components/LanguageToggle';
-import CountryCurrencySelector from '@/components/CountryCurrencySelector';
-import AccountMenu from '@/components/AccountMenu';
 import Footer from '@/components/Footer';
 import ForecastCard from '@/components/ForecastCard';
+import Header from '@/components/layout/Header';
 import { useLang } from '@/components/LanguageProvider';
 import { useSearchParams } from 'next/navigation';
 
@@ -158,45 +154,19 @@ function USPageContent() {
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
-      <header className="bg-gray-900 shadow-sm border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
-          <div className={`flex flex-col sm:flex-row items-start sm:items-center ${lang === 'ar' ? 'sm:flex-row-reverse' : ''} gap-3 sm:gap-4 justify-between`}>
-            <Link href="/" className={`flex items-center gap-3 sm:gap-4 flex-1 min-w-0 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              <div className="relative w-12 h-12 sm:w-14 sm:h-14 flex-shrink-0">
-                <Image
-                  src="/brand/logo.png"
-                  alt="EgyptGold Pro"
-                  fill
-                  className="object-contain"
-                  priority
-                  sizes="(max-width: 640px) 48px, 56px"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gold-400 truncate">
-                  {lang === 'ar' ? 'معلومات سوق الذهب الأمريكي' : 'US Gold Market Overview'}
-                </h1>
-                <p className="text-xs sm:text-sm text-gray-300 mt-1">
-                  {lang === 'ar' 
-                    ? 'دعم قرار تعليمي لسوق الذهب الأمريكي'
-                    : 'Educational decision-support for the US gold market'}
-                </p>
-              </div>
-            </Link>
-            <div className={`flex items-center gap-2 sm:gap-4 w-full sm:w-auto ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-              <CountryCurrencySelector />
-              <LanguageToggle />
-              <AccountMenu />
-            </div>
-          </div>
-          <div className={`mt-2 text-xs text-gray-400 italic ${lang === 'ar' ? 'text-right' : ''}`}>
-            {lang === 'ar' 
-              ? 'للاستخدام التعليمي فقط. قد تنطبق علاوات البيع بالتجزئة والضرائب.'
-              : 'Educational only. Retail premiums/taxes may apply.'}
-          </div>
+      <Header 
+        title={lang === 'ar' ? 'معلومات سوق الذهب الأمريكي' : 'US Gold Market Overview'}
+        subtitle={lang === 'ar' 
+          ? 'دعم قرار تعليمي لسوق الذهب الأمريكي'
+          : 'Educational decision-support for the US gold market'}
+      />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className={`text-xs text-gray-400 italic py-2 ${lang === 'ar' ? 'text-right' : ''}`}>
+          {lang === 'ar' 
+            ? 'للاستخدام التعليمي فقط. قد تنطبق علاوات البيع بالتجزئة والضرائب.'
+            : 'Educational only. Retail premiums/taxes may apply.'}
         </div>
-      </header>
-
+      </div>
       <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
         {snapshot && (
           <div className="space-y-4 sm:space-y-6">

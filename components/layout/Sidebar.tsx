@@ -61,6 +61,13 @@ export default function Sidebar() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const updateCountry = () => {
+        // Check if we're on /us page (US country)
+        if (pathname === '/us') {
+          setCurrentCountry('US');
+          return;
+        }
+        
+        // Otherwise, read from URL params
         const urlParams = new URLSearchParams(window.location.search);
         const country = urlParams.get('country');
         setCurrentCountry(country);
