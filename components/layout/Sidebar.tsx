@@ -57,12 +57,33 @@ export default function Sidebar() {
       .catch(() => setIsAdmin(false));
   }, []);
 
-  // Get country from URL on client side - update when pathname changes
+  // Get country from URL on client side - update when pathname or URL changes
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const country = urlParams.get('country');
-      setCurrentCountry(country);
+      const updateCountry = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const country = urlParams.get('country');
+        setCurrentCountry(country);
+      };
+      
+      // Initial read
+      updateCountry();
+      
+      // Listen for URL changes (Next.js router events)
+      const handleRouteChange = () => {
+        // Small delay to ensure URL is updated
+        setTimeout(updateCountry, 100);
+      };
+      
+      window.addEventListener('popstate', handleRouteChange);
+      
+      // Also check periodically (fallback for programmatic navigation)
+      const interval = setInterval(updateCountry, 500);
+      
+      return () => {
+        window.removeEventListener('popstate', handleRouteChange);
+        clearInterval(interval);
+      };
     }
   }, [pathname]);
 

@@ -93,19 +93,38 @@ export async function fetchRssFeed(feedUrl: string): Promise<NewsItem[]> {
     const response = await fetch(feedUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; EgyptGoldPro/1.0)',
+        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
       },
       next: { revalidate: 1800 }, // Cache for 30 minutes
     });
 
     if (!response.ok) {
-      console.error(`[RSS] Failed to fetch ${feedUrl}: ${response.status}`);
+      console.error(`[RSS] Failed to fetch ${feedUrl}: ${response.status} ${response.statusText}`);
       return [];
     }
 
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('xml') && !contentType.includes('rss') && !contentType.includes('text')) {
+      console.warn(`[RSS] Unexpected content-type for ${feedUrl}: ${contentType}`);
+    }
+
     const text = await response.text();
-    return parseRSSFeed(text, feedUrl);
+    
+    if (!text || text.trim().length === 0) {
+      console.warn(`[RSS] Empty response from ${feedUrl}`);
+      return [];
+    }
+
+    const items = parseRSSFeed(text, feedUrl);
+    
+    if (items.length === 0) {
+      console.warn(`[RSS] Parsed 0 items from ${feedUrl} - feed may be empty or format not recognized`);
+    }
+    
+    return items;
   } catch (error) {
-    console.error(`[RSS] Error fetching ${feedUrl}:`, error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[RSS] Error fetching ${feedUrl}:`, errorMsg);
     return [];
   }
 }
@@ -202,6 +221,10 @@ export async function fetchRssForCountry(country: string): Promise<NewsItem[]> {
       allItems.push(...items);
       // eslint-disable-next-line no-console
       console.log(`[RSS] Fetched ${items.length} items from ${feedUrl}`);
+      if (items.length === 0) {
+        // eslint-disable-next-line no-console
+        console.warn(`[RSS] Feed ${feedUrl} returned 0 items - feed may be empty or inaccessible`);
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       errors.push(`Failed to fetch ${feedUrl}: ${errorMsg}`);
