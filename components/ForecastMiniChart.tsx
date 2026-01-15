@@ -459,15 +459,34 @@ export default function ForecastMiniChart({
     return Math.max(rangeFloor, median * 8);
   })();
 
-  const pathData = displayPoints
-    .map((point, index) => {
-      const x = scaleX(point.t);
-      const y = scaleY(point.v);
-      if (index === 0) return `M ${x} ${y}`;
-      const dt = point.t - displayPoints[index - 1].t;
-      return dt > gapThresholdMs ? `M ${x} ${y}` : `L ${x} ${y}`;
-    })
-    .join(' ');
+  // Build two paths:
+  // - solidPathData: normal contiguous segments
+  // - gapPathData: dashed connectors across gaps (so the chart doesn't look "incomplete")
+  let solidPathData = '';
+  let gapPathData = '';
+  for (let i = 0; i < displayPoints.length; i++) {
+    const p = displayPoints[i];
+    const x = scaleX(p.t);
+    const y = scaleY(p.v);
+
+    if (i === 0) {
+      solidPathData += `M ${x} ${y}`;
+      continue;
+    }
+
+    const prev = displayPoints[i - 1];
+    const dt = p.t - prev.t;
+    const prevX = scaleX(prev.t);
+    const prevY = scaleY(prev.v);
+
+    if (dt > gapThresholdMs) {
+      // break the solid line, but add a dashed connector for continuity
+      solidPathData += ` M ${x} ${y}`;
+      gapPathData += ` M ${prevX} ${prevY} L ${x} ${y}`;
+    } else {
+      solidPathData += ` L ${x} ${y}`;
+    }
+  }
 
   // Determine if we should show circles (only if <= 60 points, check displayPoints length)
   const showCircles = displayPoints.length <= 60;
@@ -709,15 +728,29 @@ export default function ForecastMiniChart({
 
         {/* Chart line and points (clipped to plot area) */}
         <g clipPath="url(#chart-clip)">
-          {/* Line */}
+          {/* Line (solid segments) */}
           <path
-            d={pathData}
+            d={solidPathData}
             fill="none"
             stroke={strokeColor}
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
+
+          {/* Dashed gap connectors */}
+          {gapPathData.trim().length > 0 && (
+            <path
+              d={gapPathData}
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth="2"
+              strokeOpacity="0.45"
+              strokeDasharray="6 6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
 
           {/* Always render the last point marker so "latest" is visible even when we break on gaps */}
           {displayPoints.length > 0 && (() => {
