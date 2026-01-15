@@ -719,6 +719,27 @@ export default function ForecastMiniChart({
             strokeLinejoin="round"
           />
 
+          {/* Always render the last point marker so "latest" is visible even when we break on gaps */}
+          {displayPoints.length > 0 && (() => {
+            const last = displayPoints[displayPoints.length - 1];
+            const x = scaleX(last.t);
+            const y = scaleY(last.v);
+            return (
+              <circle
+                cx={x}
+                cy={y}
+                r="3"
+                fill={strokeColor}
+                stroke="white"
+                strokeWidth="1.5"
+              >
+                <title>
+                  {formatTime(last.t)}: {formatYValue(last.v)} {unit}
+                </title>
+              </circle>
+            );
+          })()}
+
           {/* Data points (only if <= 60, using displayPoints) */}
           {showCircles &&
             displayPoints.map((point, index) => {

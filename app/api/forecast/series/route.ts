@@ -9,12 +9,13 @@ import { NextResponse } from 'next/server';
 import { getServerClient } from '@/lib/supabase/server';
 import { getGoldSpotHistory } from '@/lib/supabase/goldSpot';
 import { getCountryCurrency } from '@/lib/fx-multi';
+import { fetchStooqHistoryDaily } from '@/lib/spot-fetch';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-14T23:40Z';
+const API_VERSION = '2026-01-15T10:45Z';
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
@@ -300,9 +301,47 @@ export async function GET(request: Request) {
                 const egpRate = fxResult.rate;
                 
                 if (egpRate && egpRate > 0) {
+                  // If spot history has a multi-day hole (common when gold_spot caching stalls),
+                  // supplement with Stooq daily history across the requested window.
+                  let spotSeries = [...goldSpotHistory];
+                  if (rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy') {
+                    const sorted = [...spotSeries].sort((a, b) => a.fetched_at - b.fetched_at);
+                    const maxGapMs = sorted.reduce((max, cur, idx) => {
+                      if (idx === 0) return max;
+                      const dt = cur.fetched_at - sorted[idx - 1].fetched_at;
+                      return dt > max ? dt : max;
+                    }, 0);
+
+                    const gapWarnMs =
+                      rangeParam === 'weekly'
+                        ? 36 * 60 * 60 * 1000
+                        : rangeParam === 'monthly'
+                          ? 48 * 60 * 60 * 1000
+                          : 14 * 24 * 60 * 60 * 1000;
+
+                    if (maxGapMs > gapWarnMs) {
+                      const windowDays = Math.min(
+                        420,
+                        Math.max(7, Math.ceil(windowMs / (24 * 60 * 60 * 1000)) + 2)
+                      );
+                      const hist = await fetchStooqHistoryDaily(windowDays);
+                      if (hist.points.length > 0) {
+                        const haveDay = new Set(sorted.map((r) => new Date(r.fetched_at).toISOString().slice(0, 10)));
+                        for (const pt of hist.points) {
+                          if (pt.t < windowStart) continue;
+                          const dayKey = new Date(pt.t).toISOString().slice(0, 10);
+                          if (haveDay.has(dayKey)) continue;
+                          haveDay.add(dayKey);
+                          spotSeries.push({ xau_spot_usd_oz: pt.v, fetched_at: pt.t });
+                        }
+                        spotSeries.sort((a, b) => a.fetched_at - b.fetched_at);
+                      }
+                    }
+                  }
+
                   // Convert global spot to EGP using FX rate
                   const fallbackPoints: Array<{ t: number; v: number }> = [];
-                  for (const spot of goldSpotHistory) {
+                  for (const spot of spotSeries) {
                     // Convert XAU/USD to EGP per gram (24k)
                     // 1 oz = 31.1035 grams
                     const pricePerGramUsd = spot.xau_spot_usd_oz / 31.1035;
