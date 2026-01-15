@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-15T20:35Z';
+const API_VERSION = '2026-01-15T20:38Z';
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
@@ -237,6 +237,7 @@ export async function GET(request: Request) {
           let egyptMarketRowsCount: number | null = null;
           let egyptMarketPointsCount: number | null = null;
           let egyptMarketLatestAtMs: number | null = null;
+          let egyptMarketError: string | null = null;
 
           if (points.length === 0 || hoursSinceLatest > 6) {
             try {
@@ -374,13 +375,40 @@ export async function GET(request: Request) {
               // Before GLOBAL spot, try egypt_market (legacy cached intraday EG sources like dahabmasr/goldbillion)
               // This is often where the "real" intraday EG points live.
               try {
-                const { data: emRows, error: emErr } = await supabase
-                  .from('egypt_market')
-                  .select('source, fetched_at, status, market_24_buy, market_21_buy')
-                  .gte('fetched_at', new Date(windowStart).toISOString())
-                  .eq('status', 'OK')
-                  .order('fetched_at', { ascending: true })
-                  .range(0, 4999);
+                // egypt_market.fetched_at has existed in two shapes over time:
+                // - TIMESTAMPTZ (ISO string)
+                // - bigint epoch ms (legacy import)
+                // Try ISO first; if type mismatch, retry with ms.
+                const fetchedAtIso = new Date(windowStart).toISOString();
+                const runEgyptMarketQuery = async (useIso: boolean) => {
+                  let q = supabase
+                    .from('egypt_market')
+                    .select('source, fetched_at, status, market_24_buy, market_21_buy')
+                    .order('fetched_at', { ascending: true })
+                    .range(0, 4999);
+                  q = q.gte('fetched_at', useIso ? fetchedAtIso : windowStart);
+                  // Accept both OK and STALE (we’ll still apply the 6h freshness gate below)
+                  q = q.in('status', ['OK', 'STALE']);
+                  return await q;
+                };
+
+                let emRows: any[] | null = null;
+                let emErr: any = null;
+                const r1 = await runEgyptMarketQuery(true);
+                emRows = (r1 as any).data ?? null;
+                emErr = (r1 as any).error ?? null;
+                if (emErr) {
+                  const msg = emErr?.message ? String(emErr.message) : String(emErr);
+                  // Retry for legacy bigint epoch ms
+                  if (msg.includes('bigint') || msg.includes('invalid input syntax')) {
+                    const r2 = await runEgyptMarketQuery(false);
+                    emRows = (r2 as any).data ?? null;
+                    emErr = (r2 as any).error ?? null;
+                  }
+                }
+                if (emErr) {
+                  egyptMarketError = emErr?.message ? String(emErr.message) : String(emErr);
+                }
 
                 if (!emErr && emRows && emRows.length > 0) {
                   egyptMarketRowsCount = emRows.length;
@@ -524,6 +552,7 @@ export async function GET(request: Request) {
           (request as any).__egEgyptMarketLatestAt = egyptMarketLatestAtMs
             ? new Date(egyptMarketLatestAtMs).toISOString()
             : null;
+          (request as any).__egEgyptMarketError = egyptMarketError;
         }
 
         // EG-local history coverage fallback (weekly/monthly/yoy):
@@ -667,6 +696,7 @@ export async function GET(request: Request) {
         egEgyptMarketRowsCount: (request as any).__egEgyptMarketRowsCount ?? null,
         egEgyptMarketPointsCount: (request as any).__egEgyptMarketPointsCount ?? null,
         egEgyptMarketLatestAt: (request as any).__egEgyptMarketLatestAt ?? null,
+        egEgyptMarketError: (request as any).__egEgyptMarketError ?? null,
       },
     });
 
