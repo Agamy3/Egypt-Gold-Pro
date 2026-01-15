@@ -61,11 +61,11 @@ export default function Header({ title, subtitle, showLogo = true }: HeaderProps
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
         <div className={`flex flex-col sm:flex-row items-start sm:items-center ${lang === 'ar' ? 'sm:flex-row-reverse' : ''} gap-3 sm:gap-4 justify-between`}>
           <div className={`flex items-center gap-3 sm:gap-4 flex-1 min-w-0 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-            {/* Hamburger toggle for sidebar (desktop) */}
+            {/* Hamburger toggle for sidebar (desktop) - always visible on desktop */}
             <button
               type="button"
               onClick={toggleSidebar}
-              className="hidden lg:flex items-center justify-center p-2 rounded-md text-gray-300 hover:bg-gray-800 transition-colors"
+              className="flex items-center justify-center p-2 rounded-md text-gray-300 hover:bg-gray-800 transition-colors"
               aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               title={sidebarCollapsed ? (lang === 'ar' ? 'توسيع القائمة' : 'Expand sidebar') : (lang === 'ar' ? 'طي القائمة' : 'Collapse sidebar')}
             >
