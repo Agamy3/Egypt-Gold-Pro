@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-15T10:45Z';
+const API_VERSION = '2026-01-15T11:06Z';
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {

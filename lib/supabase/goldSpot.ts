@@ -103,7 +103,9 @@ export async function getGoldSpotHistory(
     // This prevents weekly/monthly/yoy fallback series from "ending early" and looking flat/incorrect.
     const now = Date.now();
     const lastAt = rows.length > 0 ? rows[rows.length - 1].fetched_at : null;
-    const STALE_AFTER_MS = 10 * 60 * 1000; // 10 minutes
+    // Refresh cadence for spot history.
+    // We keep this fairly tight so the chart has enough intraday points when EG local falls back to spot.
+    const STALE_AFTER_MS = 2 * 60 * 1000; // 2 minutes
     const VERY_STALE_AFTER_MS = 6 * 60 * 60 * 1000; // 6 hours
 
     if (lastAt === null || now - lastAt > STALE_AFTER_MS) {
