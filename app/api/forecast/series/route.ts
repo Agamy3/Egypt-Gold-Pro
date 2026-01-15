@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-15T20:21Z';
+const API_VERSION = '2026-01-15T20:35Z';
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
@@ -234,6 +234,9 @@ export async function GET(request: Request) {
 
           let wideRowsCount: number | null = null;
           let widePointsCount: number | null = null;
+          let egyptMarketRowsCount: number | null = null;
+          let egyptMarketPointsCount: number | null = null;
+          let egyptMarketLatestAtMs: number | null = null;
 
           if (points.length === 0 || hoursSinceLatest > 6) {
             try {
@@ -368,6 +371,76 @@ export async function GET(request: Request) {
             
             // Fallback 2: If aggregated also stale, use GLOBAL spot + USD/EGP estimate
             if (!fallbackUsed && goldSpotHistory.length > 0) {
+              // Before GLOBAL spot, try egypt_market (legacy cached intraday EG sources like dahabmasr/goldbillion)
+              // This is often where the "real" intraday EG points live.
+              try {
+                const { data: emRows, error: emErr } = await supabase
+                  .from('egypt_market')
+                  .select('source, fetched_at, status, market_24_buy, market_21_buy')
+                  .gte('fetched_at', new Date(windowStart).toISOString())
+                  .eq('status', 'OK')
+                  .order('fetched_at', { ascending: true })
+                  .range(0, 4999);
+
+                if (!emErr && emRows && emRows.length > 0) {
+                  egyptMarketRowsCount = emRows.length;
+                  const bucketMs =
+                    rangeParam === 'daily'
+                      ? 60_000
+                      : rangeParam === 'weekly'
+                        ? 10 * 60_000
+                        : rangeParam === 'monthly'
+                          ? 60 * 60_000
+                          : 6 * 60 * 60_000;
+
+                  const buckets = new Map<number, number[]>();
+                  for (const r of emRows as any[]) {
+                    const t =
+                      typeof r.fetched_at === 'string'
+                        ? new Date(r.fetched_at).getTime()
+                        : typeof r.fetched_at === 'number'
+                          ? r.fetched_at
+                          : 0;
+                    if (!isFinite(t) || t <= 0) continue;
+                    const vRaw = r.market_24_buy ?? r.market_21_buy;
+                    const v = Number(vRaw);
+                    if (!isFinite(v) || v <= 0) continue;
+                    const key = Math.floor(t / bucketMs) * bucketMs;
+                    if (!buckets.has(key)) buckets.set(key, []);
+                    buckets.get(key)!.push(v);
+                  }
+
+                  const median = (arr: number[]) => {
+                    const a = [...arr].sort((x, y) => x - y);
+                    const mid = Math.floor(a.length / 2);
+                    return a.length % 2 === 0 ? (a[mid - 1] + a[mid]) / 2 : a[mid];
+                  };
+
+                  const emPoints = Array.from(buckets.entries())
+                    .map(([t, arr]) => ({ t, v: median(arr) }))
+                    .sort((a, b) => a.t - b.t);
+
+                  if (emPoints.length > 0) {
+                    egyptMarketPointsCount = emPoints.length;
+                    egyptMarketLatestAtMs = emPoints[emPoints.length - 1].t;
+                    const emHoursSince = (now - egyptMarketLatestAtMs) / (1000 * 60 * 60);
+                    if (emHoursSince <= 6) {
+                      points = emPoints;
+                      fallbackUsed = true;
+                      fallbackSource = 'egypt_market';
+                      lastDataAtMs = egyptMarketLatestAtMs;
+                      console.warn('[Forecast Series] Using egypt_market fallback for EG local:', {
+                        rows: egyptMarketRowsCount,
+                        points: egyptMarketPointsCount,
+                        emHoursSince: Number(emHoursSince.toFixed(2)),
+                      });
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error('[Forecast Series] egypt_market fallback failed:', e);
+              }
+
               try {
                 const { getUsdEgpRate } = await import('@/lib/fx');
                 const fxResult = await getUsdEgpRate();
@@ -446,6 +519,11 @@ export async function GET(request: Request) {
           // Only set when EG local attempted.
           (request as any).__egWideRowsCount = wideRowsCount;
           (request as any).__egWidePointsCount = widePointsCount;
+          (request as any).__egEgyptMarketRowsCount = egyptMarketRowsCount;
+          (request as any).__egEgyptMarketPointsCount = egyptMarketPointsCount;
+          (request as any).__egEgyptMarketLatestAt = egyptMarketLatestAtMs
+            ? new Date(egyptMarketLatestAtMs).toISOString()
+            : null;
         }
 
         // EG-local history coverage fallback (weekly/monthly/yoy):
@@ -586,6 +664,9 @@ export async function GET(request: Request) {
         fallbackSource: fallbackSource || null,
         egWideRowsCount: (request as any).__egWideRowsCount ?? null,
         egWidePointsCount: (request as any).__egWidePointsCount ?? null,
+        egEgyptMarketRowsCount: (request as any).__egEgyptMarketRowsCount ?? null,
+        egEgyptMarketPointsCount: (request as any).__egEgyptMarketPointsCount ?? null,
+        egEgyptMarketLatestAt: (request as any).__egEgyptMarketLatestAt ?? null,
       },
     });
 

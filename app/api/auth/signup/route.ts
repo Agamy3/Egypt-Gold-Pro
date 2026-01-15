@@ -83,17 +83,59 @@ export async function POST(request: NextRequest) {
     // Create profile if user was created
     if (authData.user) {
       const supabaseAdmin = createAdminClient();
+      const defaultCountry = 'EG'; // Default country is Egypt
+      
+      // Create user profile with push notifications enabled by default
       const { error: profileError } = await supabaseAdmin
         .from('user_profiles')
         .insert({
           id: authData.user.id,
           email: authData.user.email!,
           display_name: displayName || null,
+          preferred_country: defaultCountry,
+          push_notifications_enabled: true, // Enable push notifications by default
+          email_notifications_enabled: true,
         });
 
       if (profileError) {
         console.error('Error creating profile:', profileError);
         // Don't fail the signup if profile creation fails - it can be created later
+      } else {
+        // Create default notification rule for 24k price changes in default country
+        // This rule triggers on any price change >= 0.5% for 24k gold in the default country
+        const { error: ruleError } = await supabaseAdmin
+          .from('notification_rules')
+          .insert({
+            user_id: authData.user.id,
+            type: 'price_move_pct',
+            country: defaultCountry,
+            karat: 24,
+            pct_threshold: 0.005, // 0.5% threshold
+            enabled: true,
+            channel_inapp: true,
+            channel_push: true, // Enable push for this rule
+            channel_email: true,
+            one_time: false,
+          });
+
+        if (ruleError) {
+          console.error('Error creating default notification rule:', ruleError);
+          // Don't fail the signup if rule creation fails
+        }
+
+        // Add default country to watchlist
+        const { error: watchlistError } = await supabaseAdmin
+          .from('user_country_watchlist')
+          .insert({
+            user_id: authData.user.id,
+            country: defaultCountry,
+            enabled: true,
+          });
+
+        if (watchlistError) {
+          console.error('Error creating default watchlist entry:', watchlistError);
+          // Don't fail the signup if watchlist creation fails
+        }
       }
     }
 

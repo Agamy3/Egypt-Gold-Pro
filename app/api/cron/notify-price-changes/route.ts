@@ -265,7 +265,7 @@ export async function GET(request: NextRequest) {
         // Get user profiles to check preferences and emails
         const { data: profiles, error: profilesError } = await supabase
           .from('user_profiles')
-          .select('id, email, email_notifications_enabled, app_notifications_enabled')
+          .select('id, email, email_notifications_enabled, app_notifications_enabled, push_notifications_enabled')
           .in('id', userIds);
 
         if (profilesError) {
@@ -282,7 +282,7 @@ export async function GET(request: NextRequest) {
         // Send notifications to each user
         for (const profile of profiles) {
           const emailEnabled = profile.email_notifications_enabled ?? true;
-          const pushEnabled = profile.app_notifications_enabled ?? false;
+          const pushEnabled = (profile.push_notifications_enabled ?? profile.app_notifications_enabled ?? true); // Enable push by default
 
           // Send email if enabled
           if (emailEnabled) {
@@ -392,7 +392,7 @@ export async function GET(request: NextRequest) {
         // Get user profile
         const { data: profile } = await supabase
           .from('user_profiles')
-          .select('id, email, email_notifications_enabled, app_notifications_enabled')
+          .select('id, email, email_notifications_enabled, app_notifications_enabled, push_notifications_enabled')
           .eq('id', trigger.userId)
           .single();
 
@@ -401,7 +401,7 @@ export async function GET(request: NextRequest) {
         }
 
         const emailEnabled = profile.email_notifications_enabled ?? true;
-        const pushEnabled = profile.app_notifications_enabled ?? false;
+        const pushEnabled = (profile.push_notifications_enabled ?? profile.app_notifications_enabled ?? true); // Enable push by default
 
         // Calculate pct change (approximate from threshold)
         const pctChange = Math.abs((trigger.currentPrice - trigger.thresholdPrice) / trigger.thresholdPrice);

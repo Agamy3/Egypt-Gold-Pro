@@ -48,7 +48,7 @@ function NotificationsContent() {
 
   // Profile state
   const [emailEnabled, setEmailEnabled] = useState(true);
-  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(true); // Enable push by default
   const [pushSupported, setPushSupported] = useState(false);
   const [pushSubscribed, setPushSubscribed] = useState(false);
 
@@ -164,7 +164,7 @@ function NotificationsContent() {
               const data = JSON.parse(text);
               if (data.profile) {
                 setEmailEnabled(data.profile.email_notifications_enabled ?? true);
-                setPushEnabled(data.profile.push_notifications_enabled ?? false);
+                setPushEnabled(data.profile.push_notifications_enabled ?? true); // Enable push by default
               }
             } catch (parseErr) {
               console.error('Error parsing profile JSON:', parseErr);
