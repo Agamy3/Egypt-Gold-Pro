@@ -142,7 +142,7 @@ function PortfolioContent() {
   const holdingsCount = portfolio?.holdings?.length ?? 0;
 
   return (
-    <div className="min-h-screen bg-black">
+    <>
       <Header title={lang === 'ar' ? 'المحفظة' : 'Portfolio'} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 sm:py-8 lg:py-10">
@@ -262,7 +262,7 @@ function PortfolioContent() {
 
         {/* Empty portfolio state (no holdings yet) */}
         {portfolio && holdingsCount === 0 && (
-          <div className="mt-6 sm:mt-8 lg:mt-10 max-w-3xl mx-auto">
+          <div className="mt-6 sm:mt-8 lg:mt-10 max-w-3xl mx-auto space-y-6">
             <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 sm:p-6 lg:p-8 space-y-4">
               <h2 className="text-xl sm:text-2xl font-semibold text-gold-400">
                 {lang === 'ar' ? 'ابدأ في بناء محفظة الذهب الخاصة بك' : 'Start building your gold portfolio'}
@@ -270,7 +270,7 @@ function PortfolioContent() {
               <p className="text-sm text-gray-300">
                 {lang === 'ar'
                   ? 'لا توجد أي ممتلكات مسجلة حتى الآن. استخدم أداة إضافة المقتنيات لإدخال وزن الذهب الذي تملكه وسعر الشراء لتتبع الأداء بمرور الوقت.'
-                  : 'You don’t have any holdings recorded yet. Use the add holdings tool to enter the gold you own and your purchase prices so you can track your performance over time.'}
+                  : "You don't have any holdings recorded yet. Use the add holdings tool to enter the gold you own and your purchase prices so you can track your performance over time."}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-300">
                 <div className="space-y-2">
@@ -302,8 +302,8 @@ function PortfolioContent() {
                   <ul className="list-disc list-inside space-y-1 text-gray-300">
                     <li>
                       {lang === 'ar'
-                        ? 'اضغط على زر \"+ إضافة\" في أعلى الجدول لإضافة أول عملية شراء.'
-                        : 'Click the “+ Add” button above the table to add your first purchase.'}
+                        ? 'اضغط على زر "+ إضافة" أدناه لإضافة أول عملية شراء.'
+                        : 'Click the "+ Add" button below to add your first purchase.'}
                     </li>
                     <li>
                       {lang === 'ar'
@@ -324,6 +324,15 @@ function PortfolioContent() {
                   : 'Note: This tool is for educational purposes only and is not investment advice.'}
               </p>
             </div>
+            
+            {/* Show PortfolioTable with Add button even when empty */}
+            <PortfolioTable
+              holdings={[]}
+              currency={currency}
+              country={country}
+              lang={lang}
+              onRefresh={fetchPortfolio}
+            />
           </div>
         )}
 
@@ -334,7 +343,6 @@ function PortfolioContent() {
               adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
               format="auto"
               className="w-full"
-              // Require at least a few rows to consider this meaningful content
               hasMeaningfulContent={holdingsCount >= 3}
               requireScroll
             />
@@ -342,7 +350,7 @@ function PortfolioContent() {
         )}
       </main>
       <Footer />
-    </div>
+    </>
   );
 }
 
