@@ -294,9 +294,21 @@ export default function ForecastMiniChart({
   const timeMax = domainEnd;
   const timeRange = timeMax - timeMin || 1;
 
-  // Slice points to domain.
+  // Slice points to domain, and carry values to the domain edges so the chart window is complete.
   const inWindow = validPoints.filter((p) => p.t >= timeMin && p.t <= timeMax);
-  const pointsForRender = inWindow.length > 0 ? inWindow : validPoints;
+  let pointsForRender = inWindow.length > 0 ? inWindow : validPoints;
+
+  if (pointsForRender.length > 0) {
+    const first = pointsForRender[0];
+    const last = pointsForRender[pointsForRender.length - 1];
+
+    if (first.t > timeMin) {
+      pointsForRender = [{ t: timeMin, v: first.v }, ...pointsForRender];
+    }
+    if (last.t < timeMax) {
+      pointsForRender = [...pointsForRender, { t: timeMax, v: last.v }];
+    }
+  }
 
   // Downsample rendered points if too many (keep first+last).
   // Use a cap based on pixel width so we don't throw away too much shape detail on desktop.
@@ -438,55 +450,43 @@ export default function ForecastMiniChart({
   }
 
   // Generate path for line (using displayPoints for downsampled data).
-  // IMPORTANT: Do not connect across large time gaps (missing data).
-  const gapThresholdMs = (() => {
-    if (displayPoints.length < 3) return Infinity;
-    const dts: number[] = [];
-    for (let i = 1; i < displayPoints.length; i++) {
-      const dt = displayPoints[i].t - displayPoints[i - 1].t;
-      if (dt > 0) dts.push(dt);
-    }
-    dts.sort((a, b) => a - b);
-    const median = dts.length > 0 ? dts[Math.floor(dts.length / 2)] : 0;
-    const rangeFloor =
-      range === 'daily'
-        ? 30 * 60 * 1000 // 30m
-        : range === 'weekly'
-          ? 6 * 60 * 60 * 1000 // 6h
-          : range === 'monthly'
-            ? 36 * 60 * 60 * 1000 // 36h
-            : 14 * 24 * 60 * 60 * 1000; // 14d
-    return Math.max(rangeFloor, median * 8);
-  })();
+  // Step-line rendering:
+  // If there is a gap, hold the previous value until (just before) the next timestamp,
+  // then move to the new value. This avoids "gaps" and avoids misleading diagonal interpolation.
+  const stepThresholdMs =
+    range === 'daily'
+      ? 10 * 60 * 1000 // 10m
+      : range === 'weekly'
+        ? 2 * 60 * 60 * 1000 // 2h
+        : range === 'monthly'
+          ? 12 * 60 * 60 * 1000 // 12h
+          : 3 * 24 * 60 * 60 * 1000; // 3d (yoy)
 
-  // Build two paths:
-  // - solidPathData: normal contiguous segments
-  // - gapPathData: dashed connectors across gaps (so the chart doesn't look "incomplete")
-  let solidPathData = '';
-  let gapPathData = '';
+  const stepPoints: Array<{ t: number; v: number }> = [];
   for (let i = 0; i < displayPoints.length; i++) {
     const p = displayPoints[i];
-    const x = scaleX(p.t);
-    const y = scaleY(p.v);
-
     if (i === 0) {
-      solidPathData += `M ${x} ${y}`;
+      stepPoints.push(p);
       continue;
     }
-
     const prev = displayPoints[i - 1];
     const dt = p.t - prev.t;
-    const prevX = scaleX(prev.t);
-    const prevY = scaleY(prev.v);
-
-    if (dt > gapThresholdMs) {
-      // break the solid line, but add a dashed connector for continuity
-      solidPathData += ` M ${x} ${y}`;
-      gapPathData += ` M ${prevX} ${prevY} L ${x} ${y}`;
-    } else {
-      solidPathData += ` L ${x} ${y}`;
+    if (dt > stepThresholdMs) {
+      const holdT = Math.max(prev.t + 1, p.t - 1); // keep strictly increasing
+      if (holdT > prev.t && holdT < p.t) {
+        stepPoints.push({ t: holdT, v: prev.v });
+      }
     }
+    stepPoints.push(p);
   }
+
+  const pathData = stepPoints
+    .map((point, index) => {
+      const x = scaleX(point.t);
+      const y = scaleY(point.v);
+      return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
+    })
+    .join(' ');
 
   // Determine if we should show circles (only if <= 60 points, check displayPoints length)
   const showCircles = displayPoints.length <= 60;
@@ -728,29 +728,15 @@ export default function ForecastMiniChart({
 
         {/* Chart line and points (clipped to plot area) */}
         <g clipPath="url(#chart-clip)">
-          {/* Line (solid segments) */}
+          {/* Line */}
           <path
-            d={solidPathData}
+            d={pathData}
             fill="none"
             stroke={strokeColor}
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-
-          {/* Dashed gap connectors */}
-          {gapPathData.trim().length > 0 && (
-            <path
-              d={gapPathData}
-              fill="none"
-              stroke={strokeColor}
-              strokeWidth="2"
-              strokeOpacity="0.45"
-              strokeDasharray="6 6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
 
           {/* Always render the last point marker so "latest" is visible even when we break on gaps */}
           {displayPoints.length > 0 && (() => {
