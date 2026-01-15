@@ -319,22 +319,42 @@ export default function ForecastMiniChart({
     }
   }
 
-  // Downsample rendered points if too many (keep first+last).
-  // Use a cap based on pixel width so we don't throw away too much shape detail on desktop.
-  let displayPoints = pointsForRender;
-  const maxPointsByWidth = Math.min(500, Math.max(120, Math.floor(w / 3))); // ~1 point per 3px, clamped
-  if (pointsForRender.length > maxPointsByWidth) {
-    displayPoints = [];
-    const maxPoints = maxPointsByWidth;
-    const lastIdx = pointsForRender.length - 1;
+  // Downsample for rendering:
+  // 1) Bucket by time first (prevents "artificial gaps" from uniform sampling).
+  // 2) If still too many, apply a light uniform sample.
+  const bucketMs =
+    range === 'daily'
+      ? 2 * 60 * 1000 // 2m
+      : range === 'weekly'
+        ? 15 * 60 * 1000 // 15m
+        : range === 'monthly'
+          ? 2 * 60 * 60 * 1000 // 2h
+          : 12 * 60 * 60 * 1000; // 12h (yoy)
+
+  const bucketMap = new Map<number, { t: number; v: number }>();
+  for (const p of pointsForRender) {
+    const key = Math.floor(p.t / bucketMs) * bucketMs;
+    const prev = bucketMap.get(key);
+    // keep the latest point within the bucket
+    if (!prev || p.t >= prev.t) bucketMap.set(key, p);
+  }
+  let displayPoints = Array.from(bucketMap.values()).sort((a, b) => a.t - b.t);
+
+  // Cap based on pixel width so we don't overload the SVG
+  const maxPointsByWidth = Math.min(800, Math.max(160, Math.floor(w / 3))); // ~1 point per 3px, clamped
+  if (displayPoints.length > maxPointsByWidth) {
+    const sampled: Array<{ t: number; v: number }> = [];
+    const lastIdx = displayPoints.length - 1;
+    const step = lastIdx / (maxPointsByWidth - 1);
     const seen = new Set<number>();
-    for (let i = 0; i < maxPoints; i++) {
-      const idx = Math.round((i * lastIdx) / (maxPoints - 1)); // guarantees 0 and lastIdx
+    for (let i = 0; i < maxPointsByWidth; i++) {
+      const idx = Math.round(i * step);
       if (!seen.has(idx)) {
         seen.add(idx);
-        displayPoints.push(pointsForRender[idx]);
+        sampled.push(displayPoints[idx]);
       }
     }
+    displayPoints = sampled.sort((a, b) => a.t - b.t);
   }
 
   // Scale functions
@@ -459,57 +479,22 @@ export default function ForecastMiniChart({
   }
 
   // Generate path for line (using displayPoints for downsampled data).
-  // Step/hold for moderate gaps, but BREAK for very large gaps (avoid implying "stale constant").
-  const stepThresholdMs =
-    range === 'daily'
-      ? 10 * 60 * 1000 // 10m
-      : range === 'weekly'
-        ? 2 * 60 * 60 * 1000 // 2h
-        : range === 'monthly'
-          ? 12 * 60 * 60 * 1000 // 12h
-          : 3 * 24 * 60 * 60 * 1000; // 3d
-
-  const breakThresholdMs =
-    range === 'daily'
-      ? 2 * 60 * 60 * 1000 // 2h
-      : range === 'weekly'
-        ? 24 * 60 * 60 * 1000 // 1d
-        : range === 'monthly'
-          ? 4 * 24 * 60 * 60 * 1000 // 4d
-          : 14 * 24 * 60 * 60 * 1000; // 14d
-
+  // Path rendering:
+  // - Connect points normally
+  // - Break the line on gaps to avoid implying a "stale constant" between missing points
+  const gapBreakMs = Math.max(bucketMs * 4, range === 'daily' ? 30 * 60 * 1000 : bucketMs * 8);
   let pathData = '';
   for (let i = 0; i < displayPoints.length; i++) {
     const p = displayPoints[i];
     const x = scaleX(p.t);
     const y = scaleY(p.v);
-
     if (i === 0) {
       pathData += `M ${x} ${y}`;
       continue;
     }
-
     const prev = displayPoints[i - 1];
     const dt = p.t - prev.t;
-    const prevX = scaleX(prev.t);
-    const prevY = scaleY(prev.v);
-
-    if (dt > breakThresholdMs) {
-      // Big gap: break the path (no implied stale constant)
-      pathData += ` M ${x} ${y}`;
-      continue;
-    }
-
-    if (dt > stepThresholdMs) {
-      // Moderate gap: hold previous value until just before next timestamp
-      const holdT = Math.max(prev.t + 1, p.t - 1);
-      if (holdT > prev.t && holdT < p.t) {
-        const holdX = scaleX(holdT);
-        pathData += ` L ${holdX} ${prevY}`;
-      }
-    }
-
-    pathData += ` L ${x} ${y}`;
+    pathData += dt > gapBreakMs ? ` M ${x} ${y}` : ` L ${x} ${y}`;
   }
 
   // Determine if we should show circles (only if <= 60 points, check displayPoints length)
