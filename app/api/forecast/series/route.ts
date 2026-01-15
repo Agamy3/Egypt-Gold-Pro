@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-15T11:11Z';
+const API_VERSION = '2026-01-15T11:22Z';
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
@@ -550,10 +550,13 @@ export async function GET(request: Request) {
     // Server timestamp (when this response was generated)
     const serverAsOf = new Date().toISOString();
 
-    // Determine source identifier
-    const source = scope === 'global' 
-      ? 'gold_spot_history' 
-      : `market_snapshots_norm_${country}`;
+    // Determine source identifier (what ultimately powered the returned series)
+    const source =
+      scope === 'global'
+        ? 'gold_spot_history'
+        : fallbackUsed && fallbackSource
+          ? `fallback:${fallbackSource}`
+          : `market_snapshots_norm_${country}`;
 
     const response = NextResponse.json({
       timestamp: Date.now(),
