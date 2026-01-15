@@ -281,32 +281,41 @@ export default function ForecastMiniChart({
           : 365 * 24 * 60 * 60 * 1000; // yoy
 
   // Domain rules (per your table):
-  // - Daily: last 24h ending at "now"
-  // - Weekly/Monthly/YoY: last N days ending at "today/now"
-  // IMPORTANT: Do NOT "carry-forward" the last value to now — that creates misleading flat lines
-  // when upstream data is stale. Instead, we rely on the API/fallback to provide fresh points.
+  // - Daily: last 24h (from the hour the user is in)
+  // - Weekly/Monthly/YoY: last N days
+  //
+  // However, if the data is very stale (no real points for a long time), extending the axis to "now"
+  // makes the chart look stretched and implies a flat/held price. In that case, clamp the domain end
+  // to the last real point.
   const dataMin = validPoints[0].t;
+  const dataMax = validPoints[validPoints.length - 1].t;
 
-  const domainEnd = nowMs;
+  const staleTailThresholdMs =
+    range === 'daily'
+      ? 2 * 60 * 60 * 1000 // 2h
+      : range === 'weekly'
+        ? 12 * 60 * 60 * 1000 // 12h
+        : range === 'monthly'
+          ? 2 * 24 * 60 * 60 * 1000 // 2d
+          : 7 * 24 * 60 * 60 * 1000; // 7d (yoy)
+
+  const domainEnd = (nowMs - dataMax > staleTailThresholdMs) ? dataMax : nowMs;
   const domainStart = Math.max(nowMs - rangeWindowMs, dataMin);
 
   const timeMin = domainStart;
   const timeMax = domainEnd;
   const timeRange = timeMax - timeMin || 1;
 
-  // Slice points to domain, and carry values to the domain edges so the chart window is complete.
+  // Slice points to domain and (optionally) carry to the start edge so the left side isn't empty.
+  // We do NOT carry-forward to the end; that creates a misleading stale tail.
   const inWindow = validPoints.filter((p) => p.t >= timeMin && p.t <= timeMax);
   let pointsForRender = inWindow.length > 0 ? inWindow : validPoints;
 
   if (pointsForRender.length > 0) {
     const first = pointsForRender[0];
-    const last = pointsForRender[pointsForRender.length - 1];
 
     if (first.t > timeMin) {
       pointsForRender = [{ t: timeMin, v: first.v }, ...pointsForRender];
-    }
-    if (last.t < timeMax) {
-      pointsForRender = [...pointsForRender, { t: timeMax, v: last.v }];
     }
   }
 
@@ -450,9 +459,7 @@ export default function ForecastMiniChart({
   }
 
   // Generate path for line (using displayPoints for downsampled data).
-  // Step-line rendering:
-  // If there is a gap, hold the previous value until (just before) the next timestamp,
-  // then move to the new value. This avoids "gaps" and avoids misleading diagonal interpolation.
+  // Step/hold for moderate gaps, but BREAK for very large gaps (avoid implying "stale constant").
   const stepThresholdMs =
     range === 'daily'
       ? 10 * 60 * 1000 // 10m
@@ -460,33 +467,50 @@ export default function ForecastMiniChart({
         ? 2 * 60 * 60 * 1000 // 2h
         : range === 'monthly'
           ? 12 * 60 * 60 * 1000 // 12h
-          : 3 * 24 * 60 * 60 * 1000; // 3d (yoy)
+          : 3 * 24 * 60 * 60 * 1000; // 3d
 
-  const stepPoints: Array<{ t: number; v: number }> = [];
+  const breakThresholdMs =
+    range === 'daily'
+      ? 2 * 60 * 60 * 1000 // 2h
+      : range === 'weekly'
+        ? 24 * 60 * 60 * 1000 // 1d
+        : range === 'monthly'
+          ? 4 * 24 * 60 * 60 * 1000 // 4d
+          : 14 * 24 * 60 * 60 * 1000; // 14d
+
+  let pathData = '';
   for (let i = 0; i < displayPoints.length; i++) {
     const p = displayPoints[i];
+    const x = scaleX(p.t);
+    const y = scaleY(p.v);
+
     if (i === 0) {
-      stepPoints.push(p);
+      pathData += `M ${x} ${y}`;
       continue;
     }
+
     const prev = displayPoints[i - 1];
     const dt = p.t - prev.t;
+    const prevX = scaleX(prev.t);
+    const prevY = scaleY(prev.v);
+
+    if (dt > breakThresholdMs) {
+      // Big gap: break the path (no implied stale constant)
+      pathData += ` M ${x} ${y}`;
+      continue;
+    }
+
     if (dt > stepThresholdMs) {
-      const holdT = Math.max(prev.t + 1, p.t - 1); // keep strictly increasing
+      // Moderate gap: hold previous value until just before next timestamp
+      const holdT = Math.max(prev.t + 1, p.t - 1);
       if (holdT > prev.t && holdT < p.t) {
-        stepPoints.push({ t: holdT, v: prev.v });
+        const holdX = scaleX(holdT);
+        pathData += ` L ${holdX} ${prevY}`;
       }
     }
-    stepPoints.push(p);
-  }
 
-  const pathData = stepPoints
-    .map((point, index) => {
-      const x = scaleX(point.t);
-      const y = scaleY(point.v);
-      return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
-    })
-    .join(' ');
+    pathData += ` L ${x} ${y}`;
+  }
 
   // Determine if we should show circles (only if <= 60 points, check displayPoints length)
   const showCircles = displayPoints.length <= 60;
