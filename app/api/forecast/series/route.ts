@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-15T11:06Z';
+const API_VERSION = '2026-01-15T11:11Z';
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
@@ -225,13 +225,81 @@ export async function GET(request: Request) {
         originalPointsCount = points.length;
         lastDataAtMs = points.length > 0 ? points[points.length - 1].t : null;
         
-        // Check staleness for EG local: if latest point is > 6 hours old, use fallback
-        if (country === 'EG' && points.length > 0) {
-          const latestPointTime = points[points.length - 1].t;
-          const hoursSinceLatest = (now - latestPointTime) / (1000 * 60 * 60);
-          
-          if (hoursSinceLatest > 6) {
-            console.warn(`[Forecast Series] EG local data is stale (${hoursSinceLatest.toFixed(1)} hours old). Attempting fallback...`);
+        // If EG local looks stale/empty in normalized table, try the wide table (`market_snapshots`)
+        // which may be where ingestion is actually writing intraday data.
+        if (country === 'EG') {
+          const latestPointTime = points.length > 0 ? points[points.length - 1].t : null;
+          const hoursSinceLatest =
+            latestPointTime !== null ? (now - latestPointTime) / (1000 * 60 * 60) : Infinity;
+
+          if (points.length === 0 || hoursSinceLatest > 6) {
+            try {
+              const { data: wideData, error: wideError } = await supabase
+                .from('market_snapshots')
+                .select('source, createdAt, market24Buy, market21Buy, error')
+                .gte('createdAt', windowStart)
+                .is('error', null)
+                .in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'])
+                .order('createdAt', { ascending: true })
+                .range(0, 9999);
+
+              if (!wideError && wideData && wideData.length > 0) {
+                const bucketMs =
+                  rangeParam === 'daily'
+                    ? 60_000
+                    : rangeParam === 'weekly'
+                      ? 10 * 60_000
+                      : rangeParam === 'monthly'
+                        ? 60 * 60_000
+                        : 6 * 60 * 60_000;
+
+                const buckets = new Map<number, number[]>();
+                for (const row of wideData) {
+                  const t = typeof row.createdAt === 'number' ? row.createdAt : Number(row.createdAt);
+                  if (!isFinite(t) || t <= 0) continue;
+                  const vRaw = row.market24Buy ?? row.market21Buy;
+                  const v = Number(vRaw);
+                  if (!isFinite(v) || v <= 0) continue;
+                  const key = Math.floor(t / bucketMs) * bucketMs;
+                  if (!buckets.has(key)) buckets.set(key, []);
+                  buckets.get(key)!.push(v);
+                }
+
+                const widePoints = Array.from(buckets.entries())
+                  .map(([t, arr]) => ({ t, v: arr.reduce((s, x) => s + x, 0) / arr.length }))
+                  .sort((a, b) => a.t - b.t);
+
+                if (widePoints.length > 0) {
+                  const wideLatest = widePoints[widePoints.length - 1].t;
+                  const wideHoursSince = (now - wideLatest) / (1000 * 60 * 60);
+
+                  // Use wide table if it's fresher than the normalized series (or normalized is empty).
+                  if (latestPointTime === null || wideLatest > latestPointTime) {
+                    points = widePoints;
+                    fallbackUsed = true;
+                    fallbackSource = 'market_snapshots_wide';
+                    lastDataAtMs = wideLatest;
+                    console.warn('[Forecast Series] Using EG wide snapshots for fresher intraday series:', {
+                      widePoints: widePoints.length,
+                      wideHoursSince: Number(wideHoursSince.toFixed(2)),
+                    });
+                  }
+                }
+              }
+            } catch (e) {
+              console.error('[Forecast Series] Failed wide table fallback:', e);
+            }
+          }
+
+          // Recompute staleness after potential wide fallback
+          if (points.length > 0) {
+            const latestAfter = points[points.length - 1].t;
+            const hoursSinceAfter = (now - latestAfter) / (1000 * 60 * 60);
+
+            if (hoursSinceAfter > 6) {
+              console.warn(
+                `[Forecast Series] EG local data is stale (${hoursSinceAfter.toFixed(1)} hours old). Attempting fallback...`
+              );
             
             // Fallback 1: Try to get EG market median (aggregated source) across the requested window
             const { data: fallbackData, error: fallbackError } = await supabase
@@ -364,6 +432,8 @@ export async function GET(request: Request) {
               } catch (fxError) {
                 console.error('[Forecast Series] Failed to get FX rate for fallback:', fxError);
               }
+            }
+            // Close: if (hoursSinceAfter > 6)
             }
           }
         }
