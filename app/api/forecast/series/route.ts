@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-15T20:55Z';
+const API_VERSION = '2026-01-15T21:24Z';
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 6; // hard cap for safety (<= 6000 rows scanned)
 
@@ -649,53 +649,41 @@ export async function GET(request: Request) {
           (request as any).__egEgyptMarketError = egyptMarketError;
         }
 
-        // EG-local history coverage fallback (weekly/monthly/yoy):
-        // If the local table doesn't contain enough historical points to cover the requested window,
-        // fall back to GLOBAL spot converted to EGP (temporary) so the monthly chart isn't "only today".
+        // NOTE: We do NOT auto-fallback EG weekly/monthly/yoy to GLOBAL history just because local coverage
+        // is partial. The UX requirement is "from today till the eldest data found" (no empty graph),
+        // which is handled on the chart domain. Only fallback to GLOBAL history if we have *no* local data.
         if (
           country === 'EG' &&
           (rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy') &&
-          goldSpotHistory.length > 0
+          goldSpotHistory.length > 0 &&
+          points.length === 0
         ) {
-          const desiredWindowMs = windowMs;
-          const coverageMs =
-            points.length > 1 ? (points[points.length - 1].t - points[0].t) : 0;
+          try {
+            const egpRate =
+              latestFx ??
+              (await (async () => {
+                const { getUsdEgpRate } = await import('@/lib/fx');
+                const fxResult = await getUsdEgpRate();
+                return fxResult.rate;
+              })());
 
-          // If coverage is less than 60% of desired window, treat it as insufficient history.
-          if (coverageMs < desiredWindowMs * 0.6) {
-            try {
-              const egpRate =
-                latestFx ??
-                (await (async () => {
-                  const { getUsdEgpRate } = await import('@/lib/fx');
-                  const fxResult = await getUsdEgpRate();
-                  return fxResult.rate;
-                })());
+            if (egpRate && egpRate > 0) {
+              const sortedSpot = [...goldSpotHistory].sort((a, b) => a.fetched_at - b.fetched_at);
+              const fallbackPoints = sortedSpot.map((spot) => {
+                const pricePerGramUsd = spot.xau_spot_usd_oz / 31.1035;
+                const pricePerGramEgp = pricePerGramUsd * egpRate;
+                return { t: spot.fetched_at, v: pricePerGramEgp };
+              });
 
-              if (egpRate && egpRate > 0) {
-                const sortedSpot = [...goldSpotHistory].sort((a, b) => a.fetched_at - b.fetched_at);
-                const fallbackPoints = sortedSpot.map((spot) => {
-                  // Convert XAU/USD (per oz) -> USD per gram -> EGP per gram (24k)
-                  const pricePerGramUsd = spot.xau_spot_usd_oz / 31.1035;
-                  const pricePerGramEgp = pricePerGramUsd * egpRate;
-                  return { t: spot.fetched_at, v: pricePerGramEgp };
-                });
-
-                if (fallbackPoints.length > 1) {
-                  points = fallbackPoints;
-                  fallbackUsed = true;
-                  fallbackSource = 'global_spot_egp_estimate_history';
-                  lastDataAtMs = points.length > 0 ? points[points.length - 1].t : lastDataAtMs;
-                  console.log('[Forecast Series] Using EG monthly history fallback:', {
-                    originalPointsCount,
-                    windowDays: Math.round(windowMs / (24 * 60 * 60 * 1000)),
-                    spotPoints: fallbackPoints.length,
-                  });
-                }
+              if (fallbackPoints.length > 1) {
+                points = fallbackPoints;
+                fallbackUsed = true;
+                fallbackSource = 'global_spot_egp_estimate_history';
+                lastDataAtMs = points.length > 0 ? points[points.length - 1].t : lastDataAtMs;
               }
-            } catch (error) {
-              console.error('[Forecast Series] Failed EG history fallback:', error);
             }
+          } catch (error) {
+            console.error('[Forecast Series] Failed EG history fallback:', error);
           }
         }
 
