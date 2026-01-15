@@ -16,6 +16,8 @@ export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
 const API_VERSION = '2026-01-15T20:55Z';
+const PAGE_SIZE = 1000;
+const MAX_PAGES = 6; // hard cap for safety (<= 6000 rows scanned)
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
@@ -147,13 +149,13 @@ export async function GET(request: Request) {
         points = [];
       } else {
         // Query normalized schema for country-specific data
+        const createdAtIsoStart = new Date(windowStart).toISOString();
         const baseSeriesQuery = supabase
           .from('market_snapshots_norm')
           .select('karat, price, created_at, source')
           .eq('country', country)
-          .gte('created_at', new Date(windowStart).toISOString())
-          .order('created_at', { ascending: false })
-          .range(0, 999); // PostgREST often caps at ~1000 rows; always take newest slice
+          .gte('created_at', createdAtIsoStart)
+          .order('created_at', { ascending: false });
 
         // Filter by source for country-specific sources
         if (country === 'EG') {
@@ -186,10 +188,25 @@ export async function GET(request: Request) {
           seriesQuery = seriesQuery.in('source', ['goldapi_spot']);
         }
 
-        // Try 24k first
-        const { data: data24k, error: error24k } = await seriesQuery.eq('karat', 24);
+        // Helper: page through PostgREST row caps
+        const fetchPaged = async <T,>(q: any): Promise<{ rows: T[]; pages: number }> => {
+          const rows: T[] = [];
+          for (let page = 0; page < MAX_PAGES; page++) {
+            const from = page * PAGE_SIZE;
+            const to = from + PAGE_SIZE - 1;
+            const { data, error } = await q.range(from, to);
+            if (error) break;
+            const batch = (data as T[]) || [];
+            rows.push(...batch);
+            if (batch.length < PAGE_SIZE) return { rows, pages: page + 1 };
+          }
+          return { rows, pages: MAX_PAGES };
+        };
+
+        // Try 24k first (paged)
+        const { rows: data24k, pages: normPages24 } = await fetchPaged<any>(seriesQuery.eq('karat', 24));
         
-        if (!error24k && data24k && data24k.length > 0) {
+        if (data24k && data24k.length > 0) {
           // Group by 10-second buckets and average prices
           const timeBuckets = new Map<number, number[]>();
           for (const row of data24k) {
@@ -216,8 +233,8 @@ export async function GET(request: Request) {
             .sort((a, b) => a.t - b.t);
         } else {
           // Fallback to 21k
-          const { data: data21k, error: error21k } = await seriesQuery.eq('karat', 21);
-          if (!error21k && data21k && data21k.length > 0) {
+          const { rows: data21k, pages: normPages21 } = await fetchPaged<any>(seriesQuery.eq('karat', 21));
+          if (data21k && data21k.length > 0) {
             const timeBuckets = new Map<number, number[]>();
             for (const row of data21k) {
               const price = Number(row.price);
@@ -241,7 +258,10 @@ export async function GET(request: Request) {
               }))
               .sort((a, b) => a.t - b.t);
           }
+          // keep TS happy; useful for debug if needed later
+          void normPages21;
         }
+        void normPages24;
         
         originalPointsCount = points.length;
         lastDataAtMs = points.length > 0 ? points[points.length - 1].t : null;
@@ -263,6 +283,8 @@ export async function GET(request: Request) {
           let wideLastAt21: number | null = null;
           let wideLastAt18: number | null = null;
           let wideLastAt14: number | null = null;
+          let widePagesFetched: number | null = null;
+          let wideRowsScanned: number | null = null;
           let egyptMarketRowsCount: number | null = null;
           let egyptMarketPointsCount: number | null = null;
           let egyptMarketLatestAtMs: number | null = null;
@@ -270,18 +292,21 @@ export async function GET(request: Request) {
 
           if (points.length === 0 || hoursSinceLatest > 6) {
             try {
-              const { data: wideData, error: wideError } = await supabase
+              const wideBase = supabase
                 .from('market_snapshots')
                 // NOTE: wide table uses quoted/camelCase columns in Postgres ("createdAt", "market24Buy", ...)
                 .select('source, createdAt, market24Buy, market21Buy, market18Buy, market14Buy, error')
                 .gte('createdAt', windowStart)
                 .is('error', null)
-                // IMPORTANT: order DESC to get the newest rows (PostgREST often caps at ~1000 rows)
-                .order('createdAt', { ascending: false })
-                .range(0, 999);
+                // IMPORTANT: order DESC to get the newest rows
+                .order('createdAt', { ascending: false });
 
-              if (!wideError && wideData && wideData.length > 0) {
+              const { rows: wideData, pages: widePages } = await fetchPaged<any>(wideBase);
+              widePagesFetched = widePages;
+
+              if (wideData && wideData.length > 0) {
                 wideRowsCount = wideData.length;
+                wideRowsScanned = wideData.length;
                 wideHas24Count = 0;
                 wideHas21Count = 0;
                 wideHas18Count = 0;
@@ -614,6 +639,8 @@ export async function GET(request: Request) {
           (request as any).__egWideLastAt21 = wideLastAt21 ? new Date(wideLastAt21).toISOString() : null;
           (request as any).__egWideLastAt18 = wideLastAt18 ? new Date(wideLastAt18).toISOString() : null;
           (request as any).__egWideLastAt14 = wideLastAt14 ? new Date(wideLastAt14).toISOString() : null;
+          (request as any).__egWidePagesFetched = widePagesFetched;
+          (request as any).__egWideRowsScanned = wideRowsScanned;
           (request as any).__egEgyptMarketRowsCount = egyptMarketRowsCount;
           (request as any).__egEgyptMarketPointsCount = egyptMarketPointsCount;
           (request as any).__egEgyptMarketLatestAt = egyptMarketLatestAtMs
@@ -768,6 +795,8 @@ export async function GET(request: Request) {
         egWideLastAt21: (request as any).__egWideLastAt21 ?? null,
         egWideLastAt18: (request as any).__egWideLastAt18 ?? null,
         egWideLastAt14: (request as any).__egWideLastAt14 ?? null,
+        egWidePagesFetched: (request as any).__egWidePagesFetched ?? null,
+        egWideRowsScanned: (request as any).__egWideRowsScanned ?? null,
         egEgyptMarketRowsCount: (request as any).__egEgyptMarketRowsCount ?? null,
         egEgyptMarketPointsCount: (request as any).__egEgyptMarketPointsCount ?? null,
         egEgyptMarketLatestAt: (request as any).__egEgyptMarketLatestAt ?? null,
