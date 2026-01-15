@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Bump this when changing behavior so production can be verified via curl.
-const API_VERSION = '2026-01-15T20:44Z';
+const API_VERSION = '2026-01-15T20:55Z';
 
 // Helper to get trusted mode from request
 function getTrustedMode(request: Request): boolean {
@@ -147,14 +147,35 @@ export async function GET(request: Request) {
         points = [];
       } else {
         // Query normalized schema for country-specific data
-        let seriesQuery = supabase
+        const baseSeriesQuery = supabase
           .from('market_snapshots_norm')
           .select('karat, price, created_at, source')
           .eq('country', country)
           .gte('created_at', new Date(windowStart).toISOString())
-          .order('created_at', { ascending: true });
+          .order('created_at', { ascending: false })
+          .range(0, 999); // PostgREST often caps at ~1000 rows; always take newest slice
 
         // Filter by source for country-specific sources
+        if (country === 'EG') {
+          // NOTE: keep this list aligned with ingestion sources for EG normalized data
+          // (this path is only used when normalized table is fresh)
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          // (Supabase query builder is immutable-ish; reassign below)
+          // @ts-ignore
+          baseSeriesQuery;
+        } else if (country === 'AE') {
+          // @ts-ignore
+          baseSeriesQuery;
+        } else if (country === 'SA') {
+          // @ts-ignore
+          baseSeriesQuery;
+        } else if (country === 'US') {
+          // @ts-ignore
+          baseSeriesQuery;
+        }
+
+        // Apply source filters on a cloned query (per-country)
+        let seriesQuery = baseSeriesQuery;
         if (country === 'EG') {
           seriesQuery = seriesQuery.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
         } else if (country === 'AE') {
@@ -255,8 +276,9 @@ export async function GET(request: Request) {
                 .select('source, createdAt, market24Buy, market21Buy, market18Buy, market14Buy, error')
                 .gte('createdAt', windowStart)
                 .is('error', null)
-                .order('createdAt', { ascending: true })
-                .range(0, 9999);
+                // IMPORTANT: order DESC to get the newest rows (PostgREST often caps at ~1000 rows)
+                .order('createdAt', { ascending: false })
+                .range(0, 999);
 
               if (!wideError && wideData && wideData.length > 0) {
                 wideRowsCount = wideData.length;
@@ -354,8 +376,9 @@ export async function GET(request: Request) {
               .eq('source', 'aggregated')
               .gte('created_at', new Date(windowStart).toISOString())
               .eq('karat', 24)
-              .order('created_at', { ascending: true })
-              .range(0, 4999);
+              // order DESC to ensure we include the latest points (row caps can otherwise hide "now")
+              .order('created_at', { ascending: false })
+              .range(0, 999);
             
             if (!fallbackError && fallbackData && fallbackData.length > 0) {
               // Use aggregated source data (bucket more coarsely for long ranges to preserve window coverage)
