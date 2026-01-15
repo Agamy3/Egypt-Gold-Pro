@@ -33,6 +33,21 @@ function NewsPageContent() {
   const [country, setCountry] = useState<'EG' | 'AE' | 'SA' | 'US' | 'GLOBAL'>(
     (urlCountry && ['EG', 'AE', 'SA', 'US', 'GLOBAL'].includes(urlCountry)) ? urlCountry : 'EG'
   );
+  
+  // Also check if we came from /us page (no country param but should be US)
+  useEffect(() => {
+    if (!urlCountry && typeof window !== 'undefined') {
+      // Check if referrer was /us
+      const referrer = document.referrer;
+      if (referrer.includes('/us')) {
+        setCountry('US');
+        // Update URL to include country param
+        const url = new URL(window.location.href);
+        url.searchParams.set('country', 'US');
+        window.history.replaceState({}, '', url.toString());
+      }
+    }
+  }, [urlCountry]);
   const [isPremium, setIsPremium] = useState(false);
   const [loading, setLoading] = useState(true);
   const [publicItems, setPublicItems] = useState<PublicNewsItem[]>([]);

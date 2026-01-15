@@ -153,7 +153,7 @@ function USPageContent() {
   const coinPerOunce = retailPerOunce ? retailPerOunce * (1 + COIN_PREMIUM_PCT) : null;
 
   return (
-    <div className="min-h-screen bg-black flex flex-col">
+    <>
       <Header 
         title={lang === 'ar' ? 'معلومات سوق الذهب الأمريكي' : 'US Gold Market Overview'}
         subtitle={lang === 'ar' 
@@ -383,7 +383,7 @@ function USPageContent() {
         )}
       </main>
       <Footer />
-    </div>
+    </>
   );
 }
 
