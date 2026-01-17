@@ -83,29 +83,21 @@ export async function calculateForecast(
     const isTrustedMode = trustedMode || getTrustedModeFromEnv();
     
     // Determine sources based on country
-    // Include series_aggregate and aggregated as fallback sources for all countries
-    // For old data compatibility, also include all known source variations
     let allowedSources: string[] = [];
     if (country === 'EG') {
-      // Include all possible EG sources for maximum data coverage
-      allowedSources = [
-        'banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 
-        'series_aggregate', 'aggregated', 'goldbillion', 'isagha', 
-        'livepriceofgold', 'egypt_web_aggregate', 'rapidapi_egypt_gold_data'
-      ];
+      allowedSources = ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'];
       if (isTrustedMode) {
         allowedSources = ['goldbullioneg'];
       }
     } else if (country === 'AE') {
-      allowedSources = ['goldprice_org_ae', 'global_parity', 'series_aggregate', 'aggregated'];
+      allowedSources = ['goldprice_org_ae', 'global_parity'];
     } else if (country === 'SA') {
-      allowedSources = ['goldprice_org_sa', 'global_parity', 'series_aggregate', 'aggregated'];
+      allowedSources = ['goldprice_org_sa', 'global_parity'];
     } else if (country === 'US') {
-      allowedSources = ['goldapi_spot', 'series_aggregate', 'aggregated'];
+      allowedSources = ['goldapi_spot'];
     }
 
     // Query normalized schema
-    // Always apply source filter like the old code did (matching working version from Jan 15)
     let snapshotQuery = db.supabase
       .from('market_snapshots_norm')
       .select('source, karat, price, created_at')
@@ -119,37 +111,7 @@ export async function calculateForecast(
       snapshotQuery = snapshotQuery.eq('trusted', true);
     }
 
-    let { data: snapshotRows, error: snapshotError } = await snapshotQuery;
-    
-    // If no results with source filter, try without filter to see what sources exist in DB
-    if (!snapshotError && (!snapshotRows || snapshotRows.length === 0)) {
-      console.log('[Forecast] No data found with source filter, checking all sources...');
-      const allSourcesQuery = db.supabase
-        .from('market_snapshots_norm')
-        .select('source, karat, price, created_at, country')
-        .eq('country', country)
-        .gte('created_at', windowStart)
-        .in('karat', [21, 24])
-        .order('created_at', { ascending: true });
-      
-      if (isTrustedMode && country === 'EG') {
-        allSourcesQuery.eq('trusted', true);
-      }
-      
-      const { data: allSourcesData, error: allSourcesError } = await allSourcesQuery;
-      
-      if (!allSourcesError && allSourcesData && allSourcesData.length > 0) {
-        // Log what sources we found
-        const foundSources = new Set(allSourcesData.map((r: any) => r.source));
-        console.log(`[Forecast] Found ${allSourcesData.length} rows with sources:`, Array.from(foundSources));
-        
-        // Use all data found (without source filter) - include any source that has data
-        snapshotRows = allSourcesData;
-        snapshotError = null;
-      } else {
-        console.log('[Forecast] No data found even without source filter');
-      }
-    }
+    const { data: snapshotRows, error: snapshotError } = await snapshotQuery;
     
     // Log query results for debugging
     if (snapshotError) {
