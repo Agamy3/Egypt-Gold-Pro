@@ -52,14 +52,15 @@ export async function getMarketMedians(
   }
 
   // Filter by source for country-specific sources
+  // Include series_aggregate and aggregated as fallback sources for all countries
   if (country === 'EG') {
-    query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
+    query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'series_aggregate', 'aggregated']);
   } else if (country === 'AE') {
-    query = query.in('source', ['goldprice_org_ae', 'global_parity']);
+    query = query.in('source', ['goldprice_org_ae', 'global_parity', 'series_aggregate', 'aggregated']);
   } else if (country === 'SA') {
-    query = query.in('source', ['goldprice_org_sa', 'global_parity']);
+    query = query.in('source', ['goldprice_org_sa', 'global_parity', 'series_aggregate', 'aggregated']);
   } else if (country === 'US') {
-    query = query.in('source', ['goldapi_spot']);
+    query = query.in('source', ['goldapi_spot', 'series_aggregate', 'aggregated']);
   }
 
   const { data, error } = await query;
@@ -141,24 +142,28 @@ export async function getMarketMedians(
              Number(row.price) > 0;
     });
 
-    // Check for aggregated source first
+    // Check for aggregated/series_aggregate sources first (prioritized fallbacks)
     const aggregatedRow = validRows.find((r: any) => r.source === 'aggregated');
-    if (aggregatedRow) {
-      const price = Number(aggregatedRow.price);
+    const seriesAggregateRow = validRows.find((r: any) => r.source === 'series_aggregate');
+    
+    // Prioritize aggregated over series_aggregate, but use series_aggregate if aggregated not available
+    const priorityRow = aggregatedRow || seriesAggregateRow;
+    if (priorityRow) {
+      const price = Number(priorityRow.price);
       if (isFinite(price) && price > 0) {
         prices[buyKey] = price;
         prices[sellKey] = null; // Normalized schema only stores buy prices currently
         
         const allSources = Array.from(new Set(validRows.map((r: any) => r.source as string)));
-        sourcesUsed[karat.toString()] = allSources.filter(s => s !== 'aggregated');
+        sourcesUsed[karat.toString()] = allSources.filter(s => s !== 'aggregated' && s !== 'series_aggregate');
         allSources.forEach(s => contributingSources.add(s));
         
-        const createdAt = typeof aggregatedRow.created_at === 'string' 
-          ? new Date(aggregatedRow.created_at).getTime()
-          : (typeof aggregatedRow.created_at === 'number' ? aggregatedRow.created_at : 0);
+        const createdAt = typeof priorityRow.created_at === 'string' 
+          ? new Date(priorityRow.created_at).getTime()
+          : (typeof priorityRow.created_at === 'number' ? priorityRow.created_at : 0);
         maxTimestamp = Math.max(maxTimestamp, createdAt);
         
-        console.log(`[getMarketMedians] Using aggregated price for ${karat}K:`, price);
+        console.log(`[getMarketMedians] Using ${priorityRow.source} price for ${karat}K:`, price);
         continue;
       }
     }
@@ -216,7 +221,7 @@ export async function getMarketMedians(
 export async function getActiveSourceCountNorm(
   country: 'EG' | 'AE' | 'SA' | 'US',
   trustedMode: boolean = false,
-  windowMinutes: number = 30
+  windowMinutes: number = 60
 ): Promise<number> {
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
@@ -234,14 +239,15 @@ export async function getActiveSourceCountNorm(
   }
 
   // Filter by source for country-specific sources
+  // Include series_aggregate and aggregated as fallback sources for all countries
   if (country === 'EG') {
-    query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
+    query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'series_aggregate', 'aggregated']);
   } else if (country === 'AE') {
-    query = query.in('source', ['goldprice_org_ae', 'global_parity']);
+    query = query.in('source', ['goldprice_org_ae', 'global_parity', 'series_aggregate', 'aggregated']);
   } else if (country === 'SA') {
-    query = query.in('source', ['goldprice_org_sa', 'global_parity']);
+    query = query.in('source', ['goldprice_org_sa', 'global_parity', 'series_aggregate', 'aggregated']);
   } else if (country === 'US') {
-    query = query.in('source', ['goldapi_spot']);
+    query = query.in('source', ['goldapi_spot', 'series_aggregate', 'aggregated']);
   }
 
   const { data, error } = await query;

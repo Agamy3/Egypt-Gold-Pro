@@ -105,10 +105,10 @@ export async function GET(request: Request) {
                           (canonicalCurrency === 'SAR' && (fxRates.usd_sar === null || !Number.isFinite(fxRates.usd_sar) || fxRates.usd_sar <= 0));
 
     // Fetch market prices from normalized schema (country-aware)
-    // Use shorter window for faster queries (30 minutes instead of 60)
+    // Use 60 minute window to capture more data and improve data availability
     let marketData;
     try {
-      marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 30);
+      marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 60);
       
       // If no data in Supabase for any country, trigger ingestion (but don't wait for it)
       if (marketData.activeSourceCount === 0 && marketData.lastUpdated === 0) {
@@ -150,10 +150,10 @@ export async function GET(request: Request) {
       };
     }
 
-    // Get active source count from normalized schema (use same 30min window for consistency)
+    // Get active source count from normalized schema (use same 60min window for consistency)
     let activeSources = marketData.activeSourceCount;
     try {
-      activeSources = await getActiveSourceCountNorm(country, TRUSTED_ONLY_MODE, 30);
+      activeSources = await getActiveSourceCountNorm(country, TRUSTED_ONLY_MODE, 60);
     } catch (error) {
       console.error(`[MarketSnapshot] Failed to get active source count for ${country} -`, error);
       // Use the count from marketData as fallback

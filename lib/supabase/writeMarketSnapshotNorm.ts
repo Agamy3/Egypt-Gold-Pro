@@ -84,9 +84,9 @@ export async function writeMarketSnapshotNorm(
     const createdAtISO = new Date(params.createdAt).toISOString();
     
     // Build rows: one per karat with valid buy price
+    // Note: market_snapshots_norm table does NOT have a 'market' column - only country, karat, price, currency, source, trusted, created_at, raw_hash
     const rows: Array<{
       country: string;
-      market: string;
       karat: number;
       price: number;
       currency: string;
@@ -106,7 +106,6 @@ export async function writeMarketSnapshotNorm(
       if (buyPrice !== null && buyPrice !== undefined && isFinite(buyPrice) && buyPrice > 0) {
         rows.push({
           country: params.country,
-          market: 'local',
           karat,
           price: buyPrice,
           currency,
