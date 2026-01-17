@@ -67,17 +67,28 @@ export async function getMarketMedians(
 
   if (error) {
     console.error('[getMarketMedians] Query error:', error);
+    console.error('[getMarketMedians] Query details:', {
+      country,
+      windowStart,
+      windowMinutes,
+      errorCode: error.code,
+      errorDetails: error.details,
+      errorHint: error.hint,
+    });
   }
 
   const dataToUse = data || [];
   
   if (dataToUse.length === 0) {
-    console.log('[getMarketMedians] No data found:', { 
+    console.warn('[getMarketMedians] No data found:', { 
       country,
       error: error?.message, 
       count: 0,
       windowStart,
-      windowMinutes
+      windowMinutes,
+      now: new Date().toISOString(),
+      windowStartTime: new Date(windowStart).toISOString(),
+      timeDiffMinutes: Math.round((Date.now() - new Date(windowStart).getTime()) / 60000),
     });
     
     // Return default currency for country

@@ -105,14 +105,14 @@ export async function GET(request: Request) {
                           (canonicalCurrency === 'SAR' && (fxRates.usd_sar === null || !Number.isFinite(fxRates.usd_sar) || fxRates.usd_sar <= 0));
 
     // Fetch market prices from normalized schema (country-aware)
-    // Use 60 minute window to capture more data and improve data availability
+    // Use 120 minute window to capture more data (increased from 60 for better coverage)
     let marketData;
     try {
-      marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 60);
+      marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 120);
       
       // If no data in Supabase for any country, trigger ingestion (but don't wait for it)
       if (marketData.activeSourceCount === 0 && marketData.lastUpdated === 0) {
-        console.log(`[MarketSnapshot] No data in Supabase for ${country}, triggering ingestion...`);
+        console.warn(`[MarketSnapshot] ⚠️  No data in Supabase for ${country}, triggering ingestion...`);
         // Trigger web sources ingestion in background (non-blocking)
         import('@/lib/gold-ingestion-engine').then(({ runIngestionCycle, runMultiCountryIngestionCycle }) => {
           if (country === 'EG') {
@@ -150,10 +150,10 @@ export async function GET(request: Request) {
       };
     }
 
-    // Get active source count from normalized schema (use same 60min window for consistency)
+    // Get active source count from normalized schema (use same 120min window for consistency)
     let activeSources = marketData.activeSourceCount;
     try {
-      activeSources = await getActiveSourceCountNorm(country, TRUSTED_ONLY_MODE, 60);
+      activeSources = await getActiveSourceCountNorm(country, TRUSTED_ONLY_MODE, 120);
     } catch (error) {
       console.error(`[MarketSnapshot] Failed to get active source count for ${country} -`, error);
       // Use the count from marketData as fallback
