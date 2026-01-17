@@ -82,18 +82,19 @@ export async function calculateForecast(
     const isTrustedMode = trustedMode || getTrustedModeFromEnv();
     
     // Determine sources based on country
+    // Include series_aggregate and aggregated as fallback sources for all countries
     let allowedSources: string[] = [];
     if (country === 'EG') {
-      allowedSources = ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'];
+      allowedSources = ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'series_aggregate', 'aggregated'];
       if (isTrustedMode) {
         allowedSources = ['goldbullioneg'];
       }
     } else if (country === 'AE') {
-      allowedSources = ['goldprice_org_ae', 'global_parity'];
+      allowedSources = ['goldprice_org_ae', 'global_parity', 'series_aggregate', 'aggregated'];
     } else if (country === 'SA') {
-      allowedSources = ['goldprice_org_sa', 'global_parity'];
+      allowedSources = ['goldprice_org_sa', 'global_parity', 'series_aggregate', 'aggregated'];
     } else if (country === 'US') {
-      allowedSources = ['goldapi_spot'];
+      allowedSources = ['goldapi_spot', 'series_aggregate', 'aggregated'];
     }
 
     // Query normalized schema

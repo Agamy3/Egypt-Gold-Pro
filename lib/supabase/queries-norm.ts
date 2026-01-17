@@ -298,14 +298,15 @@ export async function getMarketSeries(
     .order('created_at', { ascending: true });
 
   // Filter by source for country-specific sources
+  // Include series_aggregate and aggregated as fallback sources for all countries
   if (country === 'EG') {
-    query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
+    query = query.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'series_aggregate', 'aggregated']);
   } else if (country === 'AE') {
-    query = query.in('source', ['goldprice_org_ae', 'global_parity']);
+    query = query.in('source', ['goldprice_org_ae', 'global_parity', 'series_aggregate', 'aggregated']);
   } else if (country === 'SA') {
-    query = query.in('source', ['goldprice_org_sa', 'global_parity']);
+    query = query.in('source', ['goldprice_org_sa', 'global_parity', 'series_aggregate', 'aggregated']);
   } else if (country === 'US') {
-    query = query.in('source', ['goldapi_spot']);
+    query = query.in('source', ['goldapi_spot', 'series_aggregate', 'aggregated']);
   }
 
   const { data, error } = await query;
