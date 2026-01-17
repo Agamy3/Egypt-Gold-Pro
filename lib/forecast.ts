@@ -245,11 +245,15 @@ export async function calculateForecast(
     // Use market21Buy if available, otherwise market24Buy
     // For US, we only have 24k, so use that
     // For longer windows, use larger time buckets to reduce noise
+    // BUT: ensure we always have at least 2 buckets for trend analysis
+    // Use smaller buckets for small datasets to ensure multiple buckets
     const bucketSizeMs = snapshotCount > 500 
       ? 60 * 60 * 1000  // 1-hour buckets for large datasets (>500 snapshots)
       : snapshotCount > 200
       ? 30 * 60 * 1000  // 30-minute buckets for medium datasets (>200 snapshots)
-      : 5 * 60 * 1000;  // 5-minute buckets for small datasets
+      : snapshotCount > 10
+      ? 5 * 60 * 1000   // 5-minute buckets for medium-small datasets (>10 snapshots)
+      : 1 * 60 * 1000;  // 1-minute buckets for very small datasets (ensures multiple buckets)
     
     // Determine which price to use based on country, availability, and scope
     // For US, use 24k only. For others, prefer 21k but fallback to 24k
