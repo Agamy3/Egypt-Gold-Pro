@@ -130,13 +130,66 @@ export async function writeMarketSnapshotNorm(
     
     try {
       const { error, data: inserted } = await retrySupabaseOperation(async () => {
-        const result = await supabase
+        // The unique index from migration 0019 on (country, karat, raw_hash) WHERE raw_hash IS NOT NULL
+        // can cause inserts to fail if the same raw_hash exists. We need to handle this.
+        // Strategy: Try insert first, if unique violation, update the existing row's created_at
+        let result = await supabase
           .from('market_snapshots_norm')
           .insert(rows)
           .select('id');
         
         if (result.error) {
           const errorMsg = result.error.message || String(result.error);
+          const isUniqueViolation = 
+            errorMsg.includes('duplicate key') ||
+            errorMsg.includes('unique constraint') ||
+            errorMsg.includes('violates unique constraint') ||
+            result.error.code === '23505';
+          
+          if (isUniqueViolation) {
+            // Unique constraint violation: update existing rows instead
+            console.log('[Supabase] Unique constraint violation detected, updating existing rows instead of inserting');
+            
+            // For each row, update the existing row's created_at and price
+            for (const row of rows) {
+              if (row.raw_hash) {
+                // Update existing row with same (country, karat, raw_hash)
+                const updateResult = await supabase
+                  .from('market_snapshots_norm')
+                  .update({
+                    price: row.price,
+                    created_at: row.created_at,
+                    currency: row.currency,
+                    source: row.source,
+                    trusted: row.trusted,
+                  })
+                  .eq('country', row.country)
+                  .eq('karat', row.karat)
+                  .eq('raw_hash', row.raw_hash)
+                  .select('id');
+                
+                if (updateResult.error) {
+                  console.error('[Supabase] Update error for row:', row, updateResult.error);
+                } else {
+                  console.log('[Supabase] Updated existing row:', updateResult.data?.[0]?.id);
+                }
+              } else {
+                // No raw_hash, can insert normally
+                const insertResult = await supabase
+                  .from('market_snapshots_norm')
+                  .insert(row)
+                  .select('id');
+                
+                if (insertResult.error) {
+                  console.error('[Supabase] Insert error for row without raw_hash:', row, insertResult.error);
+                }
+              }
+            }
+            
+            // Return success since we handled the conflict
+            return { error: null, data: rows.map((_, i) => ({ id: i + 1 })) };
+          }
+          
           const isNetworkError = 
             errorMsg.includes('fetch failed') ||
             errorMsg.includes('ECONNRESET') ||
