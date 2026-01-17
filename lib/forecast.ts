@@ -45,9 +45,10 @@ const RECENT_WINDOW_MS = 2 * 60 * 60 * 1000; // Last 2 hours (most recent trend)
 const HORIZON_MINUTES = 120; // 2 hours forecast horizon (predict next 2 hours)
 
 // Thresholds for forecast reliability
-const MIN_SNAPSHOTS_FOR_FORECAST = 10; // Minimum snapshots needed to attempt a forecast
-const LOW_CONFIDENCE_THRESHOLD = 20; // Snapshots needed for MED confidence
-const HIGH_CONFIDENCE_THRESHOLD = 50; // Snapshots needed for HIGH confidence
+// Lowered minimum to allow forecasts with less data (will be low confidence but functional)
+const MIN_SNAPSHOTS_FOR_FORECAST = 3; // Minimum snapshots needed to attempt a forecast (reduced from 10)
+const LOW_CONFIDENCE_THRESHOLD = 10; // Snapshots needed for MED confidence (reduced from 20)
+const HIGH_CONFIDENCE_THRESHOLD = 30; // Snapshots needed for HIGH confidence (reduced from 50)
 
 /**
  * Calculate forecast using stored snapshot data
