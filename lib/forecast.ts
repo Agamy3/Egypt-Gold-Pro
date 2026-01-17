@@ -123,7 +123,37 @@ export async function calculateForecast(
       snapshotQuery = snapshotQuery.eq('trusted', true);
     }
 
-    const { data: snapshotRows, error: snapshotError } = await snapshotQuery;
+    let { data: snapshotRows, error: snapshotError } = await snapshotQuery;
+    
+    // If no results with source filter, try without filter to see what sources exist in DB
+    if (!snapshotError && (!snapshotRows || snapshotRows.length === 0)) {
+      console.log('[Forecast] No data found with source filter, checking all sources...');
+      const allSourcesQuery = db.supabase
+        .from('market_snapshots_norm')
+        .select('source, karat, price, created_at, country')
+        .eq('country', country)
+        .gte('created_at', windowStart)
+        .in('karat', [21, 24])
+        .order('created_at', { ascending: true });
+      
+      if (isTrustedMode && country === 'EG') {
+        allSourcesQuery.eq('trusted', true);
+      }
+      
+      const { data: allSourcesData, error: allSourcesError } = await allSourcesQuery;
+      
+      if (!allSourcesError && allSourcesData && allSourcesData.length > 0) {
+        // Log what sources we found
+        const foundSources = new Set(allSourcesData.map((r: any) => r.source));
+        console.log(`[Forecast] Found ${allSourcesData.length} rows with sources:`, Array.from(foundSources));
+        
+        // Use all data found (without source filter) - include any source that has data
+        snapshotRows = allSourcesData;
+        snapshotError = null;
+      } else {
+        console.log('[Forecast] No data found even without source filter');
+      }
+    }
     
     // Log query results for debugging
     if (snapshotError) {
