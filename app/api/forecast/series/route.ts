@@ -177,6 +177,7 @@ export async function GET(request: Request) {
         }
 
         // Apply source filters on a cloned query (per-country)
+        // Match the exact sources used in lib/forecast.ts for consistency
         let seriesQuery = baseSeriesQuery;
         if (country === 'EG') {
           seriesQuery = seriesQuery.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
@@ -187,6 +188,17 @@ export async function GET(request: Request) {
         } else if (country === 'US') {
           seriesQuery = seriesQuery.in('source', ['goldapi_spot']);
         }
+        
+        // Log the query parameters for debugging
+        console.log('[Forecast Series] Query parameters:', {
+          country,
+          windowStart: createdAtIsoStart,
+          windowMs: windowMs / (60 * 60 * 1000) + ' hours',
+          sources: country === 'EG' ? ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'] :
+                   country === 'AE' ? ['goldprice_org_ae', 'global_parity'] :
+                   country === 'SA' ? ['goldprice_org_sa', 'global_parity'] :
+                   ['goldapi_spot']
+        });
 
         // Helper: page through PostgREST row caps
         const fetchPaged = async <T,>(q: any): Promise<{ rows: T[]; pages: number }> => {
