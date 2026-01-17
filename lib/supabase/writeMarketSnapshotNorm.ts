@@ -147,31 +147,78 @@ export async function writeMarketSnapshotNorm(
             result.error.code === '23505';
           
           if (isUniqueViolation) {
-            // Unique constraint violation: update existing rows instead
-            console.log('[Supabase] Unique constraint violation detected, updating existing rows instead of inserting');
+            // Unique constraint violation: check if existing row is old enough to update
+            // If existing row is recent (< 5 minutes), skip to avoid overwriting recent data
+            // If existing row is old (> 5 minutes), update it OR insert new row with NULL raw_hash
+            console.log('[Supabase] Unique constraint violation detected, checking if we should update or insert new');
             
-            // For each row, update the existing row's created_at and price
+            const FIVE_MINUTES_MS = 5 * 60 * 1000;
+            const now = params.createdAt;
+            
             for (const row of rows) {
               if (row.raw_hash) {
-                // Update existing row with same (country, karat, raw_hash)
-                const updateResult = await supabase
+                // Check age of existing row with same raw_hash
+                const existingResult = await supabase
                   .from('market_snapshots_norm')
-                  .update({
-                    price: row.price,
-                    created_at: row.created_at,
-                    currency: row.currency,
-                    source: row.source,
-                    trusted: row.trusted,
-                  })
+                  .select('id, created_at')
                   .eq('country', row.country)
                   .eq('karat', row.karat)
                   .eq('raw_hash', row.raw_hash)
-                  .select('id');
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .single();
                 
-                if (updateResult.error) {
-                  console.error('[Supabase] Update error for row:', row, updateResult.error);
+                if (existingResult.data) {
+                  const existingCreatedAt = typeof existingResult.data.created_at === 'string'
+                    ? new Date(existingResult.data.created_at).getTime()
+                    : (typeof existingResult.data.created_at === 'number' ? existingResult.data.created_at : 0);
+                  const ageMs = now - existingCreatedAt;
+                  
+                  if (ageMs > FIVE_MINUTES_MS) {
+                    // Existing row is old (> 5 min), update it to refresh timestamp
+                    const updateResult = await supabase
+                      .from('market_snapshots_norm')
+                      .update({
+                        price: row.price,
+                        created_at: row.created_at,
+                        currency: row.currency,
+                        source: row.source,
+                        trusted: row.trusted,
+                      })
+                      .eq('id', existingResult.data.id)
+                      .select('id');
+                    
+                    if (updateResult.error) {
+                      console.error('[Supabase] Update error for row:', row, updateResult.error);
+                    } else {
+                      console.log('[Supabase] Updated existing old row:', updateResult.data?.[0]?.id);
+                    }
+                  } else {
+                    // Existing row is recent (< 5 min), insert new row with NULL raw_hash to create new snapshot
+                    // This ensures we have multiple snapshots over time even if price hasn't changed
+                    const newRowWithoutHash = { ...row, raw_hash: null };
+                    const insertResult = await supabase
+                      .from('market_snapshots_norm')
+                      .insert(newRowWithoutHash)
+                      .select('id');
+                    
+                    if (insertResult.error) {
+                      console.error('[Supabase] Insert error for new row without raw_hash:', newRowWithoutHash, insertResult.error);
+                    } else {
+                      console.log('[Supabase] Inserted new snapshot without raw_hash (recent data exists):', insertResult.data?.[0]?.id);
+                    }
+                  }
                 } else {
-                  console.log('[Supabase] Updated existing row:', updateResult.data?.[0]?.id);
+                  // No existing row found, try insert without raw_hash
+                  const newRowWithoutHash = { ...row, raw_hash: null };
+                  const insertResult = await supabase
+                    .from('market_snapshots_norm')
+                    .insert(newRowWithoutHash)
+                    .select('id');
+                  
+                  if (insertResult.error) {
+                    console.error('[Supabase] Insert error for row without raw_hash (fallback):', newRowWithoutHash, insertResult.error);
+                  }
                 }
               } else {
                 // No raw_hash, can insert normally
@@ -186,7 +233,7 @@ export async function writeMarketSnapshotNorm(
               }
             }
             
-            // Return success since we handled the conflict
+            // Return success since we handled the conflict (either updated or inserted new)
             return { error: null, data: rows.map((_, i) => ({ id: i + 1 })) };
           }
           
