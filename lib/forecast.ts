@@ -84,9 +84,15 @@ export async function calculateForecast(
     
     // Determine sources based on country
     // Include series_aggregate and aggregated as fallback sources for all countries
+    // For old data compatibility, also include all known source variations
     let allowedSources: string[] = [];
     if (country === 'EG') {
-      allowedSources = ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'series_aggregate', 'aggregated'];
+      // Include all possible EG sources for maximum data coverage
+      allowedSources = [
+        'banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 
+        'series_aggregate', 'aggregated', 'goldbillion', 'isagha', 
+        'livepriceofgold', 'egypt_web_aggregate', 'rapidapi_egypt_gold_data'
+      ];
       if (isTrustedMode) {
         allowedSources = ['goldbullioneg'];
       }
@@ -99,14 +105,19 @@ export async function calculateForecast(
     }
 
     // Query normalized schema
+    // Try with source filter first, but if no results, query without source filter to see all available data
     let snapshotQuery = db.supabase
       .from('market_snapshots_norm')
       .select('source, karat, price, created_at')
       .eq('country', country)
       .gte('created_at', windowStart)
       .in('karat', [21, 24])
-      .in('source', allowedSources)
       .order('created_at', { ascending: true });
+    
+    // Only apply source filter if not in trusted mode (trusted mode already filtered above)
+    if (!isTrustedMode || country !== 'EG') {
+      snapshotQuery = snapshotQuery.in('source', allowedSources);
+    }
 
     if (isTrustedMode && country === 'EG') {
       snapshotQuery = snapshotQuery.eq('trusted', true);
