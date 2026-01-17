@@ -303,21 +303,62 @@ export async function calculateForecast(
 
     const timeBuckets = Object.keys(snapshotsByTimeBucket).map(Number).sort((a, b) => a - b);
     if (timeBuckets.length < 2) {
-      return {
-        direction: 'SIDEWAYS',
-        confidence: 'LOW',
-        horizonMinutes: HORIZON_MINUTES,
-        score: 0,
-        components: {
-          momentum21k: 0,
-          varianceDelta: 0,
-          fxDelta: 0,
-          ounceDelta: 0,
-        },
-        reasons: ['Insufficient time buckets for trend analysis'],
-        snapshotCount: snapshotsToUse.length,
-        insufficientData: true,
-      };
+      // If we only have one bucket but have snapshots, use all snapshots directly without second grouping
+      // This handles cases where all data is clustered in a short time period
+      if (snapshotsToUse.length >= 2) {
+        // Use first and last snapshot directly for trend calculation
+        const firstSnapshot = snapshotsToUse[0];
+        const lastSnapshot = snapshotsToUse[snapshotsToUse.length - 1];
+        const firstPrice = use24kOnly 
+          ? firstSnapshot.market24Buy 
+          : (firstSnapshot.market21Buy ?? firstSnapshot.market24Buy);
+        const lastPrice = use24kOnly 
+          ? lastSnapshot.market24Buy 
+          : (lastSnapshot.market21Buy ?? lastSnapshot.market24Buy);
+        
+        if (firstPrice !== null && lastPrice !== null && firstPrice > 0) {
+          // Continue with forecast calculation using these two points
+          // Store in buckets format for compatibility
+          const firstBucketKey = 0;
+          const lastBucketKey = 1;
+          snapshotsByTimeBucket[firstBucketKey] = [firstPrice];
+          snapshotsByTimeBucket[lastBucketKey] = [lastPrice];
+          timeBuckets.length = 0;
+          timeBuckets.push(firstBucketKey, lastBucketKey);
+        } else {
+          return {
+            direction: 'SIDEWAYS',
+            confidence: 'LOW',
+            horizonMinutes: HORIZON_MINUTES,
+            score: 0,
+            components: {
+              momentum21k: 0,
+              varianceDelta: 0,
+              fxDelta: 0,
+              ounceDelta: 0,
+            },
+            reasons: ['Insufficient time buckets and no valid prices for trend analysis'],
+            snapshotCount: snapshotsToUse.length,
+            insufficientData: true,
+          };
+        }
+      } else {
+        return {
+          direction: 'SIDEWAYS',
+          confidence: 'LOW',
+          horizonMinutes: HORIZON_MINUTES,
+          score: 0,
+          components: {
+            momentum21k: 0,
+            varianceDelta: 0,
+            fxDelta: 0,
+            ounceDelta: 0,
+          },
+          reasons: [`Insufficient time buckets for trend analysis (need at least 2, have ${timeBuckets.length})`],
+          snapshotCount: snapshotsToUse.length,
+          insufficientData: true,
+        };
+      }
     }
 
     // Get first and last buckets (approximately start and end of window)
