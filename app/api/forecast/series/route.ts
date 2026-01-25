@@ -390,17 +390,62 @@ export async function GET(request: Request) {
 
           if (points.length === 0 || hoursSinceLatest > 6 || coverageShort) {
             try {
-              const wideBase = supabase
-                .from('market_snapshots')
-                // NOTE: wide table uses quoted/camelCase columns in Postgres ("createdAt", "market24Buy", ...)
-                .select('source, createdAt, market24Buy, market21Buy, market18Buy, market14Buy, error')
-                .gte('createdAt', windowStart)
-                .is('error', null)
-                // IMPORTANT: order DESC to get the newest rows
-                .order('createdAt', { ascending: false });
+              // Wide table `createdAt` may be TIMESTAMPTZ or bigint (legacy). Prefer ISO, then fallback to ms.
+              const wideStartIso = new Date(windowStart).toISOString();
+              const fetchWidePaged = async (useIso: boolean) => {
+                const base = supabase
+                  .from('market_snapshots')
+                  // NOTE: wide table uses quoted/camelCase columns in Postgres ("createdAt", "market24Buy", ...)
+                  .select('source, createdAt, market24Buy, market21Buy, market18Buy, market14Buy, error')
+                  .is('error', null)
+                  .order('createdAt', { ascending: false })
+                  .gte('createdAt', useIso ? wideStartIso : (windowStart as any));
 
-              const { rows: wideData, pages: widePages } = await fetchPaged<any>(wideBase);
+                const rows: any[] = [];
+                let pages = 0;
+                let lastError: any = null;
+                for (let page = 0; page < MAX_PAGES; page++) {
+                  const from = page * PAGE_SIZE;
+                  const to = from + PAGE_SIZE - 1;
+                  const { data, error } = await (base as any).range(from, to);
+                  if (error) {
+                    lastError = error;
+                    break;
+                  }
+                  const batch = (data as any[]) || [];
+                  rows.push(...batch);
+                  pages = page + 1;
+                  if (batch.length < PAGE_SIZE) break;
+                }
+                return { rows, pages, error: lastError };
+              };
+
+              let wideData: any[] = [];
+              let widePages = 0;
+              let wideErr: any = null;
+              let wideFetchMode: 'iso' | 'ms' | null = null;
+
+              const rIso = await fetchWidePaged(true);
+              wideData = rIso.rows;
+              widePages = rIso.pages;
+              wideErr = rIso.error;
+              wideFetchMode = 'iso';
+
+              if (wideErr) {
+                const msg = wideErr?.message ? String(wideErr.message) : String(wideErr);
+                // Retry for legacy bigint epoch ms or if server rejects ISO
+                if (msg.includes('bigint') || msg.includes('invalid input syntax') || msg.includes('timestamp')) {
+                  const rMs = await fetchWidePaged(false);
+                  wideData = rMs.rows;
+                  widePages = rMs.pages;
+                  wideErr = rMs.error;
+                  wideFetchMode = 'ms';
+                }
+              }
+
               widePagesFetched = widePages;
+              (request as any).__egWideFetchMode = wideFetchMode;
+              (request as any).__egWideFetchError = wideErr?.message ? String(wideErr.message) : (wideErr ? String(wideErr) : null);
 
               if (wideData && wideData.length > 0) {
                 wideRowsCount = wideData.length;
@@ -889,6 +934,8 @@ export async function GET(request: Request) {
         egWideLastAt14: (request as any).__egWideLastAt14 ?? null,
         egWidePagesFetched: (request as any).__egWidePagesFetched ?? null,
         egWideRowsScanned: (request as any).__egWideRowsScanned ?? null,
+        egWideFetchMode: (request as any).__egWideFetchMode ?? null,
+        egWideFetchError: (request as any).__egWideFetchError ?? null,
         egEgyptMarketRowsCount: (request as any).__egEgyptMarketRowsCount ?? null,
         egEgyptMarketPointsCount: (request as any).__egEgyptMarketPointsCount ?? null,
         egEgyptMarketLatestAt: (request as any).__egEgyptMarketLatestAt ?? null,
