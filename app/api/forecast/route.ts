@@ -66,7 +66,7 @@ export async function GET(request: Request) {
       message = `Insufficient data: trusted Egypt source (${TRUSTED_EGYPT_SOURCE}) unavailable`;
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       timestamp: Date.now(),
       insufficientData: forecast.insufficientData,
       message,
@@ -80,11 +80,18 @@ export async function GET(request: Request) {
         snapshotCount: forecast.snapshotCount,
       },
     });
+
+    // Ensure no caching (keeps forecast consistent with series behavior)
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Forecast API error:', errorMessage);
     
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         timestamp: Date.now(),
         insufficientData: true,
@@ -94,6 +101,12 @@ export async function GET(request: Request) {
       },
       { status: 200 } // Always return 200, even on error
     );
+
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
   }
 }
 

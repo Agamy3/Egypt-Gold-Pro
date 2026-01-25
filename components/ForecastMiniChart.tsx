@@ -282,25 +282,36 @@ export default function ForecastMiniChart({
 
   // Domain rules (per your table):
   // - Daily: last 24h (from the hour the user is in)
-  // - Weekly/Monthly/YoY: last N days
+  // - Weekly/Monthly/YoY: from Today back to the eldest data found (avoid empty graph)
   //
-  // However, if the data is very stale (no real points for a long time), extending the axis to "now"
-  // makes the chart look stretched and implies a flat/held price. In that case, clamp the domain end
-  // to the last real point.
+  // NOTE: We do NOT carry-forward the line to "now" (no fake flat tail).
+  // If the data is extremely stale, we clamp the axis end to the last real point to avoid a huge empty tail.
   const dataMin = validPoints[0].t;
   const dataMax = validPoints[validPoints.length - 1].t;
 
   const staleTailThresholdMs =
     range === 'daily'
-      ? 2 * 60 * 60 * 1000 // 2h
+      ? 6 * 60 * 60 * 1000 // 6h (matches staleness badge)
       : range === 'weekly'
-        ? 12 * 60 * 60 * 1000 // 12h
+        ? 24 * 60 * 60 * 1000 // 24h
         : range === 'monthly'
-          ? 2 * 24 * 60 * 60 * 1000 // 2d
+          ? 48 * 60 * 60 * 1000 // 48h
           : 7 * 24 * 60 * 60 * 1000; // 7d (yoy)
 
   const domainEnd = (nowMs - dataMax > staleTailThresholdMs) ? dataMax : nowMs;
-  const domainStart = Math.max(nowMs - rangeWindowMs, dataMin);
+
+  const startOfHour = (ts: number) => {
+    const d = new Date(ts);
+    d.setMinutes(0, 0, 0);
+    return d.getTime();
+  };
+
+  const dailyStart = startOfHour(nowMs) - 24 * 60 * 60 * 1000;
+  const desiredStart = range === 'daily' ? dailyStart : (nowMs - rangeWindowMs);
+
+  // For weekly/monthly/yoy, if data doesn't go back the full window, start at the oldest available point
+  // to avoid an empty chart. For daily we always force the full 24h domain.
+  const domainStart = range === 'daily' ? desiredStart : Math.max(desiredStart, dataMin);
 
   const timeMin = domainStart;
   const timeMax = domainEnd;
@@ -516,7 +527,7 @@ export default function ForecastMiniChart({
   };
 
   // Handle pointer move within plot area to find nearest point
-  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+  const handlePointerMove = (e: React.PointerEvent) => {
     if (!svgRef.current || displayPoints.length === 0) return;
 
     const coords = getSvgCoords(e.clientX, e.clientY);
@@ -654,9 +665,6 @@ export default function ForecastMiniChart({
         className="w-full h-full"
         preserveAspectRatio="none"
         style={{ width: '100%', height: '100%', display: 'block', position: 'relative' }}
-        onPointerMove={handlePointerMove}
-        onPointerLeave={handlePointerLeave}
-        onPointerCancel={handlePointerLeave}
       >
         {/* Unit label (top-left or top-right inside plot area depending on RTL) */}
         <text
@@ -734,6 +742,18 @@ export default function ForecastMiniChart({
             <rect x={padLeft} y={padTop} width={w} height={h} />
           </clipPath>
         </defs>
+
+        {/* Hover hitbox (only within plot area) */}
+        <rect
+          x={padLeft}
+          y={padTop}
+          width={w}
+          height={h}
+          fill="transparent"
+          onPointerMove={handlePointerMove}
+          onPointerLeave={handlePointerLeave}
+          onPointerCancel={handlePointerLeave}
+        />
 
         {/* Chart line and points (clipped to plot area) */}
         <g clipPath="url(#chart-clip)">

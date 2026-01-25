@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import ForecastMiniChart from './ForecastMiniChart';
 import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
@@ -46,6 +46,13 @@ interface SeriesResponse {
     scope: 'local' | 'global';
     range: string;
     unit: string;
+    serverAsOf?: string;
+    lastPointAt?: string | null;
+    lastDataAt?: string | null;
+    pointsCount?: number;
+    source?: string;
+    fallbackUsed?: boolean;
+    fallbackSource?: string | null;
   };
   error?: string;
 }
@@ -66,6 +73,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
   const [scope, setScope] = useState<ForecastScope>('local');
   const [seriesData, setSeriesData] = useState<SeriesResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   // Always manage forecast state internally - ignore initial props after first render
   const [forecast, setForecast] = useState<ForecastData | null>(initialForecast || null);
   const [insufficientData, setInsufficientData] = useState(initialInsufficientData || false);
@@ -124,7 +132,9 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
         }
         abortController = new AbortController();
 
-        setLoading(true);
+        const isInitial = !seriesData;
+        if (isInitial) setLoading(true);
+        else setRefreshing(true);
         // Get trusted mode preference from localStorage
         const trustedMode = typeof window !== 'undefined' && localStorage.getItem('egyptTrustedOnlyMode') === 'true';
         const minutes = TIME_RANGE_MAP[timeRange];
@@ -144,14 +154,6 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
         }
         
         const data = await res.json();
-        console.log('[ForecastCard] Series data received:', { 
-          pointsCount: data.points?.length || 0, 
-          meta: data.meta,
-          error: data.error,
-          firstPoint: data.points?.[0],
-          lastPoint: data.points?.[data.points?.length - 1],
-          samplePoints: data.points?.slice(0, 3)
-        });
         setSeriesData(data);
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') {
@@ -162,6 +164,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
         setSeriesData({ points: [], meta: { scope, range: timeRange, unit: scope === 'global' ? 'USD' : 'EGP' } });
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
     };
 
@@ -197,6 +200,137 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
     };
   }, [timeRange, scope, country]);
 
+  const seriesMeta = seriesData?.meta;
+  const seriesPoints = seriesData?.points ?? [];
+
+  const isDev = process.env.NODE_ENV !== 'production';
+
+  const parsedMeta = useMemo(() => {
+    const serverAsOf = seriesMeta?.serverAsOf ?? null;
+    const lastPointAtIso = seriesMeta?.lastPointAt ?? null;
+    const lastDataAtIso = seriesMeta?.lastDataAt ?? null;
+    const pointsCount = seriesMeta?.pointsCount ?? seriesPoints.length;
+    const source = seriesMeta?.source ?? null;
+    const fallbackUsed = !!seriesMeta?.fallbackUsed;
+    const fallbackSource = seriesMeta?.fallbackSource ?? null;
+
+    const lastPointAtMs = lastPointAtIso ? Date.parse(lastPointAtIso) : null;
+    const lastMsFromPoints = seriesPoints.length > 0 ? seriesPoints[seriesPoints.length - 1].t : null;
+    const effectiveLastMs = Number.isFinite(lastPointAtMs as any) ? (lastPointAtMs as number) : lastMsFromPoints;
+
+    const isDelayed =
+      effectiveLastMs !== null ? Date.now() - effectiveLastMs > 6 * 60 * 60 * 1000 : false;
+
+    const firstIso = seriesPoints.length > 0 ? new Date(seriesPoints[0].t).toISOString() : null;
+    const lastIso = seriesPoints.length > 0 ? new Date(seriesPoints[seriesPoints.length - 1].t).toISOString() : null;
+
+    return {
+      serverAsOf,
+      lastPointAtIso: lastPointAtIso ?? lastIso,
+      lastDataAtIso,
+      pointsCount,
+      source,
+      fallbackUsed,
+      fallbackSource,
+      isDelayed,
+      firstIso,
+      lastIso,
+    };
+  }, [seriesMeta, seriesPoints]);
+
+  // Determine unit and range for chart based on country and scope
+  const getCurrency = (country: string) => {
+    return country === 'EG' ? 'EGP' : 
+           country === 'AE' ? 'AED' :
+           country === 'SA' ? 'SAR' :
+           country === 'US' ? 'USD' : 'EGP';
+  };
+  const chartUnit = scope === 'global' ? 'USD' as const : (getCurrency(country) as 'EGP' | 'AED' | 'SAR' | 'USD');
+  const chartRange = timeRange;
+
+  const ChartSection = (
+    <div className="mt-4 pt-4 border-t space-y-3">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={`block text-xs font-medium text-gray-300 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'timeRange')}</label>
+          <select
+            value={timeRange}
+            onChange={(e) => setTimeRange(e.target.value as TimeRange)}
+            className={`w-full px-3 py-2 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
+          >
+            <option value="daily">{t(lang, 'daily')}</option>
+            <option value="weekly">{t(lang, 'weekly')}</option>
+            <option value="monthly">{t(lang, 'monthly')}</option>
+            <option value="yoy">{t(lang, 'yoy')}</option>
+          </select>
+        </div>
+        <div>
+          <label className={`block text-xs font-medium text-gray-300 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'forecastScope')}</label>
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value as ForecastScope)}
+            className={`w-full px-3 py-2 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
+          >
+            <option value="local">{t(lang, 'localMarket')}</option>
+            <option value="global">{t(lang, 'globalMarket')}</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Staleness badge (outside the chart; keeps the "chart overlay" removed) */}
+      {parsedMeta.isDelayed && (
+        <div className={`flex items-center gap-2 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+          <span className="inline-flex items-center rounded-full bg-amber-900/30 text-amber-300 border border-amber-700 px-2 py-0.5 text-xs font-medium">
+            {lang === 'ar' ? 'تأخر البيانات' : 'Data delayed'}
+          </span>
+          {parsedMeta.fallbackUsed && (
+            <span className="text-xs text-gray-300">
+              {lang === 'ar' ? 'تم استخدام بديل' : 'Fallback used'}
+              {parsedMeta.fallbackSource ? `: ${parsedMeta.fallbackSource}` : ''}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="w-full h-[260px] md:h-[320px] lg:h-[360px] relative overflow-hidden" style={{ minHeight: '260px' }}>
+        <div className="w-full h-full">
+          <ForecastMiniChart
+            points={seriesPoints}
+            unit={chartUnit}
+            range={chartRange}
+            loading={loading}
+            strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
+          />
+        </div>
+        {/* subtle refresh indicator (no layout shift) */}
+        {refreshing && (
+          <div className="absolute top-2 right-2 text-[11px] text-gray-400">
+            {lang === 'ar' ? 'تحديث…' : 'Refreshing…'}
+          </div>
+        )}
+      </div>
+
+      {/* Dev-only debug panel (under chart) */}
+      {isDev && (
+        <div className="rounded-md border border-gray-800 bg-gray-950/60 px-3 py-2 text-xs text-gray-300">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <span><strong>serverAsOf</strong>: {parsedMeta.serverAsOf ?? '—'}</span>
+            <span><strong>lastPointAt</strong>: {parsedMeta.lastPointAtIso ?? '—'}</span>
+            <span><strong>points</strong>: {parsedMeta.pointsCount}</span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-gray-400">
+            <span><strong>source</strong>: {parsedMeta.source ?? '—'}</span>
+            <span><strong>fallbackUsed</strong>: {String(parsedMeta.fallbackUsed)}</span>
+            <span><strong>range</strong>: {timeRange} | <strong>scope</strong>: {scope} | <strong>country</strong>: {country}</span>
+          </div>
+          <div className="mt-1 text-gray-500">
+            Range: {timeRange} | Points: {seriesPoints.length} | First: {parsedMeta.firstIso ?? '—'} | Last: {parsedMeta.lastIso ?? '—'}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   // Filter and transform reasons to remove provider names
   const cleanReasons = forecast?.reasons.map(reason => {
     return reason
@@ -226,16 +360,6 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
     SIDEWAYS: '→',
   };
 
-  // Determine unit and range for chart based on country and scope
-  const getCurrency = (country: string) => {
-    return country === 'EG' ? 'EGP' : 
-           country === 'AE' ? 'AED' :
-           country === 'SA' ? 'SAR' :
-           country === 'US' ? 'USD' : 'EGP';
-  };
-  const chartUnit = scope === 'global' ? 'USD' as const : (getCurrency(country) as 'EGP' | 'AED' | 'SAR' | 'USD');
-  const chartRange = timeRange;
-
   if (insufficientData || !forecast || forecastLoading) {
     return (
       <div className={`bg-gray-900 rounded-lg shadow p-6 overflow-hidden ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-400`}>
@@ -255,53 +379,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
           <p className="text-sm text-gray-400 mt-2">{t(lang, 'recentSnapshots')}</p>
         </div>
         {/* Dropdowns and chart even if forecast is insufficient */}
-        <div className="mt-4 pt-4 border-t space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={`block text-xs font-medium text-gray-300 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'timeRange')}</label>
-              <select
-                value={timeRange}
-                onChange={(e) => setTimeRange(e.target.value as TimeRange)}
-                className={`w-full px-3 py-2 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
-              >
-                <option value="daily">{t(lang, 'daily')}</option>
-                <option value="weekly">{t(lang, 'weekly')}</option>
-                <option value="monthly">{t(lang, 'monthly')}</option>
-                <option value="yoy">{t(lang, 'yoy')}</option>
-              </select>
-            </div>
-            <div>
-              <label className={`block text-xs font-medium text-gray-300 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'forecastScope')}</label>
-              <select
-                value={scope}
-                onChange={(e) => setScope(e.target.value as ForecastScope)}
-                className={`w-full px-3 py-2 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
-              >
-                <option value="local">{t(lang, 'localMarket')}</option>
-                <option value="global">{t(lang, 'globalMarket')}</option>
-              </select>
-            </div>
-          </div>
-          <div className="w-full h-[260px] md:h-[320px] lg:h-[360px] relative overflow-hidden" style={{ minHeight: '260px' }}>
-            {seriesData ? (
-              <>
-                <div className="w-full h-full">
-                  <ForecastMiniChart
-                    points={seriesData.points || []}
-                    unit={chartUnit}
-                    range={chartRange}
-                    loading={loading}
-                    strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400">
-                {loading ? t(lang, 'loading') : 'No chart data'}
-              </div>
-            )}
-          </div>
-        </div>
+        {ChartSection}
         <div className={`mt-4 pt-4 border-t border-gray-700 text-xs text-gray-400 italic ${lang === 'ar' ? 'text-right' : ''}`}>
           {t(lang, 'forecastDisclaimer')}
         </div>
@@ -372,46 +450,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
       )}
 
       {/* Dropdowns and Chart */}
-      <div className="mt-4 pt-4 border-t space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className={`block text-xs font-medium text-gray-300 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'timeRange')}</label>
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value as TimeRange)}
-              className={`w-full px-3 py-2 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
-            >
-              <option value="daily">{t(lang, 'daily')}</option>
-              <option value="weekly">{t(lang, 'weekly')}</option>
-              <option value="monthly">{t(lang, 'monthly')}</option>
-              <option value="yoy">{t(lang, 'yoy')}</option>
-            </select>
-          </div>
-          <div>
-            <label className={`block text-xs font-medium text-gray-300 mb-1 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'forecastScope')}</label>
-            <select
-              value={scope}
-              onChange={(e) => setScope(e.target.value as ForecastScope)}
-              className={`w-full px-3 py-2 border border-gray-700 bg-gray-800 text-gray-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${lang === 'ar' ? 'text-right' : ''}`}
-            >
-              <option value="local">{t(lang, 'localMarket')}</option>
-              <option value="global">{t(lang, 'globalMarket')}</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="w-full h-[260px] md:h-[320px] lg:h-[360px] relative overflow-hidden" style={{ minHeight: '260px' }}>
-          <div className="w-full h-full">
-            <ForecastMiniChart
-              points={seriesData?.points || []}
-              unit={chartUnit}
-              range={chartRange}
-              loading={loading}
-              strokeColor={scope === 'global' ? '#f59e0b' : '#3b82f6'}
-            />
-          </div>
-        </div>
-      </div>
+      {ChartSection}
 
       <div className={`mt-4 pt-4 border-t text-xs text-gray-500 italic ${lang === 'ar' ? 'text-right' : ''}`}>
         {t(lang, 'forecastDisclaimer')}
