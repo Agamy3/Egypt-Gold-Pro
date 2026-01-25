@@ -347,6 +347,98 @@ export async function GET(request: Request) {
         originalPointsCount = points.length;
         lastDataAtMs = points.length > 0 ? points[points.length - 1].t : null;
         
+        // Coverage fallback (EG local weekly/monthly/yoy):
+        // If we only have intraday points (e.g. due to high-frequency ingestion + row caps),
+        // prefer the lower-frequency `aggregated` normalized series which should cover days/weeks.
+        if (
+          country === 'EG' &&
+          scope === 'local' &&
+          (rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy')
+        ) {
+          const currentSpanMs = points.length > 1 ? (points[points.length - 1].t - points[0].t) : 0;
+          const minSpanMs =
+            rangeParam === 'weekly'
+              ? 36 * 60 * 60 * 1000 // 1.5d
+              : rangeParam === 'monthly'
+                ? 4 * 24 * 60 * 60 * 1000 // 4d
+                : 14 * 24 * 60 * 60 * 1000; // 14d
+
+          if (currentSpanMs < minSpanMs) {
+            try {
+              const aggQuery = supabase
+                .from('market_snapshots_norm')
+                .select('karat, price, created_at, source')
+                .eq('country', 'EG')
+                .eq('source', 'aggregated')
+                .gte('created_at', new Date(windowStart).toISOString())
+                .order('created_at', { ascending: false });
+
+              const { rows: aggRows } = await fetchPaged<any>(aggQuery);
+              if (aggRows && aggRows.length > 0) {
+                const bucketMs =
+                  rangeParam === 'weekly'
+                    ? 30 * 60_000 // 30m
+                    : rangeParam === 'monthly'
+                      ? 2 * 60 * 60_000 // 2h
+                      : 12 * 60 * 60_000; // 12h
+
+                const buckets24 = new Map<number, number[]>();
+                const buckets21 = new Map<number, number[]>();
+
+                for (const row of aggRows) {
+                  const price = Number(row.price);
+                  if (!isFinite(price) || price <= 0) continue;
+                  const createdAtMs =
+                    typeof row.created_at === 'string'
+                      ? new Date(row.created_at).getTime()
+                      : (typeof row.created_at === 'number' ? row.created_at : 0);
+                  if (!isFinite(createdAtMs) || createdAtMs <= 0) continue;
+                  const key = Math.floor(createdAtMs / bucketMs) * bucketMs;
+                  const karat = Number(row.karat);
+                  if (karat === 24) {
+                    if (!buckets24.has(key)) buckets24.set(key, []);
+                    buckets24.get(key)!.push(price);
+                  } else if (karat === 21) {
+                    if (!buckets21.has(key)) buckets21.set(key, []);
+                    buckets21.get(key)!.push(price);
+                  }
+                }
+
+                const toAvgPoints = (m: Map<number, number[]>, scale: number) =>
+                  Array.from(m.entries())
+                    .map(([t, arr]) => ({ t, v: (arr.reduce((s, x) => s + x, 0) / arr.length) * scale }))
+                    .filter((p) => isFinite(p.v) && p.v > 0)
+                    .sort((a, b) => a.t - b.t);
+
+                let aggPoints = toAvgPoints(buckets24, 1);
+                if (aggPoints.length === 0) {
+                  // Derive 24k from 21k if aggregated only stores 21k
+                  aggPoints = toAvgPoints(buckets21, 24 / 21);
+                }
+
+                const aggSpanMs = aggPoints.length > 1 ? (aggPoints[aggPoints.length - 1].t - aggPoints[0].t) : 0;
+                if (aggPoints.length > 1 && aggSpanMs > currentSpanMs + 6 * 60 * 60 * 1000) {
+                  points = aggPoints;
+                  fallbackUsed = true;
+                  fallbackSource = 'aggregated_history';
+                  lastDataAtMs = points[points.length - 1].t;
+                  (request as any).__egAggCoverageUsed = true;
+                  (request as any).__egAggSpanHours = Number((aggSpanMs / (1000 * 60 * 60)).toFixed(2));
+                  console.warn('[Forecast Series] Using aggregated history for EG long-range coverage:', {
+                    range: rangeParam,
+                    prevSpanHours: Number((currentSpanMs / (1000 * 60 * 60)).toFixed(2)),
+                    aggSpanHours: Number((aggSpanMs / (1000 * 60 * 60)).toFixed(2)),
+                    points: aggPoints.length,
+                  });
+                }
+              }
+            } catch (e) {
+              console.error('[Forecast Series] aggregated coverage fallback failed:', e);
+              (request as any).__egAggCoverageUsed = false;
+            }
+          }
+        }
+
         // If EG local looks stale/empty in normalized table, try the wide table (`market_snapshots`)
         // which may be where ingestion is actually writing intraday data.
         if (country === 'EG') {
@@ -942,6 +1034,8 @@ export async function GET(request: Request) {
         egEgyptMarketError: (request as any).__egEgyptMarketError ?? null,
         egDerived24kUsed: (request as any).__egDerived24kUsed ?? null,
         egDerivedFrom: (request as any).__egDerivedFrom ?? null,
+        egAggCoverageUsed: (request as any).__egAggCoverageUsed ?? null,
+        egAggSpanHours: (request as any).__egAggSpanHours ?? null,
         egNormSpanHours: country === 'EG' && scope === 'local' && points.length > 1
           ? Number((((points[points.length - 1].t - points[0].t) / (1000 * 60 * 60))).toFixed(2))
           : null,
