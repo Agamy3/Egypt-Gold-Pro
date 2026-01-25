@@ -389,8 +389,16 @@ export default function ForecastMiniChart({
   // Format X-axis time based on range
   const formatTime = (timestamp: number): string => {
     const date = new Date(timestamp);
+    // If the *actual displayed domain* is intraday (< ~36h), show time-of-day even for weekly/monthly/yoy,
+    // otherwise labels collapse to the same "Jan 25" and become unreadable.
+    const domainSpanMs = timeMax - timeMin;
+    const intradayLike = domainSpanMs > 0 && domainSpanMs < 36 * 60 * 60 * 1000;
     if (range === 'daily') {
       // HH:mm for intraday
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${minutes}`;
+    } else if (intradayLike) {
       const hours = date.getHours().toString().padStart(2, '0');
       const minutes = date.getMinutes().toString().padStart(2, '0');
       return `${hours}:${minutes}`;

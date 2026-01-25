@@ -188,7 +188,7 @@ export async function GET(request: Request) {
         } else if (country === 'US') {
           seriesQuery = seriesQuery.in('source', ['goldapi_spot']);
         }
-        
+
         // Log the query parameters for debugging
         console.log('[Forecast Series] Query parameters:', {
           country,
@@ -217,62 +217,131 @@ export async function GET(request: Request) {
 
         // Try 24k first (paged)
         const { rows: data24k, pages: normPages24 } = await fetchPaged<any>(seriesQuery.eq('karat', 24));
-        
-        if (data24k && data24k.length > 0) {
-          // Group by 10-second buckets and average prices
-          const timeBuckets = new Map<number, number[]>();
-          for (const row of data24k) {
-            const price = Number(row.price);
-            if (isFinite(price) && price > 0) {
-              const createdAt = typeof row.created_at === 'string' 
+
+        // For longer ranges, bucket more coarsely to preserve multi-day coverage and avoid row caps.
+        const normBucketMs =
+          rangeParam === 'daily'
+            ? 60_000
+            : rangeParam === 'weekly'
+              ? 10 * 60_000
+              : rangeParam === 'monthly'
+                ? 60 * 60_000
+                : 6 * 60 * 60_000; // yoy
+
+        const bucketAvg = (rows: any[], scale: number = 1): Map<number, { sum: number; count: number }> => {
+          const m = new Map<number, { sum: number; count: number }>();
+          for (const row of rows) {
+            const raw = Number(row.price);
+            if (!isFinite(raw) || raw <= 0) continue;
+            const createdAt =
+              typeof row.created_at === 'string'
                 ? new Date(row.created_at).getTime()
                 : (typeof row.created_at === 'number' ? row.created_at : 0);
-              const bucketKey = Math.floor(createdAt / 10000) * 10000; // 10-second buckets
-              
-              if (!timeBuckets.has(bucketKey)) {
-                timeBuckets.set(bucketKey, []);
-              }
-              timeBuckets.get(bucketKey)!.push(price);
-            }
+            if (!isFinite(createdAt) || createdAt <= 0) continue;
+            const key = Math.floor(createdAt / normBucketMs) * normBucketMs;
+            const prev = m.get(key) ?? { sum: 0, count: 0 };
+            prev.sum += raw * scale;
+            prev.count += 1;
+            m.set(key, prev);
           }
-          
-          // Convert to points (average prices per bucket)
-          points = Array.from(timeBuckets.entries())
-            .map(([t, prices]) => ({
-              t,
-              v: prices.reduce((sum, p) => sum + p, 0) / prices.length, // Average
-            }))
+          return m;
+        };
+
+        const toPoints = (m: Map<number, { sum: number; count: number }>): Array<{ t: number; v: number }> => {
+          return Array.from(m.entries())
+            .map(([t, agg]) => ({ t, v: agg.sum / Math.max(1, agg.count) }))
+            .filter((p) => isFinite(p.v) && p.v > 0)
             .sort((a, b) => a.t - b.t);
+        };
+
+        // Build 24k points (if present)
+        if (data24k && data24k.length > 0) {
+          points = toPoints(bucketAvg(data24k, 1));
         } else {
-          // Fallback to 21k
+          points = [];
+        }
+
+        // If EG long-range only has "same-day" 24k points, derive 24k from other karats to extend history.
+        // This matches the wide-table derivation logic and fixes weekly/monthly/yoy showing only one date.
+        let egDerived24kUsed = false;
+        let egDerivedFrom: string | null = null;
+
+        const wantHistoryDerivation =
+          country === 'EG' &&
+          scope === 'local' &&
+          (rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy');
+
+        const pointsSpanMs = points.length > 1 ? (points[points.length - 1].t - points[0].t) : 0;
+        const minUsefulSpanMs =
+          rangeParam === 'weekly'
+            ? 36 * 60 * 60 * 1000 // 1.5d
+            : rangeParam === 'monthly'
+              ? 4 * 24 * 60 * 60 * 1000 // 4d
+              : 14 * 24 * 60 * 60 * 1000; // 14d for yoy
+
+        if (wantHistoryDerivation && pointsSpanMs < minUsefulSpanMs) {
+          // Fetch other karats and derive 24k = k * 24/karat
+          const [{ rows: data21k }, { rows: data18k }, { rows: data14k }] = await Promise.all([
+            fetchPaged<any>(seriesQuery.eq('karat', 21)),
+            fetchPaged<any>(seriesQuery.eq('karat', 18)),
+            fetchPaged<any>(seriesQuery.eq('karat', 14)),
+          ]);
+
+          const b24 = data24k && data24k.length > 0 ? bucketAvg(data24k, 1) : new Map();
+          const b21 = data21k && data21k.length > 0 ? bucketAvg(data21k, 24 / 21) : new Map();
+          const b18 = data18k && data18k.length > 0 ? bucketAvg(data18k, 24 / 18) : new Map();
+          const b14 = data14k && data14k.length > 0 ? bucketAvg(data14k, 24 / 14) : new Map();
+
+          const allKeys = new Set<number>([
+            ...b24.keys(),
+            ...b21.keys(),
+            ...b18.keys(),
+            ...b14.keys(),
+          ]);
+
+          const merged = new Map<number, { sum: number; count: number; from: string }>();
+          for (const k of allKeys) {
+            // Prefer true 24k; then derived from 21/18/14.
+            const pick =
+              (b24.get(k) ? { agg: b24.get(k)!, from: '24' } : null) ??
+              (b21.get(k) ? { agg: b21.get(k)!, from: '21' } : null) ??
+              (b18.get(k) ? { agg: b18.get(k)!, from: '18' } : null) ??
+              (b14.get(k) ? { agg: b14.get(k)!, from: '14' } : null);
+            if (!pick) continue;
+            merged.set(k, { sum: pick.agg.sum, count: pick.agg.count, from: pick.from });
+          }
+
+          const derivedPoints = toPoints(new Map(Array.from(merged.entries()).map(([t, v]) => [t, { sum: v.sum, count: v.count }])));
+
+          const derivedSpanMs =
+            derivedPoints.length > 1 ? (derivedPoints[derivedPoints.length - 1].t - derivedPoints[0].t) : 0;
+
+          if (derivedPoints.length > 0 && derivedSpanMs > pointsSpanMs) {
+            points = derivedPoints;
+            egDerived24kUsed = true;
+            // Prefer the first non-24 derivation we used (for debug)
+            egDerivedFrom = '21/18/14';
+            console.warn('[Forecast Series] Derived EG 24k series from other karats to extend history:', {
+              oldSpanHours: Number((pointsSpanMs / 3_600_000).toFixed(2)),
+              newSpanHours: Number((derivedSpanMs / 3_600_000).toFixed(2)),
+              points: derivedPoints.length,
+              bucketMs: normBucketMs,
+            });
+          }
+
+          (request as any).__egDerived24kUsed = egDerived24kUsed;
+          (request as any).__egDerivedFrom = egDerivedFrom;
+        }
+
+        // If we still have no points, fallback to 21k (keeps non-EG behavior intact)
+        if (points.length === 0) {
           const { rows: data21k, pages: normPages21 } = await fetchPaged<any>(seriesQuery.eq('karat', 21));
           if (data21k && data21k.length > 0) {
-            const timeBuckets = new Map<number, number[]>();
-            for (const row of data21k) {
-              const price = Number(row.price);
-              if (isFinite(price) && price > 0) {
-                const createdAt = typeof row.created_at === 'string' 
-                  ? new Date(row.created_at).getTime()
-                  : (typeof row.created_at === 'number' ? row.created_at : 0);
-                const bucketKey = Math.floor(createdAt / 10000) * 10000;
-                
-                if (!timeBuckets.has(bucketKey)) {
-                  timeBuckets.set(bucketKey, []);
-                }
-                timeBuckets.get(bucketKey)!.push(price);
-              }
-            }
-            
-            points = Array.from(timeBuckets.entries())
-              .map(([t, prices]) => ({
-                t,
-                v: prices.reduce((sum, p) => sum + p, 0) / prices.length,
-              }))
-              .sort((a, b) => a.t - b.t);
+            points = toPoints(bucketAvg(data21k, 1));
           }
-          // keep TS happy; useful for debug if needed later
           void normPages21;
         }
+
         void normPages24;
         
         originalPointsCount = points.length;
@@ -429,11 +498,11 @@ export async function GET(request: Request) {
                       ? 60 * 60_000
                       : 6 * 60 * 60_000;
               for (const row of fallbackData) {
-                const price = Number(row.price);
-                if (isFinite(price) && price > 0) {
-                  const createdAt = typeof row.created_at === 'string' 
-                    ? new Date(row.created_at).getTime()
-                    : (typeof row.created_at === 'number' ? row.created_at : 0);
+              const price = Number(row.price);
+              if (isFinite(price) && price > 0) {
+                const createdAt = typeof row.created_at === 'string' 
+                  ? new Date(row.created_at).getTime()
+                  : (typeof row.created_at === 'number' ? row.created_at : 0);
                   const bucketKey = Math.floor(createdAt / bucketMs) * bucketMs;
                   
                   if (!fallbackBuckets.has(bucketKey)) {
@@ -444,11 +513,11 @@ export async function GET(request: Request) {
               }
               
               const fallbackPoints = Array.from(fallbackBuckets.entries())
-                .map(([t, prices]) => ({
-                  t,
-                  v: prices.reduce((sum, p) => sum + p, 0) / prices.length,
-                }))
-                .sort((a, b) => a.t - b.t);
+              .map(([t, prices]) => ({
+                t,
+                v: prices.reduce((sum, p) => sum + p, 0) / prices.length,
+              }))
+              .sort((a, b) => a.t - b.t);
               
               if (fallbackPoints.length > 0) {
                 const fallbackLatestTime = fallbackPoints[fallbackPoints.length - 1].t;
@@ -801,6 +870,8 @@ export async function GET(request: Request) {
         egEgyptMarketPointsCount: (request as any).__egEgyptMarketPointsCount ?? null,
         egEgyptMarketLatestAt: (request as any).__egEgyptMarketLatestAt ?? null,
         egEgyptMarketError: (request as any).__egEgyptMarketError ?? null,
+        egDerived24kUsed: (request as any).__egDerived24kUsed ?? null,
+        egDerivedFrom: (request as any).__egDerivedFrom ?? null,
       },
     });
 
