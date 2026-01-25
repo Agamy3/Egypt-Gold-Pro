@@ -354,6 +354,23 @@ export async function GET(request: Request) {
           const hoursSinceLatest =
             latestPointTime !== null ? (now - latestPointTime) / (1000 * 60 * 60) : Infinity;
 
+          // Coverage check (weekly/monthly/yoy): if normalized table only yields same-day intraday points,
+          // we should still try alternate EG sources to extend history even when the latest point is fresh.
+          const normSpanMs =
+            points.length > 1 ? points[points.length - 1].t - points[0].t : 0;
+          const minUsefulSpanMs =
+            rangeParam === 'weekly'
+              ? 36 * 60 * 60 * 1000 // 1.5d
+              : rangeParam === 'monthly'
+                ? 4 * 24 * 60 * 60 * 1000 // 4d
+                : rangeParam === 'yoy'
+                  ? 14 * 24 * 60 * 60 * 1000 // 14d
+                  : 0;
+          const coverageShort =
+            rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy'
+              ? normSpanMs < minUsefulSpanMs
+              : false;
+
           let wideRowsCount: number | null = null;
           let widePointsCount: number | null = null;
           let wideHas24Count: number | null = null;
@@ -371,7 +388,7 @@ export async function GET(request: Request) {
           let egyptMarketLatestAtMs: number | null = null;
           let egyptMarketError: string | null = null;
 
-          if (points.length === 0 || hoursSinceLatest > 6) {
+          if (points.length === 0 || hoursSinceLatest > 6 || coverageShort) {
             try {
               const wideBase = supabase
                 .from('market_snapshots')
@@ -445,16 +462,22 @@ export async function GET(request: Request) {
                 if (widePoints.length > 0) {
                   const wideLatest = widePoints[widePoints.length - 1].t;
                   const wideHoursSince = (now - wideLatest) / (1000 * 60 * 60);
+                  const wideSpanMs =
+                    widePoints.length > 1 ? widePoints[widePoints.length - 1].t - widePoints[0].t : 0;
 
-                  // Use wide table if it's fresher than the normalized series (or normalized is empty).
-                  if (latestPointTime === null || wideLatest > latestPointTime) {
+                  // Prefer wide table if it is fresher OR if it provides materially better history coverage.
+                  const useForCoverage = coverageShort && wideSpanMs > normSpanMs + 6 * 60 * 60 * 1000;
+                  if (latestPointTime === null || wideLatest > latestPointTime || useForCoverage) {
                     points = widePoints;
                     fallbackUsed = true;
-                    fallbackSource = 'market_snapshots_wide';
+                    fallbackSource = useForCoverage ? 'market_snapshots_wide_history' : 'market_snapshots_wide';
                     lastDataAtMs = wideLatest;
                     console.warn('[Forecast Series] Using EG wide snapshots for fresher intraday series:', {
                       widePoints: widePoints.length,
                       wideHoursSince: Number(wideHoursSince.toFixed(2)),
+                      wideSpanHours: Number((wideSpanMs / (1000 * 60 * 60)).toFixed(2)),
+                      normSpanHours: Number((normSpanMs / (1000 * 60 * 60)).toFixed(2)),
+                      coverageShort,
                     });
                   }
                 }
@@ -872,6 +895,9 @@ export async function GET(request: Request) {
         egEgyptMarketError: (request as any).__egEgyptMarketError ?? null,
         egDerived24kUsed: (request as any).__egDerived24kUsed ?? null,
         egDerivedFrom: (request as any).__egDerivedFrom ?? null,
+        egNormSpanHours: country === 'EG' && scope === 'local' && points.length > 1
+          ? Number((((points[points.length - 1].t - points[0].t) / (1000 * 60 * 60))).toFixed(2))
+          : null,
       },
     });
 
