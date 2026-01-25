@@ -180,7 +180,12 @@ export async function GET(request: Request) {
         // Match the exact sources used in lib/forecast.ts for consistency
         let seriesQuery = baseSeriesQuery;
         if (country === 'EG') {
-          seriesQuery = seriesQuery.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
+          // For EG long ranges, prefer the lower-frequency aggregated series to avoid row caps.
+          if (rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy') {
+            seriesQuery = seriesQuery.eq('source', 'aggregated');
+          } else {
+            seriesQuery = seriesQuery.in('source', ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated']);
+          }
         } else if (country === 'AE') {
           seriesQuery = seriesQuery.in('source', ['goldprice_org_ae', 'global_parity']);
         } else if (country === 'SA') {

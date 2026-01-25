@@ -4,8 +4,8 @@
  * POST /api/admin/market/backfill-eg-local
  *
  * - Admin-only (getUserStatus.isAdmin) OR CRON_SECRET header
- * - Copies historical aggregated EG snapshots from wide table (market_snapshots)
- *   into normalized table (market_snapshots_norm) for better weekly/monthly chart history.
+ * - Builds a low-frequency "aggregated" EG history series from high-frequency wide snapshots
+ *   (market_snapshots) and writes it into the normalized table (market_snapshots_norm).
  * - Idempotent via unique index on (country, karat, raw_hash) (see migration 0019).
  */
 
@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const PAGE_SIZE = 1000;
-const MAX_PAGES = 60; // safety cap: up to 60k wide rows scanned per run
+const MAX_ROWS = 600_000; // safety cap (prevents runaway on very high-frequency ingestion)
 const INSERT_CHUNK = 1000; // normalized rows per upsert call
 
 type WideRow = {
@@ -28,6 +28,13 @@ type WideRow = {
   market21Buy: number | null;
   market18Buy: number | null;
   market14Buy: number | null;
+};
+
+type BucketAgg = {
+  v24: number[];
+  v21: number[];
+  v18: number[];
+  v14: number[];
 };
 
 export async function POST(request: NextRequest) {
@@ -57,6 +64,24 @@ export async function POST(request: NextRequest) {
     let wideRowsScanned = 0;
     let normRowsAttempted = 0;
     let normUpsertCalls = 0;
+    let bucketsCount = 0;
+    let bucketMinutes: number;
+
+    // Choose a bucket size based on how far back we backfill (keeps row count bounded).
+    const bucketMinutesRaw = typeof body.bucketMinutes === 'number' ? body.bucketMinutes : null;
+    if (bucketMinutesRaw && isFinite(bucketMinutesRaw) && bucketMinutesRaw > 0) {
+      bucketMinutes = Math.max(5, Math.min(24 * 60, Math.floor(bucketMinutesRaw)));
+    } else {
+      bucketMinutes =
+        days <= 7
+          ? 10
+          : days <= 30
+            ? 60
+            : days <= 90
+              ? 240
+              : 720; // 12h
+    }
+    const bucketMs = bucketMinutes * 60 * 1000;
 
     const pendingNormRows: Array<{
       country: 'EG';
@@ -89,64 +114,116 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const from = page * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
+    const buckets = new Map<number, BucketAgg>();
 
+    const getOrInitBucket = (t: number): BucketAgg => {
+      const key = Math.floor(t / bucketMs) * bucketMs;
+      let b = buckets.get(key);
+      if (!b) {
+        b = { v24: [], v21: [], v18: [], v14: [] };
+        buckets.set(key, b);
+      }
+      return b;
+    };
+
+    const pushVal = (arr: number[], v: unknown) => {
+      const n = Number(v);
+      if (!isFinite(n) || n <= 0) return;
+      arr.push(n);
+    };
+
+    const derive24 = (r: WideRow): number | null => {
+      const v24 = Number(r.market24Buy);
+      if (isFinite(v24) && v24 > 0) return v24;
+      const v21 = Number(r.market21Buy);
+      if (isFinite(v21) && v21 > 0) return (v21 * 24) / 21;
+      const v18 = Number(r.market18Buy);
+      if (isFinite(v18) && v18 > 0) return (v18 * 24) / 18;
+      const v14 = Number(r.market14Buy);
+      if (isFinite(v14) && v14 > 0) return (v14 * 24) / 14;
+      return null;
+    };
+
+    // Keyset pagination by createdAt (avoids offset pagination cost and allows scanning large windows).
+    let cursor = windowStartMs - 1;
+    // Use the "local" EG sources; aggregated can be included, but we compute our own aggregation anyway.
+    const sources = ['banklive', 'gold_era', 'dokangold', 'goldrate24', 'goldbullioneg', 'aggregated'];
+
+    while (cursor < nowMs) {
       const { data, error } = await supabase
         .from('market_snapshots')
         .select('source, createdAt, rawHash, market24Buy, market21Buy, market18Buy, market14Buy, error')
-        .eq('source', 'aggregated')
-        .gte('createdAt', windowStartMs)
+        .in('source', sources)
+        .gt('createdAt', cursor)
         .lte('createdAt', nowMs)
         .is('error', null)
         .order('createdAt', { ascending: true })
-        .range(from, to);
+        .limit(PAGE_SIZE);
 
-      if (error) {
-        throw new Error(`Backfill fetch failed: ${error.message}`);
-      }
+      if (error) throw new Error(`Backfill fetch failed: ${error.message}`);
 
       const wideRows = (data || []) as unknown as WideRow[];
       pagesFetched += 1;
       wideRowsScanned += wideRows.length;
+      if (wideRowsScanned > MAX_ROWS) {
+        break;
+      }
 
       for (const r of wideRows) {
         const createdAtMs = typeof r.createdAt === 'number' ? r.createdAt : Number(r.createdAt);
         if (!isFinite(createdAtMs) || createdAtMs <= 0) continue;
+        if (createdAtMs < windowStartMs || createdAtMs > nowMs) continue;
+        cursor = Math.max(cursor, createdAtMs);
 
-        const createdAtIso = new Date(createdAtMs).toISOString();
-        const rawHash = r.rawHash ?? null;
-
-        const pushIfValid = (karat: 14 | 18 | 21 | 24, v: unknown) => {
-          const price = Number(v);
-          if (!isFinite(price) || price <= 0) return;
-          pendingNormRows.push({
-            country: 'EG',
-            market: 'local',
-            karat,
-            price,
-            currency: 'EGP',
-            source: r.source,
-            trusted: r.source === 'goldbullioneg',
-            created_at: createdAtIso,
-            raw_hash: rawHash,
-          });
-        };
-
-        pushIfValid(24, r.market24Buy);
-        pushIfValid(21, r.market21Buy);
-        pushIfValid(18, r.market18Buy);
-        pushIfValid(14, r.market14Buy);
+        const b = getOrInitBucket(createdAtMs);
+        // Use real karats when present; always record derived 24k as well.
+        const d24 = derive24(r);
+        if (d24 !== null) b.v24.push(d24);
+        pushVal(b.v21, r.market21Buy);
+        pushVal(b.v18, r.market18Buy);
+        pushVal(b.v14, r.market14Buy);
       }
 
-      // flush periodically
+      if (wideRows.length < PAGE_SIZE) break;
+      if (cursor >= nowMs) break;
+    }
+
+    bucketsCount = buckets.size;
+
+    const median = (arr: number[]): number | null => {
+      if (arr.length === 0) return null;
+      const a = [...arr].sort((x, y) => x - y);
+      const mid = Math.floor(a.length / 2);
+      return a.length % 2 === 0 ? (a[mid - 1] + a[mid]) / 2 : a[mid];
+    };
+
+    // Write aggregated bucket medians into normalized table as source='aggregated'
+    for (const [t, b] of buckets.entries()) {
+      const created_at = new Date(t).toISOString();
+      const pushAgg = (karat: 14 | 18 | 21 | 24, value: number | null) => {
+        if (value === null || !isFinite(value) || value <= 0) return;
+        // Deterministic raw_hash per bucket+karat so the job is idempotent.
+        const raw_hash = `agg:${t}:${karat}`;
+        pendingNormRows.push({
+          country: 'EG',
+          market: 'local',
+          karat,
+          price: value,
+          currency: 'EGP',
+          source: 'aggregated',
+          trusted: false,
+          created_at,
+          raw_hash,
+        });
+      };
+
+      pushAgg(24, median(b.v24));
+      pushAgg(21, median(b.v21));
+      pushAgg(18, median(b.v18));
+      pushAgg(14, median(b.v14));
+
       if (pendingNormRows.length >= INSERT_CHUNK) {
         await flush();
-      }
-
-      if (wideRows.length < PAGE_SIZE) {
-        break; // reached end
       }
     }
 
@@ -164,6 +241,8 @@ export async function POST(request: NextRequest) {
         wideRowsScanned,
         normRowsAttempted,
         normUpsertCalls,
+        bucketsCount,
+        bucketMinutes,
       },
       note:
         'If you see an error about onConflict/constraint, ensure migration 0019_market_snapshots_norm_dedupe.sql is applied in Supabase.',
