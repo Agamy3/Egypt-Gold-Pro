@@ -347,23 +347,35 @@ export async function GET(request: Request) {
         originalPointsCount = points.length;
         lastDataAtMs = points.length > 0 ? points[points.length - 1].t : null;
         
+        // Track coverage so we can pick the best long-range series for EG local.
+        const computeSpanMs = (pts: Array<{ t: number; v: number }>) =>
+          pts.length > 1 ? pts[pts.length - 1].t - pts[0].t : 0;
+
+        const egMinSpanMs =
+          rangeParam === 'weekly'
+            ? 36 * 60 * 60 * 1000 // 1.5d
+            : rangeParam === 'monthly'
+              ? 4 * 24 * 60 * 60 * 1000 // 4d
+              : rangeParam === 'yoy'
+                ? 14 * 24 * 60 * 60 * 1000 // 14d
+                : 0;
+
+        const egIsLongRange =
+          country === 'EG' &&
+          scope === 'local' &&
+          (rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy');
+
+        const normSpanMs = computeSpanMs(points);
+        const coverageShort = egIsLongRange ? normSpanMs < egMinSpanMs : false;
+        (request as any).__egCoverageShort = coverageShort;
+        (request as any).__egNormSpanHoursRaw = egIsLongRange
+          ? Number((normSpanMs / (1000 * 60 * 60)).toFixed(2))
+          : null;
+
         // Coverage fallback (EG local weekly/monthly/yoy):
         // If we only have intraday points (e.g. due to high-frequency ingestion + row caps),
         // prefer the lower-frequency `aggregated` normalized series which should cover days/weeks.
-        if (
-          country === 'EG' &&
-          scope === 'local' &&
-          (rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy')
-        ) {
-          const currentSpanMs = points.length > 1 ? (points[points.length - 1].t - points[0].t) : 0;
-          const minSpanMs =
-            rangeParam === 'weekly'
-              ? 36 * 60 * 60 * 1000 // 1.5d
-              : rangeParam === 'monthly'
-                ? 4 * 24 * 60 * 60 * 1000 // 4d
-                : 14 * 24 * 60 * 60 * 1000; // 14d
-
-          if (currentSpanMs < minSpanMs) {
+        if (egIsLongRange && coverageShort) {
             try {
               const aggQuery = supabase
                 .from('market_snapshots_norm')
@@ -374,6 +386,7 @@ export async function GET(request: Request) {
                 .order('created_at', { ascending: false });
 
               const { rows: aggRows } = await fetchPaged<any>(aggQuery);
+              (request as any).__egAggRowsCount = aggRows ? aggRows.length : 0;
               if (aggRows && aggRows.length > 0) {
                 const bucketMs =
                   rangeParam === 'weekly'
@@ -416,17 +429,19 @@ export async function GET(request: Request) {
                   aggPoints = toAvgPoints(buckets21, 24 / 21);
                 }
 
-                const aggSpanMs = aggPoints.length > 1 ? (aggPoints[aggPoints.length - 1].t - aggPoints[0].t) : 0;
-                if (aggPoints.length > 1 && aggSpanMs > currentSpanMs + 6 * 60 * 60 * 1000) {
+                const aggSpanMs = computeSpanMs(aggPoints);
+                (request as any).__egAggSpanHours = Number((aggSpanMs / (1000 * 60 * 60)).toFixed(2));
+
+                // Prefer aggregated if it materially improves coverage.
+                if (aggPoints.length > 1 && aggSpanMs > normSpanMs + 6 * 60 * 60 * 1000) {
                   points = aggPoints;
                   fallbackUsed = true;
                   fallbackSource = 'aggregated_history';
                   lastDataAtMs = points[points.length - 1].t;
                   (request as any).__egAggCoverageUsed = true;
-                  (request as any).__egAggSpanHours = Number((aggSpanMs / (1000 * 60 * 60)).toFixed(2));
                   console.warn('[Forecast Series] Using aggregated history for EG long-range coverage:', {
                     range: rangeParam,
-                    prevSpanHours: Number((currentSpanMs / (1000 * 60 * 60)).toFixed(2)),
+                    prevSpanHours: Number((normSpanMs / (1000 * 60 * 60)).toFixed(2)),
                     aggSpanHours: Number((aggSpanMs / (1000 * 60 * 60)).toFixed(2)),
                     points: aggPoints.length,
                   });
@@ -435,8 +450,8 @@ export async function GET(request: Request) {
             } catch (e) {
               console.error('[Forecast Series] aggregated coverage fallback failed:', e);
               (request as any).__egAggCoverageUsed = false;
+              (request as any).__egAggError = e instanceof Error ? e.message : String(e);
             }
-          }
         }
 
         // If EG local looks stale/empty in normalized table, try the wide table (`market_snapshots`)
@@ -445,23 +460,6 @@ export async function GET(request: Request) {
           const latestPointTime = points.length > 0 ? points[points.length - 1].t : null;
           const hoursSinceLatest =
             latestPointTime !== null ? (now - latestPointTime) / (1000 * 60 * 60) : Infinity;
-
-          // Coverage check (weekly/monthly/yoy): if normalized table only yields same-day intraday points,
-          // we should still try alternate EG sources to extend history even when the latest point is fresh.
-          const normSpanMs =
-            points.length > 1 ? points[points.length - 1].t - points[0].t : 0;
-          const minUsefulSpanMs =
-            rangeParam === 'weekly'
-              ? 36 * 60 * 60 * 1000 // 1.5d
-              : rangeParam === 'monthly'
-                ? 4 * 24 * 60 * 60 * 1000 // 4d
-                : rangeParam === 'yoy'
-                  ? 14 * 24 * 60 * 60 * 1000 // 14d
-                  : 0;
-          const coverageShort =
-            rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy'
-              ? normSpanMs < minUsefulSpanMs
-              : false;
 
           let wideRowsCount: number | null = null;
           let widePointsCount: number | null = null;
@@ -538,6 +536,7 @@ export async function GET(request: Request) {
               widePagesFetched = widePages;
               (request as any).__egWideFetchMode = wideFetchMode;
               (request as any).__egWideFetchError = wideErr?.message ? String(wideErr.message) : (wideErr ? String(wideErr) : null);
+              (request as any).__egWideRowsCountRaw = wideData ? wideData.length : 0;
 
               if (wideData && wideData.length > 0) {
                 wideRowsCount = wideData.length;
@@ -601,6 +600,7 @@ export async function GET(request: Request) {
                   const wideHoursSince = (now - wideLatest) / (1000 * 60 * 60);
                   const wideSpanMs =
                     widePoints.length > 1 ? widePoints[widePoints.length - 1].t - widePoints[0].t : 0;
+                  (request as any).__egWideSpanHours = Number((wideSpanMs / (1000 * 60 * 60)).toFixed(2));
 
                   // Prefer wide table if it is fresher OR if it provides materially better history coverage.
                   const useForCoverage = coverageShort && wideSpanMs > normSpanMs + 6 * 60 * 60 * 1000;
@@ -890,6 +890,47 @@ export async function GET(request: Request) {
           (request as any).__egEgyptMarketError = egyptMarketError;
         }
 
+        // Final coverage fallback (EG local weekly/monthly/yoy):
+        // If we *still* only have intraday coverage, fall back to GLOBAL spot history converted to EGP.
+        // This ensures the weekly/monthly selector actually shows a multi-day range even if local sources
+        // only have today's intraday points.
+        if (egIsLongRange) {
+          const finalSpanMs = computeSpanMs(points);
+          if (finalSpanMs < egMinSpanMs && goldSpotHistory.length > 0) {
+            try {
+              const egpRate =
+                latestFx ??
+                (await (async () => {
+                  const { getUsdEgpRate } = await import('@/lib/fx');
+                  const fxResult = await getUsdEgpRate();
+                  return fxResult.rate;
+                })());
+
+              if (egpRate && egpRate > 0) {
+                const sortedSpot = [...goldSpotHistory].sort((a, b) => a.fetched_at - b.fetched_at);
+                const est = sortedSpot.map((spot) => {
+                  const pricePerGramUsd = spot.xau_spot_usd_oz / 31.1035;
+                  const pricePerGramEgp = pricePerGramUsd * egpRate;
+                  return { t: spot.fetched_at, v: pricePerGramEgp };
+                });
+
+                const estSpanMs = computeSpanMs(est);
+                (request as any).__egGlobalEstimateSpanHours = Number((estSpanMs / (1000 * 60 * 60)).toFixed(2));
+
+                if (est.length > 1 && estSpanMs > finalSpanMs + 12 * 60 * 60 * 1000) {
+                  points = est;
+                  fallbackUsed = true;
+                  fallbackSource = 'global_spot_egp_estimate_history_coverage';
+                  lastDataAtMs = points[points.length - 1].t;
+                  (request as any).__egCoverageFallbackUsed = true;
+                }
+              }
+            } catch (e) {
+              (request as any).__egCoverageFallbackUsed = false;
+            }
+          }
+        }
+
         // NOTE: We do NOT auto-fallback EG weekly/monthly/yoy to GLOBAL history just because local coverage
         // is partial. The UX requirement is "from today till the eldest data found" (no empty graph),
         // which is handled on the chart domain. Only fallback to GLOBAL history if we have *no* local data.
@@ -1028,6 +1069,8 @@ export async function GET(request: Request) {
         egWideRowsScanned: (request as any).__egWideRowsScanned ?? null,
         egWideFetchMode: (request as any).__egWideFetchMode ?? null,
         egWideFetchError: (request as any).__egWideFetchError ?? null,
+        egWideRowsCountRaw: (request as any).__egWideRowsCountRaw ?? null,
+        egWideSpanHours: (request as any).__egWideSpanHours ?? null,
         egEgyptMarketRowsCount: (request as any).__egEgyptMarketRowsCount ?? null,
         egEgyptMarketPointsCount: (request as any).__egEgyptMarketPointsCount ?? null,
         egEgyptMarketLatestAt: (request as any).__egEgyptMarketLatestAt ?? null,
@@ -1036,6 +1079,12 @@ export async function GET(request: Request) {
         egDerivedFrom: (request as any).__egDerivedFrom ?? null,
         egAggCoverageUsed: (request as any).__egAggCoverageUsed ?? null,
         egAggSpanHours: (request as any).__egAggSpanHours ?? null,
+        egAggRowsCount: (request as any).__egAggRowsCount ?? null,
+        egAggError: (request as any).__egAggError ?? null,
+        egCoverageShort: (request as any).__egCoverageShort ?? null,
+        egNormSpanHoursRaw: (request as any).__egNormSpanHoursRaw ?? null,
+        egGlobalEstimateSpanHours: (request as any).__egGlobalEstimateSpanHours ?? null,
+        egCoverageFallbackUsed: (request as any).__egCoverageFallbackUsed ?? null,
         egNormSpanHours: country === 'EG' && scope === 'local' && points.length > 1
           ? Number((((points[points.length - 1].t - points[0].t) / (1000 * 60 * 60))).toFixed(2))
           : null,
