@@ -155,6 +155,24 @@ alter table public.admin_30s_predictions
   alter column minute_key set not null;
 
 -- 2) Unique index: one prediction per (minute_key, source, horizon)
+--
+-- IMPORTANT: If this fails with 23505 (duplicates), dedupe FIRST:
+-- - Keep the newest row per (minute_key, source, horizon_seconds)
+-- - Delete older duplicates (trades will cascade via FK on delete cascade)
+with ranked as (
+  select
+    id,
+    row_number() over (
+      partition by minute_key, source, horizon_seconds
+      order by p0_at desc, created_at desc
+    ) as rn
+  from public.admin_30s_predictions
+)
+delete from public.admin_30s_predictions p
+using ranked r
+where p.id = r.id
+  and r.rn > 1;
+
 create unique index if not exists admin_predictions_unique_minute
   on public.admin_30s_predictions (minute_key, source, horizon_seconds);
 
