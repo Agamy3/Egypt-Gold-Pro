@@ -18,7 +18,15 @@ create table if not exists public.admin_users (
 
 alter table public.admin_users enable row level security;
 
--- Only service_role can manage admin_users (set admins via SQL / dashboard).
+-- Allow authenticated users to read THEIR own row.
+-- This is required so `exists(select 1 from admin_users ...)` works under RLS.
+drop policy if exists "users can read own admin_users row" on public.admin_users;
+create policy "users can read own admin_users row"
+  on public.admin_users
+  for select
+  using (auth.uid() = user_id);
+
+-- Only service_role can insert/update/delete admin_users (set admins via SQL / dashboard).
 drop policy if exists "service role can manage admin_users" on public.admin_users;
 create policy "service role can manage admin_users"
   on public.admin_users
