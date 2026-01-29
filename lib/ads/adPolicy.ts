@@ -11,7 +11,8 @@
 export const MIN_TEXT_LENGTH = 800;
 
 const ALLOWLIST_PREFIXES = ['/news', '/articles', '/learn'];
-const ALLOWLIST_EXACT = ['/news'];
+// Allowlist is explicit and small. We can expand safely by adding routes here.
+const ALLOWLIST_EXACT = ['/', '/news'];
 
 const HARD_DENY_PREFIXES = [
   '/admin',
@@ -26,7 +27,7 @@ const HARD_DENY_PREFIXES = [
   '/api',
 ];
 
-const HARD_DENY_EXACT = ['/', '/ads-debug'];
+const HARD_DENY_EXACT = ['/ads-debug'];
 
 function normalizePath(pathname: string) {
   if (!pathname) return '/';

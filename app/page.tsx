@@ -186,6 +186,22 @@ function HomeContent() {
     ? `دعم قرار تعليمي لسوق الذهب ${countryName.ar}`
     : `Educational decision-support for the ${countryName.en} gold market`;
 
+  // Publisher content block (used for AdSense gating and also visible to users).
+  // Keep it substantial so ads never show on thin/utility screens.
+  const publisherText =
+    lang === 'ar'
+      ? [
+          'ملاحظة تعليمية: هذا التطبيق يقدّم أدوات لمساعدتك على فهم سوق الذهب وليس نصيحة استثمارية. نعرض أسعار الذهب المحلية (مثل عيار 21 و24) من مصادر سوقية، ونقارنها بسعر الذهب العالمي (XAU/USD) بعد التحويل إلى جرام باستخدام وزن الأونصة الترويسية (31.1034768 جرام).',
+          'الهدف هو توضيح: كيف تتغيّر الأسعار مع سعر الصرف، وكيف يظهر “فرق السعر” بين السوق المحلي والسعر المرجعي، وكيف تؤثر أخبار الاقتصاد الكلي مثل التضخم وأسعار الفائدة على حركة الذهب. إذا كانت البيانات ناقصة أو متأخرة، نعرض تنبيهات واضحة ونمتنع عن الاستنتاجات غير الموثوقة.',
+          'استخدم هذه الصفحة لفهم الاتجاه العام، مقارنة الفترات، ومراجعة العوامل الرئيسية قبل اتخاذ أي قرار. يمكنك أيضاً متابعة الأخبار المرتبطة بالذهب على صفحة الأخبار لمعرفة ما الذي يحرك الأسعار عالمياً.',
+        ].join(' ')
+      : [
+          'Educational note: EgyptGold Pro provides decision-support tools to help you understand the gold market; it is not investment advice. We display local market prices (e.g., 21k and 24k) from market sources and compare them to the global spot price (XAU/USD) converted to grams using the troy ounce standard (31.1034768g).',
+          'The goal is to explain how prices move with FX, how a local “premium/discount” can appear versus a reference price, and how macro forces like inflation and interest rates can influence gold. When data is missing or delayed, we show clear warnings and avoid unreliable conclusions.',
+          'Use this dashboard to understand the direction, compare recent changes, and review key drivers before making any decision. For deeper context, check the News page to see what is moving gold globally.',
+        ].join(' ');
+  const publisherTextLength = publisherText.length;
+
   return (
     <div className="min-h-screen bg-black flex flex-col">
       <Header 
@@ -213,6 +229,14 @@ function HomeContent() {
                 />
               </div>
             )}
+            <section className="mt-6 sm:mt-8 rounded-lg border border-gray-800 bg-gray-900 p-4 sm:p-5">
+              <h2 className="text-base sm:text-lg font-semibold text-gold-400">
+                {lang === 'ar' ? 'كيف نستخدم هذه الصفحة؟' : 'How to use this dashboard'}
+              </h2>
+              <p className="mt-2 text-sm text-gray-300 leading-relaxed">
+                {publisherText}
+              </p>
+            </section>
             {/* Dashboard Ad - far down the page, only once we have a full snapshot */}
             <div className="mt-6 sm:mt-8 lg:mt-10">
               <AdGateClient
@@ -221,6 +245,7 @@ function HomeContent() {
                 className="w-full"
                 // Snapshot + dashboard cards + calculator + forecast = rich content
                 hasMeaningfulContent={Boolean(snapshot)}
+                textLength={publisherTextLength}
                 requireScroll
               />
             </div>
