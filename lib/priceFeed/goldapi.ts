@@ -25,6 +25,11 @@ function normalizeBaseUrl(raw: string) {
   return s.length ? s : 'https://app.goldapi.net';
 }
 
+function joinUrl(base: string, path: string) {
+  if (!path.startsWith('/')) return `${base}/${path}`;
+  return `${base}${path}`;
+}
+
 function toMs(ts: unknown): number | null {
   const n = typeof ts === 'number' ? ts : Number(ts);
   if (!isFinite(n) || n <= 0) return null;
@@ -44,51 +49,79 @@ export async function fetchGoldApiQuote(): Promise<GoldQuote> {
     throw new Error('Missing GOLDAPI_API_KEY (server env var)');
   }
 
-  const url = `${baseUrl}/price/XAU/USD`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 7000);
 
   try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'x-api-key': apiKey,
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
-      signal: controller.signal,
-    });
+    // Different GoldAPI deployments use different paths.
+    // Try a small set of known patterns:
+    // - https://app.goldapi.net/price/XAU/USD (docs example)
+    // - https://www.goldapi.io/api/XAU/USD (common)
+    // - https://<base>/api/XAU/USD (some accounts)
+    const baseHasApi = /\/api$/i.test(baseUrl);
+    const candidates = [
+      joinUrl(baseUrl, '/price/XAU/USD'),
+      ...(baseHasApi ? [joinUrl(baseUrl, '/XAU/USD')] : [joinUrl(baseUrl, '/api/XAU/USD')]),
+      joinUrl(baseUrl, '/XAU/USD'),
+    ];
 
-    const text = await res.text();
-    if (!res.ok) {
-      const snippet = text.slice(0, 300);
-      throw new Error(`GoldAPI error ${res.status}: ${snippet}`);
+    let lastErr: string | null = null;
+
+    for (const url of candidates) {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          // Support both header styles; different GoldAPI products use different names.
+          'x-api-key': apiKey,
+          'x-access-token': apiKey,
+        },
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+
+      const text = await res.text();
+      if (!res.ok) {
+        const snippet = text.slice(0, 250);
+        lastErr = `GoldAPI error ${res.status} @ ${url}: ${snippet}`;
+        // Try next candidate
+        continue;
+      }
+
+      let json: any;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        lastErr = `GoldAPI invalid JSON @ ${url}: ${text.slice(0, 200)}`;
+        continue;
+      }
+
+      const price = asNum(json?.price);
+      const tsMs = toMs(json?.timestamp ?? json?.timestamp_ms ?? json?.ts ?? json?.time);
+      if (price === null || price <= 0) {
+        lastErr = `GoldAPI response missing valid price @ ${url}`;
+        continue;
+      }
+      if (tsMs === null) {
+        lastErr = `GoldAPI response missing valid timestamp @ ${url}`;
+        continue;
+      }
+
+      const bid = asNum(json?.bid);
+      const ask = asNum(json?.ask);
+
+      return {
+        price,
+        bid: bid ?? undefined,
+        ask: ask ?? undefined,
+        timestamp: tsMs,
+        currency: 'USD',
+        metal: 'XAU',
+        source: 'goldapi',
+      };
     }
 
-    let json: any;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      throw new Error(`GoldAPI invalid JSON: ${text.slice(0, 200)}`);
-    }
-
-    const price = asNum(json?.price);
-    const tsMs = toMs(json?.timestamp ?? json?.timestamp_ms ?? json?.ts ?? json?.time);
-    if (price === null || price <= 0) throw new Error('GoldAPI response missing valid price');
-    if (tsMs === null) throw new Error('GoldAPI response missing valid timestamp');
-
-    const bid = asNum(json?.bid);
-    const ask = asNum(json?.ask);
-
-    return {
-      price,
-      bid: bid ?? undefined,
-      ask: ask ?? undefined,
-      timestamp: tsMs,
-      currency: 'USD',
-      metal: 'XAU',
-      source: 'goldapi',
-    };
+    throw new Error(lastErr ?? 'GoldAPI request failed');
   } finally {
     clearTimeout(timeout);
   }
