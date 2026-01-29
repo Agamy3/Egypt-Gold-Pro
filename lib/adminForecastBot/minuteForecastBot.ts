@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchQuoteForProvider, getPriceFeedProvider } from '@/lib/priceFeed';
 import { getLatestPriceAtOrBeforeTime, getRecentPricesForVolatility } from '@/lib/priceFeed/history';
 import { decideDirection } from '@/lib/forecast/thirtySecondHeuristic';
-import { currentMinuteBoundary, nextMinuteBoundary } from '@/lib/time/minuteBoundary';
+import { floorToUtcMinute, nextUtcMinuteBoundary, toMinuteKeyUtc } from '@/lib/time/minuteBoundary';
 
 const STALE_AFTER_MS = 120_000;
 const HORIZON_SECONDS = 60;
@@ -34,7 +34,8 @@ export type MinuteBotRunResult = {
   createdPrediction?: any;
   provider: 'goldapi' | 'gold_api_free';
   source: string;
-  minuteBoundaryIso: string;
+  alignedTo: string;
+  createdMinuteKey: string | null;
 } | { ok: false; error: string; status?: number };
 
 /**
@@ -47,9 +48,11 @@ export type MinuteBotRunResult = {
 export async function runMinuteForecastBot(input: {
   supabase: SupabaseClient;
   now?: Date;
+  create?: boolean;
 }): Promise<MinuteBotRunResult> {
   const supabase = input.supabase;
   const now = input.now ?? new Date();
+  const shouldCreate = input.create !== false;
   const nowIso = now.toISOString();
   const nowMs = now.getTime();
 
@@ -167,21 +170,12 @@ export async function runMinuteForecastBot(input: {
   // Create prediction for current minute boundary (idempotent)
   const provider = getPriceFeedProvider();
   const source = sourceForProvider(provider);
-  const t0 = currentMinuteBoundary(now);
+  const t0 = floorToUtcMinute(now);
   const t0Iso = t0.toISOString();
-  const dueAtIso = nextMinuteBoundary(t0).toISOString();
+  const minuteKey = toMinuteKeyUtc(t0);
+  const dueAtIso = nextUtcMinuteBoundary(t0).toISOString();
 
-  // Idempotency guard: if already exists for that minute+source, skip create.
-  const { data: exists, error: existsErr } = await supabase
-    .from('admin_30s_predictions')
-    .select('id')
-    .eq('source', source)
-    .eq('p0_at', t0Iso)
-    .limit(1)
-    .maybeSingle();
-
-  if (existsErr) return { ok: false, error: existsErr.message, status: 500 };
-  if (exists?.id) {
+  if (!shouldCreate) {
     return {
       ok: true,
       serverAsOf: nowIso,
@@ -189,7 +183,8 @@ export async function runMinuteForecastBot(input: {
       created: false,
       provider,
       source,
-      minuteBoundaryIso: t0Iso,
+      alignedTo: t0Iso,
+      createdMinuteKey: null,
     };
   }
 
@@ -290,36 +285,45 @@ export async function runMinuteForecastBot(input: {
     };
   }
 
-  const { data: created, error: insErr } = await supabase
+  // DB-level idempotency: upsert with conflict on (minute_key, source, horizon_seconds) and DO NOTHING.
+  const insertRow = {
+    minute_key: minuteKey,
+    horizon_seconds: HORIZON_SECONDS,
+    predicted_direction,
+    p0,
+    p0_at: t0Iso,
+    due_at: dueAtIso,
+    source,
+    meta,
+    predicted_delta,
+    predicted_price,
+    confidence,
+    expected_low,
+    expected_high,
+  };
+
+  const { data: createdRows, error: insErr } = await supabase
     .from('admin_30s_predictions')
-    .insert({
-      horizon_seconds: HORIZON_SECONDS,
-      predicted_direction,
-      p0,
-      p0_at: t0Iso,
-      due_at: dueAtIso,
-      source,
-      meta,
-      predicted_delta,
-      predicted_price,
-      confidence,
-      expected_low,
-      expected_high,
+    .upsert(insertRow, {
+      onConflict: 'minute_key,source,horizon_seconds',
+      ignoreDuplicates: true,
     })
-    .select('*')
-    .single();
+    .select('*');
 
   if (insErr) return { ok: false, error: insErr.message, status: 500 };
+
+  const created = Array.isArray(createdRows) && createdRows.length > 0 ? createdRows[0] : null;
 
   return {
     ok: true,
     serverAsOf: nowIso,
     validatedCount,
-    created: true,
-    createdPrediction: created,
+    created: Boolean(created),
+    createdPrediction: created ?? undefined,
     provider,
     source,
-    minuteBoundaryIso: t0Iso,
+    alignedTo: t0Iso,
+    createdMinuteKey: minuteKey,
   };
 }
 

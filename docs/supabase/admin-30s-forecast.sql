@@ -140,12 +140,54 @@ begin
 end $$;
 
 -- ============================================
+-- 1-MIN BOT DB IDEMPOTENCY (minute_key) + LOCK RPC
+-- ============================================
+
+-- 1) minute_key column + backfill + NOT NULL
+alter table public.admin_30s_predictions
+  add column if not exists minute_key text;
+
+update public.admin_30s_predictions
+set minute_key = to_char(date_trunc('minute', p0_at at time zone 'utc'), 'YYYY-MM-DD"T"HH24:MI:00"Z"')
+where minute_key is null;
+
+alter table public.admin_30s_predictions
+  alter column minute_key set not null;
+
+-- 2) Unique index: one prediction per (minute_key, source, horizon)
+create unique index if not exists admin_predictions_unique_minute
+  on public.admin_30s_predictions (minute_key, source, horizon_seconds);
+
+-- 3) Advisory lock helpers (used by cron + admin run-now)
+-- SECURITY: revoke from public, allow only service_role.
+create or replace function public.try_advisory_lock(lock_key bigint)
+returns boolean
+language sql
+security definer
+as $$
+  select pg_try_advisory_lock(lock_key);
+$$;
+
+create or replace function public.advisory_unlock(lock_key bigint)
+returns boolean
+language sql
+security definer
+as $$
+  select pg_advisory_unlock(lock_key);
+$$;
+
+revoke all on function public.try_advisory_lock(bigint) from public;
+revoke all on function public.advisory_unlock(bigint) from public;
+grant execute on function public.try_advisory_lock(bigint) to service_role;
+grant execute on function public.advisory_unlock(bigint) to service_role;
+
+-- Lock key used in code: 913220177
+
+-- ============================================
 -- CLEAR BOT DATA (ADMIN-ONLY; run manually)
 -- ============================================
 -- WARNING: This deletes ALL bot history.
 -- Prefer running in Supabase SQL editor as a one-off maintenance action.
 --
--- If FK constraints complain, use CASCADE form:
--- IMPORTANT: Postgres requires truncating BOTH tables in the SAME statement due to FK.
 truncate table public.admin_30s_trades, public.admin_30s_predictions restart identity cascade;
 

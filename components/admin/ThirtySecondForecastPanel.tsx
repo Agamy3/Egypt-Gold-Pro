@@ -103,7 +103,7 @@ export default function ThirtySecondForecastPanel() {
             }}
             className="px-3 py-2 rounded-md text-sm font-semibold bg-gold-600 text-black hover:bg-gold-500"
           >
-            Run now (admin)
+            Validate now (admin)
           </button>
           <a
             href={exportHref}
