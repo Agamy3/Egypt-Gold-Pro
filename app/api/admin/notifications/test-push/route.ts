@@ -129,11 +129,16 @@ export async function POST(request: NextRequest) {
       }
 
       // Use service role for admin queries
-      const { data, error } = await db.supabase
+      // subscriptionId might be string or number, try both
+      const subIdNum = Number(subscriptionId);
+      const isNumeric = !isNaN(subIdNum) && isFinite(subIdNum);
+      const query = db.supabase
         .from(tableName)
-        .select('id, user_id, endpoint, p256dh, auth')
-        .eq('id', subscriptionId)
-        .maybeSingle();
+        .select('id, user_id, endpoint, p256dh, auth');
+      
+      const { data, error } = await (isNumeric 
+        ? query.eq('id', subIdNum).maybeSingle()
+        : query.eq('id', subscriptionId).maybeSingle());
 
       if (error) {
         console.error('[TEST-PUSH] Error fetching subscription:', error);
