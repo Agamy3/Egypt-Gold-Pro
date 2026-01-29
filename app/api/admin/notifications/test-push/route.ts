@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     const notificationBody = bodyText || 'If you can read this, push notifications are working.';
     const notificationUrl = url || '/account/notifications?from=test-push';
 
-    let subscriptions: Array<{ id: string; user_id: string; endpoint: string; p256dh: string; auth: string }> = [];
+    let subscriptions: Array<{ id: number | string; user_id: string; endpoint: string; p256dh: string; auth: string }> = [];
 
     // Fetch subscriptions based on target
     // Use push_subscriptions (matches subscribe endpoint)
@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Send notifications
-    const results: Array<{ subscriptionId: string; status: 'sent' | 'failed'; error?: string }> = [];
+    const results: Array<{ subscriptionId: number | string; status: 'sent' | 'failed'; error?: string }> = [];
     let sent = 0;
     let failed = 0;
     let deactivated = 0;
@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
 
         if (result.success) {
           sent++;
-          results.push({ subscriptionId: sub.id, status: 'sent' });
+          results.push({ subscriptionId: String(sub.id), status: 'sent' });
           
           // Log to notification_deliveries if table exists (silently fail if not)
           try {
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
         } else {
           failed++;
           const errorMsg = result.error || 'Unknown error';
-          results.push({ subscriptionId: sub.id, status: 'failed', error: errorMsg });
+          results.push({ subscriptionId: String(sub.id), status: 'failed', error: errorMsg });
 
           // If subscription expired (404/410), delete it
           if (errorMsg.includes('expired') || errorMsg.includes('410') || errorMsg.includes('404')) {
@@ -240,7 +240,7 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         failed++;
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-        results.push({ subscriptionId: sub.id, status: 'failed', error: errorMsg });
+        results.push({ subscriptionId: String(sub.id), status: 'failed', error: errorMsg });
         console.error('[TEST-PUSH] Error sending to subscription:', sub.id, error);
       }
     }
