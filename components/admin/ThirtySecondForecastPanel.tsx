@@ -214,9 +214,11 @@ export default function ThirtySecondForecastPanel() {
                   <td className="px-4 py-2 whitespace-nowrap">{p.p0_at}</td>
                   <td className="px-4 py-2 font-semibold">{p.predicted_direction}</td>
                   <td className="px-4 py-2">{fmt(asNumber(p.p0), 2)}</td>
-                  <td className="px-4 py-2">{fmt(asNumber(p.predicted_price), 2)}</td>
-                  <td className="px-4 py-2">{p.confidence != null ? `${(Number(p.confidence) * 100).toFixed(0)}%` : '—'}</td>
-                  <td className="px-4 py-2">{fmt(asNumber(p.p1), 2)}</td>
+                  <td className="px-4 py-2">{p.predicted_price == null ? '—' : fmt(asNumber(p.predicted_price), 2)}</td>
+                  <td className="px-4 py-2">
+                    {p.confidence == null ? '—' : `${(asNumber(p.confidence)! * 100).toFixed(0)}%`}
+                  </td>
+                  <td className="px-4 py-2">{p.p1 == null ? '—' : fmt(asNumber(p.p1), 2)}</td>
                   <td className="px-4 py-2">{p.result ?? '—'}</td>
                   <td className="px-4 py-2">{p.trade?.exit_slippage_ms != null ? `${Number(p.trade.exit_slippage_ms)}ms` : '—'}</td>
                   <td className="px-4 py-2">{p.trade?.trade_status ?? '—'}</td>
@@ -239,6 +241,7 @@ export default function ThirtySecondForecastPanel() {
 }
 
 function asNumber(x: unknown): number | null {
+  if (x === null || x === undefined) return null;
   const n = typeof x === 'number' ? x : Number(x);
   return isFinite(n) ? n : null;
 }
