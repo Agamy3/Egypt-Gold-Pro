@@ -146,7 +146,6 @@ end $$;
 -- Prefer running in Supabase SQL editor as a one-off maintenance action.
 --
 -- If FK constraints complain, use CASCADE form:
---   truncate table public.admin_30s_predictions, public.admin_30s_trades restart identity cascade;
-truncate table public.admin_30s_trades;
-truncate table public.admin_30s_predictions;
+-- IMPORTANT: Postgres requires truncating BOTH tables in the SAME statement due to FK.
+truncate table public.admin_30s_trades, public.admin_30s_predictions restart identity cascade;
 
