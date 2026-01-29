@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import AdSenseUnit from './AdSenseUnit';
 import AdLazyMount from './AdLazyMount';
+import { isPageContentEligible, isRouteAdEligible, shouldRenderAdUnit } from '@/lib/ads/adPolicy';
 
 interface AdGateClientProps {
   adSlot: string;
@@ -39,6 +40,11 @@ interface AdGateClientProps {
    */
   hasMeaningfulContent?: boolean;
   /**
+   * Visible publisher text length for the page (computed by the page from data).
+   * DO NOT compute by scraping the DOM.
+   */
+  textLength?: number;
+  /**
    * Whether to require scroll / viewport proximity (IntersectionObserver)
    * before mounting the underlying AdSense <ins> unit.
    *
@@ -46,10 +52,6 @@ interface AdGateClientProps {
    */
   requireScroll?: boolean;
 }
-
-// Centralized ad-blocking routes
-const RESTRICTED_PREFIXES = ['/auth', '/account', '/admin'];
-const RESTRICTED_EXACT = ['/premium', '/ads-debug', '/news'];
 
 export default function AdGateClient({
   adSlot,
@@ -60,19 +62,25 @@ export default function AdGateClient({
   contentItemCount,
   minItems,
   hasMeaningfulContent,
+  textLength,
   requireScroll = true,
 }: AdGateClientProps) {
   const pathname = usePathname() || '/';
   const [canShowAd, setCanShowAd] = useState<boolean | null>(null);
 
+  const derivedMeaningful =
+    typeof hasMeaningfulContent === 'boolean'
+      ? hasMeaningfulContent
+      : typeof contentItemCount === 'number'
+        ? contentItemCount >= (minItems ?? 1)
+        : false;
+
+  const tLen = typeof textLength === 'number' ? textLength : 0;
+
   const checkConsentAndUser = useCallback(async () => {
     try {
-      // Hard block restricted routes
-      const isRestrictedRoute =
-        RESTRICTED_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ||
-        RESTRICTED_EXACT.includes(pathname);
-
-      if (isRestrictedRoute) {
+      // Fast pre-gate: if route/content is not eligible, don't even check consent/user.
+      if (!isRouteAdEligible(pathname) || !isPageContentEligible({ textLength: tLen, hasMeaningfulContent: derivedMeaningful })) {
         setCanShowAd(false);
         return;
       }
@@ -127,20 +135,15 @@ export default function AdGateClient({
     return null;
   }
 
-  // Content threshold gate
-  const contentReady = (() => {
-    if (typeof hasMeaningfulContent === 'boolean') {
-      return hasMeaningfulContent;
-    }
+  const eligible = shouldRenderAdUnit({
+    pathname,
+    textLength: tLen,
+    hasMeaningfulContent: derivedMeaningful,
+    isClient: true,
+    hasUserConsented: canShowAd,
+  });
 
-    if (typeof contentItemCount !== 'number') return true;
-
-    const threshold = minItems ?? 1;
-    return contentItemCount >= threshold;
-  })();
-
-  // Don't show ad if user/consent gate failed or content is too thin
-  if (!canShowAd || !contentReady) {
+  if (!eligible) {
     return null;
   }
 

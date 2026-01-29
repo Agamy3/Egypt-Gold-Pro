@@ -146,6 +146,14 @@ function NewsPageContent() {
   };
 
   const pageTitle = lang === 'ar' ? 'أخبار الذهب' : 'Gold News';
+  const newsTextLength = publicItems.reduce((sum, item) => {
+    const title = item.title ? htmlToText(item.title) : '';
+    const premium = item.url ? premiumItemsByUrl[item.url] : undefined;
+    const summary = premium?.summary ? htmlToText(premium.summary) : '';
+    const why = premium?.whyItMatters?.length ? premium.whyItMatters.join(' ') : '';
+    return sum + title.length + summary.length + why.length;
+  }, 0);
+  const hasMeaningfulNewsContent = !loading && !error && publicItems.length > 0;
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
@@ -264,8 +272,9 @@ function NewsPageContent() {
                         adSlot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD || '9450111383'}
                         format="auto"
                         className="w-full"
-                        contentItemCount={publicItems.length}
-                        minItems={4}
+                        hasMeaningfulContent={hasMeaningfulNewsContent}
+                        textLength={newsTextLength}
+                        requireScroll
                       />
                     </div>
                   )}

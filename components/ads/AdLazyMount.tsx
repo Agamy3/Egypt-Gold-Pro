@@ -12,13 +12,13 @@ interface AdLazyMountProps {
  *
  * - Uses IntersectionObserver to delay mounting ad children until the
  *   placeholder is within 600px of the viewport.
- * - If IntersectionObserver is not available, falls back to a 2s delay
- *   **only** on dashboard (`/`) and portfolio (`/portfolio`) routes.
+ * - If IntersectionObserver is not available, we DO NOT mount ad children.
+ *   (This prevents any chance of ads showing on thin content / bot-rendered screens.)
  */
 export default function AdLazyMount({ children }: AdLazyMountProps) {
   const placeholderRef = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
-  const pathname = usePathname() || '/';
+  usePathname(); // keep hook subscription stable (future-proof), value not needed
 
   useEffect(() => {
     if (visible) return;
@@ -50,23 +50,9 @@ export default function AdLazyMount({ children }: AdLazyMountProps) {
       };
     }
 
-    // Fallback: delay render by 2s ONLY on dashboard/portfolio
-    const isDashboard = pathname === '/';
-    const isPortfolio = pathname.startsWith('/portfolio');
-
-    if (!isDashboard && !isPortfolio) {
-      // On other routes, never render ads if we can't safely lazy-load
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      setVisible(true);
-    }, 2000);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [pathname, visible]);
+    // No IntersectionObserver => never mount ads
+    return;
+  }, [visible]);
 
   // Until visible, render only a lightweight placeholder div so that
   // AdSense <ins> never mounts on thin-content screens.
