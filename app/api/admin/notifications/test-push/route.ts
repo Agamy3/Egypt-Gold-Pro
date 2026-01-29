@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, adminErrorToResponse } from '@/lib/auth/admin';
+import { requireAdmin, adminErrorToResponse, AdminAuthError } from '@/lib/auth/admin';
 import { sendPushNotification, type PushSubscription } from '@/lib/push';
 import db from '@/lib/supabase';
 
@@ -266,7 +266,7 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     // Check if it's an AdminAuthError
-    if (error && typeof error === 'object' && 'status' in error) {
+    if (error instanceof AdminAuthError) {
       return adminErrorToResponse(error);
     }
     console.error('[TEST-PUSH] Error:', error);
