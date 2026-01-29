@@ -43,27 +43,58 @@ async function handler(req: NextRequest) {
 
   let waitedMs = 0;
   try {
-    const startedAt = new Date();
-    const nextBoundary = nextUtcMinuteBoundary(startedAt);
-    const msToNext = nextBoundary.getTime() - startedAt.getTime();
+    const arrivedAt = new Date();
 
-    // Sleep only when we're within ~7s of the next boundary.
-    // If we already passed the boundary (cron late), do NOT sleep to the next minute (would make slippage worse).
-    if (msToNext > 0 && msToNext <= 7000) {
-      waitedMs = msToNext;
-      await sleepMs(Math.min(msToNext, 55_000));
+    // Always align forward to the NEXT UTC minute boundary unless we are basically on it already.
+    let nextBoundary = nextUtcMinuteBoundary(arrivedAt);
+    let waitMs = nextBoundary.getTime() - arrivedAt.getTime();
+
+    // If something odd happens (shouldn't), recompute using "now".
+    if (waitMs < 0) {
+      const n = new Date();
+      nextBoundary = nextUtcMinuteBoundary(n);
+      waitMs = nextBoundary.getTime() - n.getTime();
     }
 
-    const now = new Date();
-    const alignedTo = floorToUtcMinute(now).toISOString();
+    // Sleep-to-boundary (can be up to ~60s). Cap each sleep chunk, but ensure we reach :00.
+    if (waitMs > 10) {
+      // Log once per run (minimal).
+      console.log('[minute-bot] align sleep', {
+        arrivedAt: arrivedAt.toISOString(),
+        nextBoundary: nextBoundary.toISOString(),
+        waitMs,
+      });
 
-    const result = await runMinuteForecastBot({ supabase, now, create: true });
+      let remaining = waitMs;
+      while (remaining > 10) {
+        const chunk = Math.min(remaining, 55_000);
+        waitedMs += chunk;
+        await sleepMs(chunk);
+
+        const after = new Date();
+        const nb = nextUtcMinuteBoundary(after);
+        remaining = nb.getTime() - after.getTime();
+        // If we ended up exactly on the boundary (or very close), stop.
+        if (remaining <= 10) break;
+      }
+    }
+
+    const afterSleep = new Date();
+    const t0 = floorToUtcMinute(afterSleep);
+    console.log('[minute-bot] aligned', {
+      afterSleep: afterSleep.toISOString(),
+      t0: t0.toISOString(),
+      offsetMs: afterSleep.getTime() - t0.getTime(),
+      waitedMs,
+    });
+
+    const result = await runMinuteForecastBot({ supabase, now: afterSleep, create: true });
     const status = result.ok ? 200 : (result.status ?? 500);
 
     const out = {
       ...result,
       waitedMs,
-      alignedTo,
+      alignedTo: t0.toISOString(),
     };
 
     return withNoStoreHeaders(NextResponse.json(out, { status }));
