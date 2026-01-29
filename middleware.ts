@@ -90,8 +90,9 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - crawler/static files at the public root (e.g. ads.txt)
+     * - PWA assets (manifest, service worker, offline page, icons)
      */
-    '/((?!_next/static|_next/image|favicon.ico|ads\\.txt|robots\\.txt|sitemap\\.xml|manifest\\.json|\\.well-known/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|ads\\.txt|robots\\.txt|sitemap\\.xml|manifest\\.json|manifest\\.webmanifest|sw\\.js|offline\\.html|apple-touch-icon\\.png|icons/|\\.well-known/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
 

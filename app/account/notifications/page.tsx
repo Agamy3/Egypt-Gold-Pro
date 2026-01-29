@@ -51,6 +51,9 @@ function NotificationsContent() {
   const [pushEnabled, setPushEnabled] = useState(true); // Enable push by default
   const [pushSupported, setPushSupported] = useState(false);
   const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
   // Watchlist state
   const [watchlist, setWatchlist] = useState<Record<Country, boolean>>({
@@ -84,6 +87,7 @@ function NotificationsContent() {
   });
 
   useEffect(() => {
+    checkPWAStatus();
     checkPushSupport();
     fetchProfile();
     fetchWatchlist();
@@ -91,6 +95,25 @@ function NotificationsContent() {
     fetchInAppNotifications();
     startActivityPing();
   }, []);
+
+  const checkPWAStatus = () => {
+    if (typeof window === 'undefined') return;
+    
+    // Check if installed (standalone mode)
+    const isStandalone = 
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true;
+    setIsInstalled(isStandalone);
+    
+    // Check if iOS
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    setIsIOS(ios);
+    
+    // Check notification permission
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+  };
 
   const checkPushSupport = () => {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
@@ -697,13 +720,34 @@ function NotificationsContent() {
               </div>
 
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
                   <label className="text-sm font-medium text-gray-300">
                     {lang === 'ar' ? 'تفعيل الإشعارات الفورية' : 'Enable Push Notifications'}
                   </label>
                   <p className="text-xs text-gray-500 mt-1">
                     {lang === 'ar' ? 'تلقي إشعارات على سطح المكتب والهاتف' : 'Receive notifications on desktop and mobile'}
                   </p>
+                  {/* PWA-specific status messages */}
+                  {!pushSupported && (
+                    <p className="text-xs text-yellow-500 mt-1">
+                      {lang === 'ar' ? 'الإشعارات الفورية غير مدعومة في هذا المتصفح' : 'Push notifications not supported in this browser'}
+                    </p>
+                  )}
+                  {pushSupported && notificationPermission === 'denied' && (
+                    <p className="text-xs text-yellow-500 mt-1">
+                      {lang === 'ar' ? 'تم رفض الإذن. يرجى السماح بالإشعارات في إعدادات المتصفح.' : 'Permission denied. Please enable notifications in browser settings.'}
+                    </p>
+                  )}
+                  {pushSupported && isIOS && !isInstalled && (
+                    <p className="text-xs text-yellow-500 mt-1">
+                      {lang === 'ar' ? 'للحصول على إشعارات على iOS، قم بتثبيت التطبيق على الشاشة الرئيسية (Share → Add to Home Screen)' : 'For push notifications on iOS, install the app to Home Screen (Share → Add to Home Screen)'}
+                    </p>
+                  )}
+                  {isInstalled && (
+                    <p className="text-xs text-green-500 mt-1">
+                      {lang === 'ar' ? '✓ التطبيق مثبت' : '✓ App installed'}
+                    </p>
+                  )}
                 </div>
                 {pushSupported ? (
                   pushSubscribed ? (
@@ -719,6 +763,7 @@ function NotificationsContent() {
                       type="button"
                       onClick={handleEnablePush}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md"
+                      disabled={notificationPermission === 'denied'}
                     >
                       {lang === 'ar' ? 'تفعيل' : 'Enable'}
                     </button>
