@@ -106,58 +106,39 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Never cache API. Always network-only (no offline fallback).
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // Never show offline fallback for admin routes (auth redirects/401 must pass through).
+  if (url.pathname.startsWith('/admin')) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   // NEVER cache realtime API endpoints - always fetch from network
   if (shouldBypassCache(url.pathname)) {
     event.respondWith(
-      fetch(request).catch((error) => {
-        console.error('[SW] Network-only fetch failed:', error);
-        // Return a minimal error response for API calls
-        return new Response(
-          JSON.stringify({ error: 'Network unavailable' }),
-          {
-            status: 503,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
-      })
+      fetch(request)
     );
     return;
   }
 
   // Navigation requests (HTML pages)
-  // Use network-first: always try network first, only fallback to cache/offline if network truly fails
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request, { cache: 'no-store' })
-        .then((response) => {
-          // Only cache successful responses (200-299)
-          if (response.status >= 200 && response.status < 300) {
-            // For auth pages, don't cache the response
-            if (isAuthNavigation(url.pathname)) {
-              return response;
-            }
-            // For other pages, cache the response for offline use
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone).catch((err) => {
-                console.error('[SW] Error caching response:', err);
-              });
-            });
-          }
-          return response;
-        })
-        .catch((error) => {
-          // Network truly failed - try cache
-          console.log('[SW] Network failed for navigation, trying cache:', url.pathname, error);
-          return caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            // No cache - return offline page as last resort
-            console.log('[SW] No cache found, returning offline page');
-            return caches.match(OFFLINE_PAGE);
-          });
-        })
+      (async () => {
+        try {
+          // IMPORTANT: return response even if 302/401/etc
+          return await fetch(request);
+        } catch (err) {
+          const cache = await caches.open(CACHE_NAME);
+          const offline = await cache.match('/offline.html');
+          return offline || new Response('Offline', { status: 503 });
+        }
+      })()
     );
     return;
   }
