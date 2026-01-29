@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Send notifications
-    const results: Array<{ subscriptionId: number | string; status: 'sent' | 'failed'; error?: string }> = [];
+    const results: Array<{ subscriptionId: string; status: 'sent' | 'failed'; error?: string }> = [];
     let sent = 0;
     let failed = 0;
     let deactivated = 0;
