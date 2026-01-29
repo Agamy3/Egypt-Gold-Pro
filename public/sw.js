@@ -1,7 +1,8 @@
 // PWA Service Worker for EgyptGold Pro
 // Caches static assets but NEVER caches realtime APIs
 
-const CACHE_NAME = 'egyptgold-pro-v1';
+const SW_VERSION = 'v1.0.1'; // Bump on changes to force cache refresh
+const CACHE_NAME = `egp-cache-${SW_VERSION}`;
 const OFFLINE_PAGE = '/offline.html';
 
 // Static assets to precache
@@ -66,9 +67,10 @@ self.addEventListener('activate', (event) => {
   console.log('[SW] Activating service worker...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
+      // Delete all caches that don't match current version
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
+          .filter((name) => name !== CACHE_NAME && name.startsWith('egp-cache-'))
           .map((name) => {
             console.log('[SW] Deleting old cache:', name);
             return caches.delete(name);

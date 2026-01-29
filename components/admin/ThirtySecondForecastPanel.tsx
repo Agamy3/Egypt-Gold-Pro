@@ -2,69 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-function TestPushButton() {
-  const [loading, setLoading] = useState(false);
-  const [target, setTarget] = useState<'me' | 'all'>('me');
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const handleTestPush = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const res = await fetch('/api/admin/notifications/test-push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target }),
-        cache: 'no-store',
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || `Test push failed (${res.status})`);
-      }
-
-      setMessage({
-        type: 'success',
-        text: `Test notification sent to ${json.sent} device(s). ${json.failed > 0 ? `${json.failed} failed.` : ''}`,
-      });
-    } catch (e) {
-      setMessage({
-        type: 'error',
-        text: e instanceof Error ? e.message : 'Failed to send test push',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-2">
-      <select
-        value={target}
-        onChange={(e) => setTarget(e.target.value as 'me' | 'all')}
-        className="px-2 py-2 rounded-md text-sm bg-gray-800 text-gray-200 border border-gray-700"
-        disabled={loading}
-      >
-        <option value="me">Me</option>
-        <option value="all">All (latest 50)</option>
-      </select>
-      <button
-        type="button"
-        onClick={handleTestPush}
-        disabled={loading}
-        className="px-3 py-2 rounded-md text-sm font-semibold bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {loading ? 'Sending...' : 'Send test push'}
-      </button>
-      {message && (
-        <span className={`text-xs ${message.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
-          {message.text}
-        </span>
-      )}
-    </div>
-  );
-}
-
 type ListResponse = {
   ok: boolean;
   error?: string;
@@ -174,7 +111,6 @@ export default function ThirtySecondForecastPanel() {
           >
             Export Excel (last 7 days)
           </a>
-          <TestPushButton />
         </div>
         <div className="text-xs text-gray-400">
           Last refresh: <span className="text-gray-200">{lastTickAt ?? '—'}</span>

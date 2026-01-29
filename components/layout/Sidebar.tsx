@@ -153,6 +153,12 @@ export default function Sidebar() {
           labelAr: 'إدارة الأخبار',
           icon: <span>📰</span>,
         },
+        {
+          href: '/admin/notifications',
+          labelEn: 'Notifications',
+          labelAr: 'الإشعارات',
+          icon: <span>🔔</span>,
+        },
       ]
     : [];
 
