@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 
 import { requireAdmin, adminErrorToResponse } from '@/lib/auth/admin';
 import { getServerClient } from '@/lib/supabase/server';
-import { getLatestGlobalOunce, getGlobalOunceWindow } from '@/lib/market/globalOunce';
-import { thirtySecondHeuristic } from '@/lib/forecast/thirtySecondHeuristic';
+import { fetchGoldApiQuote } from '@/lib/priceFeed/goldapi';
+import { getPriceAroundSecondsAgo, getRecentPricesForVolatility } from '@/lib/priceFeed/history';
+import { decideDirection } from '@/lib/forecast/thirtySecondHeuristic';
 import { dynamic, revalidate, withNoStoreHeaders } from '../_util';
 
 export { dynamic, revalidate };
@@ -14,11 +15,13 @@ type PredRow = {
   p0: number;
   p0_at: string;
   due_at: string;
+  meta?: any;
 };
 
 const HORIZON_SECONDS = 30;
 const STALE_AFTER_SECONDS = 120;
 const NOTIONAL_USD = 10;
+const SOURCE = 'goldapi_xauusd';
 
 function asNumber(x: unknown): number | null {
   const n = typeof x === 'number' ? x : Number(x);
@@ -35,17 +38,20 @@ export async function POST() {
 
     const supabaseAdmin = getServerClient();
 
-    const latestRes = await getLatestGlobalOunce(supabaseAdmin, { staleAfterSeconds: STALE_AFTER_SECONDS });
-    if (!latestRes.ok) {
-      return withNoStoreHeaders(
-        NextResponse.json({ ok: false, error: latestRes.error }, { status: 500 })
-      );
+    // Fetch current quote from GoldAPI (external, real-time).
+    let quote;
+    try {
+      quote = await fetchGoldApiQuote();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return withNoStoreHeaders(NextResponse.json({ ok: false, error: msg }, { status: 502 }));
     }
 
-    const latest = latestRes.point;
-    const isStale = latestRes.isStale;
-    const pLatest = latest.price;
-    const pointAt = latest.pointAt.toISOString();
+    const nowMs = Date.now();
+    const quoteTimestampMs = quote.timestamp;
+    const staleAgeSec = Math.max(0, (nowMs - quoteTimestampMs) / 1000);
+    const isStale = staleAgeSec > STALE_AFTER_SECONDS;
+    const pLatest = quote.price;
 
     // 1) Validate due predictions
     const now = new Date();
@@ -53,7 +59,8 @@ export async function POST() {
 
     const { data: due, error: dueErr } = await supabaseAdmin
       .from('admin_30s_predictions')
-      .select('id, predicted_direction, p0, p0_at, due_at')
+      .select('id, predicted_direction, p0, p0_at, due_at, meta')
+      .eq('source', SOURCE)
       .is('validated_at', null)
       .lte('due_at', nowIsoStr)
       .order('due_at', { ascending: true })
@@ -68,10 +75,20 @@ export async function POST() {
     let validatedCount = 0;
     const eps = 1e-9;
 
+    // Prefer a fresh fetch per validation batch (not per-row).
+    let validationQuote = quote;
+    try {
+      validationQuote = await fetchGoldApiQuote();
+    } catch {
+      // keep initial quote
+    }
+    const pValidation = validationQuote.price;
+    const validationQuoteTimestampMs = validationQuote.timestamp;
+
     for (const row of (due || []) as unknown as PredRow[]) {
       const p0 = asNumber(row.p0);
       if (p0 === null) continue;
-      const p1 = pLatest;
+      const p1 = pValidation;
 
       let result: 'TRUE' | 'FALSE' | 'TIE' | 'NA' = 'NA';
       if (row.predicted_direction === 'STALE') {
@@ -84,12 +101,19 @@ export async function POST() {
         result = p1 < p0 ? 'TRUE' : 'FALSE';
       }
 
+      const mergedMeta = {
+        ...(row.meta || {}),
+        validationQuoteTimestampMs,
+        validationPrice: p1,
+      };
+
       const { error: updErr } = await supabaseAdmin
         .from('admin_30s_predictions')
         .update({
           validated_at: nowIsoStr,
           p1,
           result,
+          meta: mergedMeta,
         })
         .eq('id', row.id);
 
@@ -126,30 +150,63 @@ export async function POST() {
 
     if (isStale) {
       predicted_direction = 'STALE';
-      meta = { reason: 'stale_data', staleAfterSeconds: STALE_AFTER_SECONDS, latestPointAt: pointAt };
+      meta = {
+        reason: 'stale_data',
+        staleAfterSeconds: STALE_AFTER_SECONDS,
+        quoteTimestampMs,
+        staleAgeSec,
+      };
     } else {
-      const windowRes = await getGlobalOunceWindow(supabaseAdmin, 120);
-      if (!windowRes.ok) {
-        predicted_direction = 'STALE';
-        meta = { reason: 'window_fetch_failed', error: windowRes.error, latestPointAt: pointAt };
+      // p30sAgo from DB (prediction history) as proxy history (serverless-safe).
+      const refRes = await getPriceAroundSecondsAgo(supabaseAdmin, HORIZON_SECONDS, { source: SOURCE });
+      const recentRes = await getRecentPricesForVolatility(supabaseAdmin, {
+        secondsBack: 120,
+        limit: 200,
+        source: SOURCE,
+      });
+
+      const recentPrices = recentRes.ok ? recentRes.prices : [];
+
+      // Fallback ref: oldest recent price if no explicit 30s-ago record.
+      let p30sAgo = p0;
+      let p30sAgoAtMs = nowMs;
+      let referenceMissing = false;
+
+      if (refRes.ok) {
+        p30sAgo = refRes.price;
+        p30sAgoAtMs = Date.parse(refRes.atIso);
+      } else if (recentRes.ok && recentRes.points.length > 0) {
+        p30sAgo = recentRes.points[0].v;
+        p30sAgoAtMs = recentRes.points[0].t;
+        referenceMissing = true;
       } else {
-        const h = thirtySecondHeuristic({
-          isStale,
-          latestPrice: p0,
-          latestAtMs: latest.fetchedAtMs,
-          windowPoints: windowRes.points,
-          horizonSeconds: HORIZON_SECONDS,
-          windowSeconds: 120,
-          absoluteMin: 0.05,
-          k: 1.0,
-        });
-        predicted_direction = h.direction;
-        meta = {
-          ...h.meta,
-          latestPointAt: pointAt,
-          latestPrice: p0,
-        };
+        referenceMissing = true;
       }
+
+      const h = decideDirection({
+        isStale,
+        pNow: p0,
+        p30sAgo,
+        p30sAgoAtMs,
+        recentPrices,
+        nowTsMs: nowMs,
+        quoteTimestampMs,
+        absoluteMin: 0.1,
+        k: 1.5,
+      });
+
+      predicted_direction = h.direction;
+      meta = {
+        ...h.meta,
+        referenceMissing,
+        p30sAgo,
+        p30sAgoAtMs,
+        bid: quote.bid ?? null,
+        ask: quote.ask ?? null,
+        baseUrl: (process.env.GOLDAPI_BASE_URL ?? 'https://app.goldapi.net').toString(),
+        recentFetchError: recentRes.ok ? null : recentRes.error,
+        refFetchError: refRes.ok ? null : refRes.error,
+      };
     }
 
     const { data: created, error: insErr } = await supabaseAdmin
@@ -160,7 +217,7 @@ export async function POST() {
         p0,
         p0_at: p0At,
         due_at: dueAt,
-        source: 'gold_spot',
+        source: SOURCE,
         meta,
       })
       .select('id, p0_at, due_at, predicted_direction, p0, source, meta')
@@ -177,8 +234,8 @@ export async function POST() {
         ok: true,
         createdPrediction: created,
         validated: { count: validatedCount },
-        latest: { price: pLatest, pointAt, isStale },
-        meta: { serverAsOf: nowIso() },
+        latest: { price: pLatest, quoteTimestampMs, isStale },
+        serverAsOf: nowIso(),
       })
     );
   } catch (err) {

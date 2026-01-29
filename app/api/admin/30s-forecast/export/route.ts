@@ -89,6 +89,8 @@ export async function GET(request: Request) {
       { header: 'delta', key: 'delta', width: 12 },
       { header: 'threshold', key: 'threshold', width: 12 },
       { header: 'volatility', key: 'volatility', width: 12 },
+      { header: 'quoteTimestampMs', key: 'quoteTimestampMs', width: 16 },
+      { header: 'staleAgeSec', key: 'staleAgeSec', width: 12 },
     ];
 
     for (const p of predictions) {
@@ -105,6 +107,8 @@ export async function GET(request: Request) {
         delta: asNum(meta.delta),
         threshold: asNum(meta.threshold),
         volatility: asNum(meta.volatility),
+        quoteTimestampMs: asNum(meta.quoteTimestampMs),
+        staleAgeSec: asNum(meta.staleAgeSec),
       });
     }
 

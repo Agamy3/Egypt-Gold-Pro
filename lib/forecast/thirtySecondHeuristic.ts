@@ -1,10 +1,13 @@
 /**
- * Deterministic 30-second heuristic for GLOBAL OUNCE (XAU/USD).
+ * Deterministic 30-second heuristic for XAU/USD (GoldAPI quotes).
  *
- * Outputs one of:
- * - UP    => "Price will go up"
- * - DOWN  => "Price will go down"
- * - STALE => "No signal / data stale / do not trade"
+ * Rules (exact):
+ * 1) If stale => STALE
+ * 2) delta = pNow - p30sAgo
+ * 3) volatility = average(abs(diff consecutive)) from recentPrices (>=3)
+ * 4) threshold = max(absoluteMin=0.10, k=1.5 * volatility)
+ * 5) If abs(delta) < threshold => STALE
+ * 6) Else delta > 0 => UP else DOWN
  */
 
 export type ThirtySecondDirection = 'UP' | 'DOWN' | 'STALE';
@@ -13,25 +16,30 @@ export type ThirtySecondHeuristicMeta = {
   delta: number;
   volatility: number;
   threshold: number;
-  windowSeconds: number;
-  referenceAgeSeconds: number;
-  referencePointAt: string | null;
+  absoluteMin: number;
+  k: number;
+  recentCount: number;
+  p30sAgoAgeSec: number;
+  quoteTimestampMs: number;
+  staleAgeSec: number;
 };
 
-export function thirtySecondHeuristic(input: {
+export function decideDirection(input: {
   isStale: boolean;
-  latestPrice: number;
-  latestAtMs: number;
-  windowPoints: Array<{ t: number; v: number }>;
-  horizonSeconds?: number; // default 30
-  windowSeconds?: number; // default 120
-  absoluteMin?: number; // default 0.05
-  k?: number; // default 1.0
+  pNow: number;
+  p30sAgo: number;
+  p30sAgoAtMs: number;
+  recentPrices: number[];
+  nowTsMs: number;
+  quoteTimestampMs: number;
+  absoluteMin?: number; // default 0.10
+  k?: number; // default 1.5
 }): { direction: ThirtySecondDirection; meta: ThirtySecondHeuristicMeta } {
-  const horizonSeconds = input.horizonSeconds ?? 30;
-  const windowSeconds = input.windowSeconds ?? 120;
-  const absoluteMin = input.absoluteMin ?? 0.05;
-  const k = input.k ?? 1.0;
+  const absoluteMin = input.absoluteMin ?? 0.1;
+  const k = input.k ?? 1.5;
+
+  const staleAgeSec = Math.max(0, (input.nowTsMs - input.quoteTimestampMs) / 1000);
+  const p30sAgoAgeSec = Math.max(0, (input.nowTsMs - input.p30sAgoAtMs) / 1000);
 
   if (input.isStale) {
     return {
@@ -40,81 +48,49 @@ export function thirtySecondHeuristic(input: {
         delta: 0,
         volatility: 0,
         threshold: absoluteMin,
-        windowSeconds,
-        referenceAgeSeconds: 0,
-        referencePointAt: null,
+        absoluteMin,
+        k,
+        recentCount: input.recentPrices.length,
+        p30sAgoAgeSec,
+        quoteTimestampMs: input.quoteTimestampMs,
+        staleAgeSec,
       },
     };
   }
 
-  const points = (input.windowPoints || [])
-    .filter((p) => isFinite(p.t) && p.t > 0 && isFinite(p.v) && p.v > 0)
-    .sort((a, b) => a.t - b.t);
-
-  const nowMs = input.latestAtMs;
-  const targetMs = nowMs - horizonSeconds * 1000;
-
-  // Find a point approximately horizonSeconds ago.
-  let ref = points.find((p) => p.t >= targetMs) ?? null;
-  if (!ref && points.length > 0) ref = points[0];
-  if (!ref) {
-    return {
-      direction: 'STALE',
-      meta: {
-        delta: 0,
-        volatility: 0,
-        threshold: absoluteMin,
-        windowSeconds,
-        referenceAgeSeconds: 0,
-        referencePointAt: null,
-      },
-    };
+  const prices = (input.recentPrices || []).map((n) => Number(n)).filter((n) => isFinite(n) && n > 0);
+  let volatility = 0;
+  if (prices.length >= 3) {
+    let sum = 0;
+    let cnt = 0;
+    for (let i = 1; i < prices.length; i++) {
+      const dv = Math.abs(prices[i] - prices[i - 1]);
+      if (isFinite(dv)) {
+        sum += dv;
+        cnt += 1;
+      }
+    }
+    volatility = cnt > 0 ? sum / cnt : 0;
   }
-
-  // Volatility: median absolute diff between consecutive points.
-  const diffs: number[] = [];
-  for (let i = 1; i < points.length; i++) {
-    const dv = Math.abs(points[i].v - points[i - 1].v);
-    if (isFinite(dv)) diffs.push(dv);
-  }
-  diffs.sort((a, b) => a - b);
-  const volatility =
-    diffs.length === 0
-      ? 0
-      : diffs.length % 2 === 0
-        ? (diffs[diffs.length / 2 - 1] + diffs[diffs.length / 2]) / 2
-        : diffs[Math.floor(diffs.length / 2)];
 
   const threshold = Math.max(absoluteMin, k * volatility);
-  const delta = input.latestPrice - ref.v;
+  const delta = input.pNow - input.p30sAgo;
 
-  const referenceAgeSeconds = Math.max(0, (nowMs - ref.t) / 1000);
-
-  // No-signal rule => STALE
-  if (Math.abs(delta) < threshold) {
-    return {
-      direction: 'STALE',
-      meta: {
-        delta,
-        volatility,
-        threshold,
-        windowSeconds,
-        referenceAgeSeconds,
-        referencePointAt: new Date(ref.t).toISOString(),
-      },
-    };
-  }
-
-  return {
-    direction: delta > 0 ? 'UP' : 'DOWN',
-    meta: {
-      delta,
-      volatility,
-      threshold,
-      windowSeconds,
-      referenceAgeSeconds,
-      referencePointAt: new Date(ref.t).toISOString(),
-    },
+  const meta: ThirtySecondHeuristicMeta = {
+    delta,
+    volatility,
+    threshold,
+    absoluteMin,
+    k,
+    recentCount: prices.length,
+    p30sAgoAgeSec,
+    quoteTimestampMs: input.quoteTimestampMs,
+    staleAgeSec,
   };
+
+  if (Math.abs(delta) < threshold) {
+    return { direction: 'STALE', meta };
+  }
+  return { direction: delta > 0 ? 'UP' : 'DOWN', meta };
 }
 

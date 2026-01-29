@@ -7,8 +7,8 @@ type TickResponse = {
   error?: string;
   createdPrediction?: any;
   validated?: { count: number };
-  latest?: { price: number; pointAt: string; isStale: boolean };
-  meta?: { serverAsOf: string };
+  latest?: { price: number; quoteTimestampMs: number; isStale: boolean };
+  serverAsOf?: string;
 };
 
 type ListResponse = {
@@ -54,7 +54,7 @@ export default function ThirtySecondForecastPanel() {
   const [running, setRunning] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastTickAt, setLastTickAt] = useState<string | null>(null);
-  const [latest, setLatest] = useState<{ price: number; pointAt: string; isStale: boolean } | null>(null);
+  const [latest, setLatest] = useState<{ price: number; quoteTimestampMs: number; isStale: boolean } | null>(null);
   const [createdPrediction, setCreatedPrediction] = useState<any | null>(null);
   const [stats, setStats] = useState<ListResponse['stats'] | null>(null);
   const [predictions, setPredictions] = useState<any[]>([]);
@@ -76,7 +76,7 @@ export default function ThirtySecondForecastPanel() {
     try {
       setError(null);
       const tick = await postTick();
-      setLastTickAt(tick.meta?.serverAsOf ?? new Date().toISOString());
+      setLastTickAt(tick.serverAsOf ?? new Date().toISOString());
       if (tick.latest) setLatest(tick.latest);
       if (tick.createdPrediction) setCreatedPrediction(tick.createdPrediction);
       await refreshList();
@@ -178,7 +178,10 @@ export default function ThirtySecondForecastPanel() {
             )}
           </div>
           <div className="mt-1 text-xs text-gray-400">
-            pointAt: <span className="text-gray-200">{latest?.pointAt ?? '—'}</span>
+            quoteAt:{' '}
+            <span className="text-gray-200">
+              {latest?.quoteTimestampMs ? new Date(latest.quoteTimestampMs).toISOString() : '—'}
+            </span>
           </div>
         </div>
 

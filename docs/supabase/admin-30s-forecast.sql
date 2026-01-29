@@ -48,7 +48,7 @@ create table if not exists public.admin_30s_predictions (
   validated_at timestamptz,
   p1 numeric,
   result text check (result in ('TRUE','FALSE','TIE','NA')),
-  source text not null default 'gold_spot',
+  source text not null default 'goldapi_xauusd',
   meta jsonb not null default '{}'::jsonb
 );
 
