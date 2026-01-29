@@ -35,16 +35,32 @@ export async function fetchGoldApiQuote(): Promise<Quote> {
 
   try {
     // Different GoldAPI deployments use different paths.
-    // Try a small set of known patterns:
-    // - https://app.goldapi.net/price/XAU/USD (docs example)
-    // - https://www.goldapi.io/api/XAU/USD (common)
-    // - https://<base>/api/XAU/USD (some accounts)
+    // IMPORTANT: https://www.goldapi.io/XAU/USD returns an HTML website page (not JSON).
+    // Prefer /api/XAU/USD for goldapi.io.
+    let host = '';
+    try {
+      host = new URL(baseUrl).hostname.toLowerCase();
+    } catch {
+      host = '';
+    }
+
     const baseHasApi = /\/api$/i.test(baseUrl);
-    const candidates = [
-      joinUrl(baseUrl, '/price/XAU/USD'),
-      ...(baseHasApi ? [joinUrl(baseUrl, '/XAU/USD')] : [joinUrl(baseUrl, '/api/XAU/USD')]),
-      joinUrl(baseUrl, '/XAU/USD'),
-    ];
+    const isGoldApiIo = host.includes('goldapi.io');
+
+    const candidates = isGoldApiIo
+      ? [
+          // Most common for goldapi.io
+          joinUrl(baseUrl, '/api/XAU/USD'),
+          // Some accounts/docs use this
+          joinUrl(baseUrl, '/price/XAU/USD'),
+        ]
+      : [
+          // Docs example for goldapi.net/app.goldapi.net
+          joinUrl(baseUrl, '/price/XAU/USD'),
+          ...(baseHasApi ? [joinUrl(baseUrl, '/XAU/USD')] : [joinUrl(baseUrl, '/api/XAU/USD')]),
+          // Last-resort; may be HTML on some hosts
+          joinUrl(baseUrl, '/XAU/USD'),
+        ];
 
     let lastErr: string | null = null;
 
@@ -66,6 +82,14 @@ export async function fetchGoldApiQuote(): Promise<Quote> {
         const snippet = text.slice(0, 250);
         lastErr = `GoldAPI error ${res.status} @ ${url}: ${snippet}`;
         // Try next candidate
+        continue;
+      }
+
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      const bodyStartsHtml = /^\s*<(?:!doctype|html|head|script)\b/i.test(text);
+      if (contentType.includes('text/html') || bodyStartsHtml) {
+        // This is almost certainly the marketing website or an HTML error page.
+        lastErr = `GoldAPI returned HTML (not JSON) @ ${url}. Check GOLDAPI_BASE_URL and GOLDAPI_API_KEY.`;
         continue;
       }
 
@@ -103,7 +127,10 @@ export async function fetchGoldApiQuote(): Promise<Quote> {
       };
     }
 
-    throw new Error(lastErr ?? 'GoldAPI request failed');
+    throw new Error(
+      lastErr ??
+        `GoldAPI request failed. Ensure GOLDAPI_BASE_URL is the API host (e.g. https://app.goldapi.net or https://www.goldapi.io) and GOLDAPI_API_KEY is set.`
+    );
   } finally {
     clearTimeout(timeout);
   }
