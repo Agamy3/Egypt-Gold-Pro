@@ -16,16 +16,21 @@ type ListResponse = {
   error?: string;
   stats?: {
     totalPredictions: number;
+    signalRate?: number | null;
+    staleRate?: number | null;
     judgedPredictions: number;
     trueCount: number;
     falseCount: number;
     tieCount: number;
     naCount: number;
     accuracy: number | null;
-    totalTrades: number;
-    cumulativePnl: number;
-    avgPnl: number | null;
-    winRate: number | null;
+    totalTradesOK?: number;
+    totalTradesLate?: number;
+    cumulativePnlOK?: number;
+    avgPnlOK?: number | null;
+    winRateOK?: number | null;
+    avgHoldSecondsOK?: number | null;
+    avgAbsExitSlippageMsOK?: number | null;
   };
   predictions?: any[];
 };
@@ -207,13 +212,22 @@ export default function ThirtySecondForecastPanel() {
               Accuracy: <span className="text-gray-200">{stats?.accuracy != null ? `${(stats.accuracy * 100).toFixed(1)}%` : '—'}</span>
             </div>
             <div className="text-gray-400">
-              Trades: <span className="text-gray-200">{stats?.totalTrades ?? '—'}</span>
+              Trades (OK/LATE):{' '}
+              <span className="text-gray-200">
+                {stats?.totalTradesOK ?? '—'}/{stats?.totalTradesLate ?? '—'}
+              </span>
             </div>
             <div className="text-gray-400">
-              PnL: <span className="text-gray-200">{stats ? fmt(stats.cumulativePnl, 4) : '—'}</span>
+              PnL (OK): <span className="text-gray-200">{stats ? fmt((stats.cumulativePnlOK as number | undefined) ?? null, 4) : '—'}</span>
             </div>
             <div className="text-gray-400">
-              Win rate: <span className="text-gray-200">{stats?.winRate != null ? `${(stats.winRate * 100).toFixed(1)}%` : '—'}</span>
+              Win rate (OK): <span className="text-gray-200">{stats?.winRateOK != null ? `${(stats.winRateOK * 100).toFixed(1)}%` : '—'}</span>
+            </div>
+            <div className="text-gray-400">
+              Signal: <span className="text-gray-200">{stats?.signalRate != null ? `${(stats.signalRate * 100).toFixed(1)}%` : '—'}</span>
+            </div>
+            <div className="text-gray-400">
+              Avg slip (OK): <span className="text-gray-200">{stats?.avgAbsExitSlippageMsOK != null ? `${fmt(stats.avgAbsExitSlippageMsOK, 0)}ms` : '—'}</span>
             </div>
           </div>
         </div>
@@ -231,8 +245,12 @@ export default function ThirtySecondForecastPanel() {
                 <th className="text-left px-4 py-2">p0_at</th>
                 <th className="text-left px-4 py-2">dir</th>
                 <th className="text-left px-4 py-2">p0</th>
+                <th className="text-left px-4 py-2">pred</th>
+                <th className="text-left px-4 py-2">conf</th>
                 <th className="text-left px-4 py-2">p1</th>
                 <th className="text-left px-4 py-2">result</th>
+                <th className="text-left px-4 py-2">slip</th>
+                <th className="text-left px-4 py-2">status</th>
                 <th className="text-left px-4 py-2">pnl</th>
               </tr>
             </thead>
@@ -242,14 +260,18 @@ export default function ThirtySecondForecastPanel() {
                   <td className="px-4 py-2 whitespace-nowrap">{p.p0_at}</td>
                   <td className="px-4 py-2 font-semibold">{p.predicted_direction}</td>
                   <td className="px-4 py-2">{fmt(asNumber(p.p0), 2)}</td>
+                  <td className="px-4 py-2">{fmt(asNumber(p.predicted_price), 2)}</td>
+                  <td className="px-4 py-2">{p.confidence != null ? `${(Number(p.confidence) * 100).toFixed(0)}%` : '—'}</td>
                   <td className="px-4 py-2">{fmt(asNumber(p.p1), 2)}</td>
                   <td className="px-4 py-2">{p.result ?? '—'}</td>
+                  <td className="px-4 py-2">{p.trade?.exit_slippage_ms != null ? `${Number(p.trade.exit_slippage_ms)}ms` : '—'}</td>
+                  <td className="px-4 py-2">{p.trade?.trade_status ?? '—'}</td>
                   <td className="px-4 py-2">{p.trade ? fmt(asNumber(p.trade.pnl_usd), 4) : '—'}</td>
                 </tr>
               ))}
               {predictions.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-gray-400" colSpan={6}>
+                  <td className="px-4 py-4 text-gray-400" colSpan={10}>
                     No predictions yet.
                   </td>
                 </tr>
