@@ -25,6 +25,10 @@ type Trade = {
   id: string;
   prediction_id: string;
   closed_at: string;
+  due_at: string | null;
+  hold_seconds: number | null;
+  exit_slippage_ms: number | null;
+  trade_status: 'OK' | 'LATE' | null;
   side: 'LONG' | 'SHORT';
   notional_usd: number;
   qty_oz: number;
@@ -75,44 +79,73 @@ export async function GET(request: Request) {
       }
     }
 
-    // Stats
-    let totalPredictions = predictions.length;
-    let judgedPredictions = 0; // excludes STALE/NA
+    // Stats (exclude NA + exclude TIE from accuracy, exclude LATE trades from KPIs)
+    const totalPredictions = predictions.length;
+    let signalCount = 0;
+    let staleCount = 0;
+
+    let judgedPredictions = 0; // TRUE/FALSE/TIE (excluding NA) and excluding LATE
     let trueCount = 0;
     let falseCount = 0;
     let tieCount = 0;
     let naCount = 0;
 
-    let totalTrades = 0;
-    let cumulativePnl = 0;
-    let wins = 0;
+    let totalTradesOK = 0;
+    let totalTradesLate = 0;
+    let cumulativePnlOK = 0;
+    let winsOK = 0;
+    let sumHoldOK = 0;
+    let sumAbsSlipOK = 0;
 
     for (const p of predictions) {
-      if (p.predicted_direction === 'STALE' || p.result === 'NA') {
-        naCount += 1;
-      } else if (p.result === 'TRUE') {
-        judgedPredictions += 1;
-        trueCount += 1;
-      } else if (p.result === 'FALSE') {
-        judgedPredictions += 1;
-        falseCount += 1;
-      } else if (p.result === 'TIE') {
-        judgedPredictions += 1;
-        tieCount += 1;
-      }
+      if (p.predicted_direction === 'UP' || p.predicted_direction === 'DOWN') signalCount += 1;
+      if (p.predicted_direction === 'STALE') staleCount += 1;
 
       const trade = tradeByPredId.get(p.id);
+      const isLate = trade?.trade_status === 'LATE';
+
+      if (p.predicted_direction === 'STALE' || p.result === 'NA') {
+        naCount += 1;
+        // no trade expected
+      } else if (p.result === 'TRUE') {
+        if (!isLate) {
+          judgedPredictions += 1;
+          trueCount += 1;
+        }
+      } else if (p.result === 'FALSE') {
+        if (!isLate) {
+          judgedPredictions += 1;
+          falseCount += 1;
+        }
+      } else if (p.result === 'TIE') {
+        if (!isLate) {
+          judgedPredictions += 1;
+          tieCount += 1;
+        }
+      }
+
       if (trade) {
-        totalTrades += 1;
-        cumulativePnl += Number(trade.pnl_usd) || 0;
-        if ((Number(trade.pnl_usd) || 0) > 0) wins += 1;
+        if (trade.trade_status === 'LATE') {
+          totalTradesLate += 1;
+        } else {
+          totalTradesOK += 1;
+          const pnl = Number(trade.pnl_usd) || 0;
+          cumulativePnlOK += pnl;
+          if (pnl > 0) winsOK += 1;
+          if (typeof trade.hold_seconds === 'number' && isFinite(trade.hold_seconds)) sumHoldOK += trade.hold_seconds;
+          if (typeof trade.exit_slippage_ms === 'number' && isFinite(trade.exit_slippage_ms)) sumAbsSlipOK += Math.abs(trade.exit_slippage_ms);
+        }
       }
     }
 
     const denomAccuracy = trueCount + falseCount; // exclude ties & NA
     const accuracy = denomAccuracy > 0 ? trueCount / denomAccuracy : null;
-    const avgPnl = totalTrades > 0 ? cumulativePnl / totalTrades : null;
-    const winRate = totalTrades > 0 ? wins / totalTrades : null;
+    const avgPnlOK = totalTradesOK > 0 ? cumulativePnlOK / totalTradesOK : null;
+    const winRateOK = totalTradesOK > 0 ? winsOK / totalTradesOK : null;
+    const signalRate = totalPredictions > 0 ? signalCount / totalPredictions : null;
+    const staleRate = totalPredictions > 0 ? staleCount / totalPredictions : null;
+    const avgHoldSecondsOK = totalTradesOK > 0 ? sumHoldOK / totalTradesOK : null;
+    const avgAbsExitSlippageMsOK = totalTradesOK > 0 ? sumAbsSlipOK / totalTradesOK : null;
 
     const enriched = predictions.map((p) => ({
       ...p,
@@ -125,16 +158,21 @@ export async function GET(request: Request) {
         params: { days, limit },
         stats: {
           totalPredictions,
+          signalRate,
+          staleRate,
           judgedPredictions,
           trueCount,
           falseCount,
           tieCount,
           naCount,
           accuracy,
-          totalTrades,
-          cumulativePnl,
-          avgPnl,
-          winRate,
+          totalTradesOK,
+          totalTradesLate,
+          cumulativePnlOK,
+          avgPnlOK,
+          winRateOK,
+          avgHoldSecondsOK,
+          avgAbsExitSlippageMsOK,
         },
         predictions: enriched,
       })

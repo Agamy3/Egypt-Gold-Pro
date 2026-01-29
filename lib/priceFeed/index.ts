@@ -12,9 +12,11 @@ export function getPriceFeedProvider(): Quote['provider'] {
 
 export async function fetchQuote(): Promise<Quote> {
   const provider = getPriceFeedProvider();
-  if (provider === 'gold_api_free') {
-    return await fetchGoldApiFreeQuote();
-  }
+  return await fetchQuoteForProvider(provider);
+}
+
+export async function fetchQuoteForProvider(provider: Quote['provider']): Promise<Quote> {
+  if (provider === 'gold_api_free') return await fetchGoldApiFreeQuote();
   return await fetchGoldApiQuote();
 }
 

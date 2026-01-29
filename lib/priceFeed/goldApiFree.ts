@@ -84,6 +84,7 @@ export async function fetchGoldApiFreeQuote(): Promise<Quote> {
         price,
         timestampMs,
         provider: 'gold_api_free',
+        missingTimestamp,
         raw: { ...json, missingTimestamp },
       };
     }

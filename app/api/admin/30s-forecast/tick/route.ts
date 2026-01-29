@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { requireAdmin, adminErrorToResponse } from '@/lib/auth/admin';
 import { getServerClient } from '@/lib/supabase/server';
-import { fetchQuote } from '@/lib/priceFeed';
+import { fetchQuote, fetchQuoteForProvider } from '@/lib/priceFeed';
 import { getNearestPriceAroundTime, getRecentPricesForVolatility } from '@/lib/priceFeed/history';
 import { decideDirection } from '@/lib/forecast/thirtySecondHeuristic';
 import { dynamic, revalidate, withNoStoreHeaders } from '../_util';
@@ -28,11 +28,16 @@ function asNumber(x: unknown): number | null {
 }
 
 function sourceForProvider(provider: 'goldapi' | 'gold_api_free') {
-  return provider === 'gold_api_free' ? 'gold_api_free_xau' : 'goldapi_xauusd';
+  return provider === 'gold_api_free' ? 'gold_api_free_xauusd' : 'goldapi_xauusd';
 }
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function providerFromSource(source: string | null | undefined): 'goldapi' | 'gold_api_free' {
+  const s = (source ?? '').toLowerCase();
+  return s.startsWith('gold_api_free') ? 'gold_api_free' : 'goldapi';
 }
 
 export async function POST() {
@@ -57,16 +62,16 @@ export async function POST() {
     const pLatest = quote.price;
     const provider = quote.provider;
     const source = sourceForProvider(provider);
-    const missingTimestamp = Boolean((quote.raw as any)?.missingTimestamp);
+    const missingTimestamp = Boolean(quote.missingTimestamp);
 
     // 1) Validate due predictions
     const now = new Date();
     const nowIsoStr = now.toISOString();
+    const nowValidatedAtMs = now.getTime();
 
     const { data: due, error: dueErr } = await supabaseAdmin
       .from('admin_30s_predictions')
-      .select('id, predicted_direction, p0, p0_at, due_at, meta')
-      .eq('source', source)
+      .select('id, predicted_direction, p0, p0_at, due_at, meta, source, predicted_price, expected_low, expected_high')
       .is('validated_at', null)
       .lte('due_at', nowIsoStr)
       .order('due_at', { ascending: true })
@@ -81,26 +86,41 @@ export async function POST() {
     let validatedCount = 0;
     const eps = 1e-9;
 
-    // Prefer a fresh fetch per validation batch (not per-row).
-    let validationQuote = quote;
-    try {
-      validationQuote = await fetchQuote();
-    } catch {
-      // keep initial quote
+    // Fetch one fresh quote per provider used by due predictions (plus current provider).
+    const providersNeeded = new Set<'goldapi' | 'gold_api_free'>();
+    providersNeeded.add(provider);
+    for (const row of (due || []) as any[]) {
+      providersNeeded.add(providerFromSource(row.source));
     }
-    const pValidation = validationQuote.price;
-    const validationQuoteTimestampMs = validationQuote.timestampMs;
+    const quoteByProvider = new Map<'goldapi' | 'gold_api_free', { price: number; timestampMs: number }>();
+    for (const p of providersNeeded) {
+      try {
+        const q = await fetchQuoteForProvider(p);
+        quoteByProvider.set(p, { price: q.price, timestampMs: q.timestampMs });
+      } catch {
+        // If a provider quote fails, we'll skip rows that depend on it.
+      }
+    }
 
-    for (const row of (due || []) as unknown as PredRow[]) {
+    for (const row of (due || []) as any[]) {
       const p0 = asNumber(row.p0);
       if (p0 === null) continue;
       const predicted = row.predicted_direction;
+      const rowSource = String(row.source || '');
+      const rowProvider = providerFromSource(rowSource);
+      const q = quoteByProvider.get(rowProvider);
+      if (!q) continue;
+      const pValidation = q.price;
+      const validationQuoteTimestampMs = q.timestampMs;
+
+      const dueAtMs = Date.parse(String(row.due_at));
+      const p0AtMs = Date.parse(String(row.p0_at));
 
       const mergedMeta = {
         ...(row.meta || {}),
         validationQuoteTimestampMs,
         validationPrice: predicted === 'STALE' ? null : pValidation,
-        provider,
+        provider: rowProvider,
       };
 
       // STALE => NA, set validated_at, keep p1 null (cleaner).
@@ -125,12 +145,22 @@ export async function POST() {
       else if (predicted === 'UP') result = p1 > p0 ? 'TRUE' : 'FALSE';
       else if (predicted === 'DOWN') result = p1 < p0 ? 'TRUE' : 'FALSE';
 
+      // Numeric evaluation
+      const predictedPrice = asNumber(row.predicted_price);
+      const expectedLow = asNumber(row.expected_low);
+      const expectedHigh = asNumber(row.expected_high);
+      const priceError = predictedPrice == null ? null : Math.abs(p1 - predictedPrice);
+      const rangeHit =
+        expectedLow == null || expectedHigh == null ? null : p1 >= expectedLow && p1 <= expectedHigh;
+
       const { error: updErr } = await supabaseAdmin
         .from('admin_30s_predictions')
         .update({
           validated_at: nowIsoStr,
           p1,
           result,
+          price_error: priceError,
+          range_hit: rangeHit,
           meta: mergedMeta,
         })
         .eq('id', row.id);
@@ -144,6 +174,11 @@ export async function POST() {
         const qtyOz = NOTIONAL_USD / p0;
         const pnlUsd = side === 'LONG' ? qtyOz * (p1 - p0) : qtyOz * (p0 - p1);
 
+        const holdSeconds = isFinite(p0AtMs) ? (nowValidatedAtMs - p0AtMs) / 1000 : null;
+        const exitSlippageMs = isFinite(dueAtMs) ? nowValidatedAtMs - dueAtMs : null;
+        const tradeStatus =
+          exitSlippageMs != null && Math.abs(exitSlippageMs) <= 7000 ? 'OK' : 'LATE';
+
         await supabaseAdmin.from('admin_30s_trades').insert({
           prediction_id: row.id,
           side,
@@ -153,6 +188,10 @@ export async function POST() {
           exit_price: p1,
           pnl_usd: pnlUsd,
           closed_at: nowIsoStr,
+          due_at: row.due_at,
+          exit_slippage_ms: exitSlippageMs,
+          hold_seconds: holdSeconds,
+          trade_status: tradeStatus,
         });
       }
     }
@@ -165,6 +204,11 @@ export async function POST() {
 
     let predicted_direction: 'UP' | 'DOWN' | 'STALE' = 'STALE';
     let meta: Record<string, unknown> = {};
+    let predicted_delta: number | null = null;
+    let predicted_price: number | null = null;
+    let confidence: number | null = null;
+    let expected_low: number | null = null;
+    let expected_high: number | null = null;
 
     if (isStale) {
       predicted_direction = 'STALE';
@@ -206,19 +250,25 @@ export async function POST() {
 
       const h = decideDirection({
         isStale,
-        pNow: p0,
-        p30sAgo,
+        p0,
+        p30sAgoPrice: p30sAgo,
         p30sAgoAtMs,
         recentPrices,
         nowTsMs: nowMs,
         quoteTimestampMs,
         provider,
         referenceMissing,
+        missingTimestamp,
         absoluteMin: 0.1,
         k: 0.8,
       });
 
       predicted_direction = h.direction;
+      predicted_delta = h.predicted_delta;
+      predicted_price = h.predicted_price;
+      confidence = h.confidence;
+      expected_low = h.expected_low;
+      expected_high = h.expected_high;
       meta = {
         ...h.meta,
         referenceMissing,
@@ -245,8 +295,13 @@ export async function POST() {
         due_at: dueAt,
         source,
         meta,
+        predicted_delta,
+        predicted_price,
+        confidence,
+        expected_low,
+        expected_high,
       })
-      .select('id, p0_at, due_at, predicted_direction, p0, source, meta')
+      .select('id, p0_at, due_at, predicted_direction, p0, source, meta, predicted_delta, predicted_price, confidence, expected_low, expected_high')
       .single();
 
     if (insErr) {

@@ -77,6 +77,7 @@ export async function GET(request: Request) {
     const denom = trueCount + falseCount; // exclude ties & NA
     const accuracy = denom > 0 ? trueCount / denom : null;
 
+    // Keep legacy aggregates, but KPIs for export will be based on OK trades only (computed below).
     const cumulativePnl = trades.reduce((sum, t) => sum + (asNum(t.pnl_usd) ?? 0), 0);
     const avgPnl = trades.length > 0 ? cumulativePnl / trades.length : null;
     const wins = trades.reduce((sum, t) => sum + ((asNum(t.pnl_usd) ?? 0) > 0 ? 1 : 0), 0);
@@ -97,6 +98,13 @@ export async function GET(request: Request) {
       { header: 'p1', key: 'p1', width: 12 },
       { header: 'result', key: 'result', width: 10 },
       { header: 'source', key: 'source', width: 18 },
+      { header: 'predicted_delta', key: 'predicted_delta', width: 14 },
+      { header: 'predicted_price', key: 'predicted_price', width: 14 },
+      { header: 'confidence', key: 'confidence', width: 12 },
+      { header: 'expected_low', key: 'expected_low', width: 14 },
+      { header: 'expected_high', key: 'expected_high', width: 14 },
+      { header: 'price_error', key: 'price_error', width: 12 },
+      { header: 'range_hit', key: 'range_hit', width: 10 },
       { header: 'delta', key: 'delta', width: 12 },
       { header: 'volMedian', key: 'volMedian', width: 12 },
       { header: 'threshold', key: 'threshold', width: 12 },
@@ -105,9 +113,12 @@ export async function GET(request: Request) {
       { header: 'staleAgeSec', key: 'staleAgeSec', width: 12 },
     ];
 
+    const totalPredictions = predictions.length;
     let staleOrNA = 0;
     let judgedCount = 0;
     let signalCount = 0;
+    let rangeHitCount = 0;
+    let rangeHitEligible = 0;
 
     for (const p of predictions) {
       const meta = (p.meta || {}) as any;
@@ -122,6 +133,12 @@ export async function GET(request: Request) {
       const isJudged = resultExport === 'TRUE' || resultExport === 'FALSE' || resultExport === 'TIE';
       if (isJudged) judgedCount += 1;
 
+      const hasBounds = p.expected_low != null && p.expected_high != null;
+      if (!isNA && p.validated_at && hasBounds) {
+        rangeHitEligible += 1;
+        if (p.range_hit === true) rangeHitCount += 1;
+      }
+
       sheetPred.addRow({
         p0_at: cellText(p.p0_at),
         due_at: cellText(p.due_at),
@@ -131,7 +148,14 @@ export async function GET(request: Request) {
         p1: cellNum(p.p1),
         result: cellText(resultExport),
         source: cellText(p.source),
-        delta: cellNum(meta.delta),
+        predicted_delta: cellNum(p.predicted_delta),
+        predicted_price: cellNum(p.predicted_price),
+        confidence: cellNum(p.confidence),
+        expected_low: cellNum(p.expected_low),
+        expected_high: cellNum(p.expected_high),
+        price_error: cellNum(p.price_error),
+        range_hit: p.range_hit == null ? '' : String(Boolean(p.range_hit)),
+        delta: cellNum(meta.deltaObserved ?? meta.delta),
         volMedian: cellNum(meta.volMedian),
         threshold: cellNum(meta.threshold),
         provider: cellText(meta.provider),
@@ -143,6 +167,10 @@ export async function GET(request: Request) {
     const sheetTrades = wb.addWorksheet('Trades');
     sheetTrades.columns = [
       { header: 'closed_at', key: 'closed_at', width: 24 },
+      { header: 'due_at', key: 'due_at', width: 24 },
+      { header: 'hold_seconds', key: 'hold_seconds', width: 14 },
+      { header: 'exit_slippage_ms', key: 'exit_slippage_ms', width: 16 },
+      { header: 'trade_status', key: 'trade_status', width: 10 },
       { header: 'side', key: 'side', width: 10 },
       { header: 'notional_usd', key: 'notional_usd', width: 14 },
       { header: 'qty_oz', key: 'qty_oz', width: 12 },
@@ -152,15 +180,40 @@ export async function GET(request: Request) {
       { header: 'prediction_id', key: 'prediction_id', width: 38 },
     ];
 
+    let totalTradesOK = 0;
+    let totalTradesLate = 0;
+    let cumulativePnlOK = 0;
+    let winsOK = 0;
+    let sumHoldOK = 0;
+    let sumAbsSlipOK = 0;
+
     for (const t of trades) {
+      const status = (t.trade_status as string | null) ?? null;
+      const pnl = asNum(t.pnl_usd) ?? 0;
+      if (status === 'LATE') {
+        totalTradesLate += 1;
+      } else {
+        totalTradesOK += 1;
+        cumulativePnlOK += pnl;
+        if (pnl > 0) winsOK += 1;
+        const hs = asNum(t.hold_seconds);
+        if (hs != null) sumHoldOK += hs;
+        const slip = asNum(t.exit_slippage_ms);
+        if (slip != null) sumAbsSlipOK += Math.abs(slip);
+      }
+
       sheetTrades.addRow({
         closed_at: t.closed_at,
+        due_at: cellText(t.due_at),
+        hold_seconds: cellNum(t.hold_seconds),
+        exit_slippage_ms: cellNum(t.exit_slippage_ms),
+        trade_status: cellText(t.trade_status),
         side: t.side,
-        notional_usd: asNum(t.notional_usd),
-        qty_oz: asNum(t.qty_oz),
-        entry_price: asNum(t.entry_price),
-        exit_price: asNum(t.exit_price),
-        pnl_usd: asNum(t.pnl_usd),
+        notional_usd: cellNum(t.notional_usd),
+        qty_oz: cellNum(t.qty_oz),
+        entry_price: cellNum(t.entry_price),
+        exit_price: cellNum(t.exit_price),
+        pnl_usd: cellNum(t.pnl_usd),
         prediction_id: t.prediction_id,
       });
     }
@@ -170,23 +223,31 @@ export async function GET(request: Request) {
       { header: 'metric', key: 'metric', width: 26 },
       { header: 'value', key: 'value', width: 20 },
     ];
-    const tradesPerDay = days > 0 ? trades.length / days : null;
-    const signalRate = predictions.length > 0 ? signalCount / predictions.length : null;
+    const signalRate = totalPredictions > 0 ? signalCount / totalPredictions : null;
+    const staleRate = totalPredictions > 0 ? staleOrNA / totalPredictions : null;
+    const winRateOK = totalTradesOK > 0 ? winsOK / totalTradesOK : null;
+    const avgPnlOK = totalTradesOK > 0 ? cumulativePnlOK / totalTradesOK : null;
+    const avgHoldSecondsOK = totalTradesOK > 0 ? sumHoldOK / totalTradesOK : null;
+    const avgAbsExitSlippageMsOK = totalTradesOK > 0 ? sumAbsSlipOK / totalTradesOK : null;
+    const rangeHitRate = rangeHitEligible > 0 ? rangeHitCount / rangeHitEligible : null;
 
     sheetSummary.addRow({ metric: 'days', value: days });
-    sheetSummary.addRow({ metric: 'totalPredictions', value: predictions.length });
-    sheetSummary.addRow({ metric: 'staleCount(NA)', value: staleOrNA });
-    sheetSummary.addRow({ metric: 'judgedCount(TRUE/FALSE/TIE)', value: judgedCount });
+    sheetSummary.addRow({ metric: 'totalPredictions', value: totalPredictions });
+    sheetSummary.addRow({ metric: 'signalRate', value: signalRate ?? '' });
+    sheetSummary.addRow({ metric: 'staleRate', value: staleRate ?? '' });
+    sheetSummary.addRow({ metric: 'judgedPredictions(TRUE/FALSE/TIE)', value: judgedCount });
     sheetSummary.addRow({ metric: 'trueCount', value: trueCount });
     sheetSummary.addRow({ metric: 'falseCount', value: falseCount });
     sheetSummary.addRow({ metric: 'tieCount', value: tieCount });
     sheetSummary.addRow({ metric: 'accuracy(excl NA & TIE)', value: accuracy ?? '' });
-    sheetSummary.addRow({ metric: 'signalRate(UP/DOWN)', value: signalRate ?? '' });
-    sheetSummary.addRow({ metric: 'tradesCount', value: trades.length });
-    sheetSummary.addRow({ metric: 'winRate', value: winRate ?? '' });
-    sheetSummary.addRow({ metric: 'cumulativePnl', value: cumulativePnl });
-    sheetSummary.addRow({ metric: 'avgPnl', value: avgPnl ?? '' });
-    sheetSummary.addRow({ metric: 'tradesPerDay', value: tradesPerDay ?? '' });
+    sheetSummary.addRow({ metric: 'totalTradesOK', value: totalTradesOK });
+    sheetSummary.addRow({ metric: 'totalTradesLate', value: totalTradesLate });
+    sheetSummary.addRow({ metric: 'winRateOK', value: winRateOK ?? '' });
+    sheetSummary.addRow({ metric: 'cumulativePnlOK', value: cumulativePnlOK });
+    sheetSummary.addRow({ metric: 'avgPnlOK', value: avgPnlOK ?? '' });
+    sheetSummary.addRow({ metric: 'avgHoldSecondsOK', value: avgHoldSecondsOK ?? '' });
+    sheetSummary.addRow({ metric: 'avgAbsExitSlippageMsOK', value: avgAbsExitSlippageMsOK ?? '' });
+    sheetSummary.addRow({ metric: 'rangeHitRate', value: rangeHitRate ?? '' });
 
     const buf = (await wb.xlsx.writeBuffer()) as ArrayBuffer;
     const nodeBuf = Buffer.from(buf);

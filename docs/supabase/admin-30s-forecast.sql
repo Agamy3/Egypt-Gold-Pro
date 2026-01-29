@@ -105,3 +105,37 @@ create policy "admins can write trades"
   using (exists(select 1 from public.admin_users au where au.user_id = auth.uid()))
   with check (exists(select 1 from public.admin_users au where au.user_id = auth.uid()));
 
+-- ============================================
+-- UPGRADES (safe ALTERs; run anytime)
+-- ============================================
+
+-- 1) Add numeric prediction + evaluation columns to admin_30s_predictions
+alter table public.admin_30s_predictions
+  add column if not exists predicted_price numeric,
+  add column if not exists predicted_delta numeric,
+  add column if not exists confidence numeric,
+  add column if not exists expected_low numeric,
+  add column if not exists expected_high numeric,
+  add column if not exists price_error numeric,
+  add column if not exists range_hit boolean;
+
+-- 2) Add strict 30s trade timing columns to admin_30s_trades
+alter table public.admin_30s_trades
+  add column if not exists due_at timestamptz,
+  add column if not exists exit_slippage_ms int,
+  add column if not exists hold_seconds numeric,
+  add column if not exists trade_status text;
+
+-- Add check constraint for trade_status if missing
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'admin_30s_trades_trade_status_chk'
+  ) then
+    alter table public.admin_30s_trades
+      add constraint admin_30s_trades_trade_status_chk
+      check (trade_status in ('OK','LATE'));
+  end if;
+end $$;
+

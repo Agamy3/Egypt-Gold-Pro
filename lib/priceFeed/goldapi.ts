@@ -123,6 +123,7 @@ export async function fetchGoldApiQuote(): Promise<Quote> {
         ask: ask ?? undefined,
         timestampMs: tsMs,
         provider: 'goldapi',
+        missingTimestamp: false,
         raw: json,
       };
     }

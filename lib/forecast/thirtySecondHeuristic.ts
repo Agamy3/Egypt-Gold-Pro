@@ -13,7 +13,7 @@
 export type ThirtySecondDirection = 'UP' | 'DOWN' | 'STALE';
 
 export type ThirtySecondHeuristicMeta = {
-  delta: number;
+  deltaObserved: number;
   volMedian: number;
   threshold: number;
   absoluteMin: number;
@@ -23,33 +23,52 @@ export type ThirtySecondHeuristicMeta = {
   quoteTimestampMs: number;
   staleAgeSec: number;
   provider: 'goldapi' | 'gold_api_free';
+  windowSeconds: number;
+  referenceMissing: boolean;
+  missingTimestamp: boolean;
 };
 
 export function decideDirection(input: {
   isStale: boolean;
-  pNow: number;
-  p30sAgo: number;
+  p0: number;
+  p30sAgoPrice: number;
   p30sAgoAtMs: number;
   recentPrices: number[];
   nowTsMs: number;
   quoteTimestampMs: number;
   provider: 'goldapi' | 'gold_api_free';
-  referenceMissing?: boolean;
+  referenceMissing: boolean;
+  missingTimestamp: boolean;
   absoluteMin?: number; // default 0.10
   k?: number; // default 0.8
-}): { direction: ThirtySecondDirection; meta: ThirtySecondHeuristicMeta } {
+}): {
+  direction: ThirtySecondDirection;
+  predicted_delta: number | null;
+  predicted_price: number | null;
+  confidence: number | null;
+  expected_low: number | null;
+  expected_high: number | null;
+  meta: ThirtySecondHeuristicMeta;
+} {
   const absoluteMin = input.absoluteMin ?? 0.1;
   const k = input.k ?? 0.8;
+  const windowSeconds = 60;
 
   const staleAgeSec = Math.max(0, (input.nowTsMs - input.quoteTimestampMs) / 1000);
   const p30sAgoAgeSec = Math.max(0, (input.nowTsMs - input.p30sAgoAtMs) / 1000);
   const referenceMissing = Boolean(input.referenceMissing);
+  const missingTimestamp = Boolean(input.missingTimestamp);
 
   if (input.isStale) {
     return {
       direction: 'STALE',
+      predicted_delta: null,
+      predicted_price: null,
+      confidence: null,
+      expected_low: null,
+      expected_high: null,
       meta: {
-        delta: 0,
+        deltaObserved: 0,
         volMedian: 0,
         threshold: absoluteMin,
         absoluteMin,
@@ -59,6 +78,9 @@ export function decideDirection(input: {
         quoteTimestampMs: input.quoteTimestampMs,
         staleAgeSec,
         provider: input.provider,
+        windowSeconds,
+        referenceMissing,
+        missingTimestamp,
       },
     };
   }
@@ -66,8 +88,13 @@ export function decideDirection(input: {
   if (referenceMissing) {
     return {
       direction: 'STALE',
+      predicted_delta: null,
+      predicted_price: null,
+      confidence: null,
+      expected_low: null,
+      expected_high: null,
       meta: {
-        delta: 0,
+        deltaObserved: 0,
         volMedian: 0,
         threshold: absoluteMin,
         absoluteMin,
@@ -77,6 +104,9 @@ export function decideDirection(input: {
         quoteTimestampMs: input.quoteTimestampMs,
         staleAgeSec,
         provider: input.provider,
+        windowSeconds,
+        referenceMissing,
+        missingTimestamp,
       },
     };
   }
@@ -97,10 +127,10 @@ export function decideDirection(input: {
         : diffs[Math.floor(diffs.length / 2)];
 
   const threshold = Math.max(absoluteMin, k * volMedian);
-  const delta = input.pNow - input.p30sAgo;
+  const deltaObserved = input.p0 - input.p30sAgoPrice;
 
   const meta: ThirtySecondHeuristicMeta = {
-    delta,
+    deltaObserved,
     volMedian,
     threshold,
     absoluteMin,
@@ -110,11 +140,40 @@ export function decideDirection(input: {
     quoteTimestampMs: input.quoteTimestampMs,
     staleAgeSec,
     provider: input.provider,
+    windowSeconds,
+    referenceMissing,
+    missingTimestamp,
   };
 
-  if (Math.abs(delta) < threshold) {
-    return { direction: 'STALE', meta };
+  if (Math.abs(deltaObserved) < threshold) {
+    return {
+      direction: 'STALE',
+      predicted_delta: null,
+      predicted_price: null,
+      confidence: null,
+      expected_low: null,
+      expected_high: null,
+      meta,
+    };
   }
-  return { direction: delta > 0 ? 'UP' : 'DOWN', meta };
+
+  // Numeric prediction block
+  const strength = Math.max(0, Math.min(2, Math.abs(deltaObserved) / Math.max(threshold, 1e-9)));
+  const confidence = Math.max(0, Math.min(1, strength / 2));
+  const predicted_delta = Math.max(-2 * threshold, Math.min(2 * threshold, deltaObserved * 0.8));
+  const predicted_price = input.p0 + predicted_delta;
+  const band = Math.max(threshold, volMedian);
+  const expected_low = predicted_price - band;
+  const expected_high = predicted_price + band;
+
+  return {
+    direction: deltaObserved > 0 ? 'UP' : 'DOWN',
+    predicted_delta,
+    predicted_price,
+    confidence,
+    expected_low,
+    expected_high,
+    meta,
+  };
 }
 

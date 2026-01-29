@@ -7,5 +7,6 @@ export type Quote = {
   ask?: number;
   provider: 'goldapi' | 'gold_api_free';
   raw?: unknown;
+  missingTimestamp?: boolean;
 };
 
