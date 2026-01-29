@@ -4,12 +4,10 @@ import { getServerClient } from '@/lib/supabase/server';
 import { runMinuteForecastBot } from '@/lib/adminForecastBot/minuteForecastBot';
 import { getProvidedCronSecret, isCronSecretValid } from '@/lib/cron/cronSecret';
 import { tryAdvisoryLock, advisoryUnlock } from '@/lib/db/advisoryLock';
-import { floorToUtcMinute, nextUtcMinuteBoundary } from '@/lib/time/minuteBoundary';
-import { sleepMs } from '@/lib/time/sleep';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-export const maxDuration = 90;
+export const maxDuration = 120;
 
 function withNoStoreHeaders(res: NextResponse) {
   res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -20,6 +18,29 @@ function withNoStoreHeaders(res: NextResponse) {
 
 // Stable bigint lock key for pg advisory lock (documented in SQL docs).
 const BOT_LOCK_KEY = 913_220_177;
+
+function floorToUtcMinute(d: Date): Date {
+  return new Date(
+    Date.UTC(
+      d.getUTCFullYear(),
+      d.getUTCMonth(),
+      d.getUTCDate(),
+      d.getUTCHours(),
+      d.getUTCMinutes(),
+      0,
+      0
+    )
+  );
+}
+
+function nextUtcMinuteBoundary(d: Date): Date {
+  const floored = floorToUtcMinute(d);
+  return new Date(floored.getTime() + 60_000);
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function handler(req: NextRequest) {
   const provided = getProvidedCronSecret(req);
@@ -41,51 +62,35 @@ async function handler(req: NextRequest) {
     );
   }
 
-  let waitedMs = 0;
   try {
+    // ============================
+    // SLEEP FIRST (after auth+lock)
+    // ============================
     const arrivedAt = new Date();
+    const nextBoundary = nextUtcMinuteBoundary(arrivedAt);
+    const waitMs = nextBoundary.getTime() - arrivedAt.getTime();
 
-    // Always align forward to the NEXT UTC minute boundary unless we are basically on it already.
-    let nextBoundary = nextUtcMinuteBoundary(arrivedAt);
-    let waitMs = nextBoundary.getTime() - arrivedAt.getTime();
-
-    // If something odd happens (shouldn't), recompute using "now".
-    if (waitMs < 0) {
-      const n = new Date();
-      nextBoundary = nextUtcMinuteBoundary(n);
-      waitMs = nextBoundary.getTime() - n.getTime();
-    }
-
-    // Sleep-to-boundary (can be up to ~60s). Cap each sleep chunk, but ensure we reach :00.
-    if (waitMs > 10) {
-      // Log once per run (minimal).
-      console.log('[minute-bot] align sleep', {
+    // Always sleep forward unless already within 250ms of boundary
+    let sleptMs = 0;
+    if (waitMs > 250) {
+      sleptMs = Math.min(waitMs, 55_000);
+      console.log('[minute-bot] will-sleep', {
         arrivedAt: arrivedAt.toISOString(),
         nextBoundary: nextBoundary.toISOString(),
         waitMs,
+        sleptMs,
       });
-
-      let remaining = waitMs;
-      while (remaining > 10) {
-        const chunk = Math.min(remaining, 55_000);
-        waitedMs += chunk;
-        await sleepMs(chunk);
-
-        const after = new Date();
-        const nb = nextUtcMinuteBoundary(after);
-        remaining = nb.getTime() - after.getTime();
-        // If we ended up exactly on the boundary (or very close), stop.
-        if (remaining <= 10) break;
-      }
+      await sleepMs(sleptMs);
     }
 
     const afterSleep = new Date();
     const t0 = floorToUtcMinute(afterSleep);
+    const offsetMs = afterSleep.getTime() - t0.getTime();
+
     console.log('[minute-bot] aligned', {
       afterSleep: afterSleep.toISOString(),
       t0: t0.toISOString(),
-      offsetMs: afterSleep.getTime() - t0.getTime(),
-      waitedMs,
+      offsetMs,
     });
 
     const result = await runMinuteForecastBot({ supabase, now: afterSleep, create: true });
@@ -93,8 +98,14 @@ async function handler(req: NextRequest) {
 
     const out = {
       ...result,
-      waitedMs,
-      alignedTo: t0.toISOString(),
+      // Proof fields
+      arrivedAt: arrivedAt.toISOString(),
+      nextBoundary: nextBoundary.toISOString(),
+      waitMs,
+      sleptMs,
+      afterSleep: afterSleep.toISOString(),
+      t0: t0.toISOString(),
+      offsetMs,
     };
 
     return withNoStoreHeaders(NextResponse.json(out, { status }));
