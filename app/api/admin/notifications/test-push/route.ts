@@ -130,16 +130,18 @@ export async function POST(request: NextRequest) {
       }
 
       // Use service role for admin queries
-      // subscriptionId might be string or number, try both
+      // subscriptionId from request is string, but DB uses number (BIGSERIAL)
+      // Convert to number for query
       const subIdNum = Number(subscriptionId);
-      const isNumeric = !isNaN(subIdNum) && isFinite(subIdNum);
-      const query = db.supabase
-        .from(tableName)
-        .select('id, user_id, endpoint, p256dh, auth');
+      if (isNaN(subIdNum) || !isFinite(subIdNum)) {
+        return NextResponse.json({ ok: false, error: 'Invalid subscriptionId format' }, { status: 400 });
+      }
       
-      const { data, error } = await (isNumeric 
-        ? query.eq('id', subIdNum).maybeSingle()
-        : query.eq('id', subscriptionId).maybeSingle());
+      const { data, error } = await db.supabase
+        .from(tableName)
+        .select('id, user_id, endpoint, p256dh, auth')
+        .eq('id', subIdNum)
+        .maybeSingle();
 
       if (error) {
         console.error('[TEST-PUSH] Error fetching subscription:', error);
