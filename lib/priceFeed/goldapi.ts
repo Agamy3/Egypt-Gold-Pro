@@ -10,15 +10,8 @@
 
 import 'server-only';
 
-export type GoldQuote = {
-  price: number;
-  bid?: number;
-  ask?: number;
-  timestamp: number; // epoch ms
-  currency: 'USD';
-  metal: 'XAU';
-  source: 'goldapi';
-};
+import type { Quote } from './types';
+import { asFiniteNumber, normalizeTimestampMs } from './normalize';
 
 function normalizeBaseUrl(raw: string) {
   const s = raw.trim().replace(/\/+$/, '');
@@ -30,19 +23,7 @@ function joinUrl(base: string, path: string) {
   return `${base}${path}`;
 }
 
-function toMs(ts: unknown): number | null {
-  const n = typeof ts === 'number' ? ts : Number(ts);
-  if (!isFinite(n) || n <= 0) return null;
-  // Heuristic: seconds if < 1e12
-  return n < 1e12 ? Math.floor(n * 1000) : Math.floor(n);
-}
-
-function asNum(x: unknown): number | null {
-  const n = typeof x === 'number' ? x : Number(x);
-  return isFinite(n) ? n : null;
-}
-
-export async function fetchGoldApiQuote(): Promise<GoldQuote> {
+export async function fetchGoldApiQuote(): Promise<Quote> {
   const baseUrl = normalizeBaseUrl(process.env.GOLDAPI_BASE_URL ?? 'https://app.goldapi.net');
   const apiKey = (process.env.GOLDAPI_API_KEY ?? '').trim();
   if (!apiKey) {
@@ -96,8 +77,10 @@ export async function fetchGoldApiQuote(): Promise<GoldQuote> {
         continue;
       }
 
-      const price = asNum(json?.price);
-      const tsMs = toMs(json?.timestamp ?? json?.timestamp_ms ?? json?.ts ?? json?.time);
+      const price = asFiniteNumber(json?.price);
+      const tsMs =
+        normalizeTimestampMs(json?.timestamp ?? json?.timestamp_ms ?? json?.ts ?? json?.time ?? json?.updatedAt) ??
+        null;
       if (price === null || price <= 0) {
         lastErr = `GoldAPI response missing valid price @ ${url}`;
         continue;
@@ -107,17 +90,16 @@ export async function fetchGoldApiQuote(): Promise<GoldQuote> {
         continue;
       }
 
-      const bid = asNum(json?.bid);
-      const ask = asNum(json?.ask);
+      const bid = asFiniteNumber(json?.bid);
+      const ask = asFiniteNumber(json?.ask);
 
       return {
         price,
         bid: bid ?? undefined,
         ask: ask ?? undefined,
-        timestamp: tsMs,
-        currency: 'USD',
-        metal: 'XAU',
-        source: 'goldapi',
+        timestampMs: tsMs,
+        provider: 'goldapi',
+        raw: json,
       };
     }
 

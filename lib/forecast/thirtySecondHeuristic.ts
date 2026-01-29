@@ -14,7 +14,7 @@ export type ThirtySecondDirection = 'UP' | 'DOWN' | 'STALE';
 
 export type ThirtySecondHeuristicMeta = {
   delta: number;
-  volatility: number;
+  volMedian: number;
   threshold: number;
   absoluteMin: number;
   k: number;
@@ -22,6 +22,7 @@ export type ThirtySecondHeuristicMeta = {
   p30sAgoAgeSec: number;
   quoteTimestampMs: number;
   staleAgeSec: number;
+  provider: 'goldapi' | 'gold_api_free';
 };
 
 export function decideDirection(input: {
@@ -32,21 +33,24 @@ export function decideDirection(input: {
   recentPrices: number[];
   nowTsMs: number;
   quoteTimestampMs: number;
+  provider: 'goldapi' | 'gold_api_free';
+  referenceMissing?: boolean;
   absoluteMin?: number; // default 0.10
-  k?: number; // default 1.5
+  k?: number; // default 0.8
 }): { direction: ThirtySecondDirection; meta: ThirtySecondHeuristicMeta } {
   const absoluteMin = input.absoluteMin ?? 0.1;
-  const k = input.k ?? 1.5;
+  const k = input.k ?? 0.8;
 
   const staleAgeSec = Math.max(0, (input.nowTsMs - input.quoteTimestampMs) / 1000);
   const p30sAgoAgeSec = Math.max(0, (input.nowTsMs - input.p30sAgoAtMs) / 1000);
+  const referenceMissing = Boolean(input.referenceMissing);
 
   if (input.isStale) {
     return {
       direction: 'STALE',
       meta: {
         delta: 0,
-        volatility: 0,
+        volMedian: 0,
         threshold: absoluteMin,
         absoluteMin,
         k,
@@ -54,31 +58,50 @@ export function decideDirection(input: {
         p30sAgoAgeSec,
         quoteTimestampMs: input.quoteTimestampMs,
         staleAgeSec,
+        provider: input.provider,
+      },
+    };
+  }
+
+  if (referenceMissing) {
+    return {
+      direction: 'STALE',
+      meta: {
+        delta: 0,
+        volMedian: 0,
+        threshold: absoluteMin,
+        absoluteMin,
+        k,
+        recentCount: input.recentPrices.length,
+        p30sAgoAgeSec,
+        quoteTimestampMs: input.quoteTimestampMs,
+        staleAgeSec,
+        provider: input.provider,
       },
     };
   }
 
   const prices = (input.recentPrices || []).map((n) => Number(n)).filter((n) => isFinite(n) && n > 0);
-  let volatility = 0;
-  if (prices.length >= 3) {
-    let sum = 0;
-    let cnt = 0;
-    for (let i = 1; i < prices.length; i++) {
-      const dv = Math.abs(prices[i] - prices[i - 1]);
-      if (isFinite(dv)) {
-        sum += dv;
-        cnt += 1;
-      }
-    }
-    volatility = cnt > 0 ? sum / cnt : 0;
+  // Volatility: median(abs(diff consecutive)) (robust).
+  const diffs: number[] = [];
+  for (let i = 1; i < prices.length; i++) {
+    const dv = Math.abs(prices[i] - prices[i - 1]);
+    if (isFinite(dv)) diffs.push(dv);
   }
+  diffs.sort((a, b) => a - b);
+  const volMedian =
+    diffs.length < 3
+      ? 0
+      : diffs.length % 2 === 0
+        ? (diffs[diffs.length / 2 - 1] + diffs[diffs.length / 2]) / 2
+        : diffs[Math.floor(diffs.length / 2)];
 
-  const threshold = Math.max(absoluteMin, k * volatility);
+  const threshold = Math.max(absoluteMin, k * volMedian);
   const delta = input.pNow - input.p30sAgo;
 
   const meta: ThirtySecondHeuristicMeta = {
     delta,
-    volatility,
+    volMedian,
     threshold,
     absoluteMin,
     k,
@@ -86,6 +109,7 @@ export function decideDirection(input: {
     p30sAgoAgeSec,
     quoteTimestampMs: input.quoteTimestampMs,
     staleAgeSec,
+    provider: input.provider,
   };
 
   if (Math.abs(delta) < threshold) {
