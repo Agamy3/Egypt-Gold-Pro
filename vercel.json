@@ -5,6 +5,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/minute-forecast-bot",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/notify",
       "schedule": "*/5 * * * *"
     },

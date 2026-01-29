@@ -41,6 +41,7 @@ export function decideDirection(input: {
   missingTimestamp: boolean;
   absoluteMin?: number; // default 0.10
   k?: number; // default 0.8
+  windowSeconds?: number; // default 60
 }): {
   direction: ThirtySecondDirection;
   predicted_delta: number | null;
@@ -52,7 +53,7 @@ export function decideDirection(input: {
 } {
   const absoluteMin = input.absoluteMin ?? 0.1;
   const k = input.k ?? 0.8;
-  const windowSeconds = 60;
+  const windowSeconds = input.windowSeconds ?? 60;
 
   const staleAgeSec = Math.max(0, (input.nowTsMs - input.quoteTimestampMs) / 1000);
   const p30sAgoAgeSec = Math.max(0, (input.nowTsMs - input.p30sAgoAtMs) / 1000);

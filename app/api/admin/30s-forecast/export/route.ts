@@ -60,23 +60,6 @@ export async function GET(request: Request) {
       if (!tErr && t) trades = t as any[];
     }
 
-    // Summary stats (accuracy excludes NA and excludes TIE)
-    let trueCount = 0;
-    let falseCount = 0;
-    let tieCount = 0;
-    let naCount = 0;
-
-    for (const p of predictions) {
-      const r = p.result as string | null;
-      if (r === 'TRUE') trueCount += 1;
-      else if (r === 'FALSE') falseCount += 1;
-      else if (r === 'TIE') tieCount += 1;
-      else if (r === 'NA') naCount += 1;
-    }
-
-    const denom = trueCount + falseCount; // exclude ties & NA
-    const accuracy = denom > 0 ? trueCount / denom : null;
-
     // Keep legacy aggregates, but KPIs for export will be based on OK trades only (computed below).
     const cumulativePnl = trades.reduce((sum, t) => sum + (asNum(t.pnl_usd) ?? 0), 0);
     const avgPnl = trades.length > 0 ? cumulativePnl / trades.length : null;
@@ -93,6 +76,7 @@ export async function GET(request: Request) {
       { header: 'p0_at', key: 'p0_at', width: 24 },
       { header: 'due_at', key: 'due_at', width: 24 },
       { header: 'validated_at', key: 'validated_at', width: 24 },
+      { header: 'horizon_seconds', key: 'horizon_seconds', width: 14 },
       { header: 'predicted_direction', key: 'predicted_direction', width: 12 },
       { header: 'p0', key: 'p0', width: 12 },
       { header: 'p1', key: 'p1', width: 12 },
@@ -114,11 +98,21 @@ export async function GET(request: Request) {
     ];
 
     const totalPredictions = predictions.length;
+    const tradeByPredId = new Map<string, any>();
+    for (const t of trades) {
+      const pid = String(t.prediction_id || '');
+      if (pid) tradeByPredId.set(pid, t);
+    }
+
     let staleOrNA = 0;
     let judgedCount = 0;
     let signalCount = 0;
     let rangeHitCount = 0;
     let rangeHitEligible = 0;
+    let trueCount = 0;
+    let falseCount = 0;
+    let tieCount = 0;
+    let naCount = 0;
 
     for (const p of predictions) {
       const meta = (p.meta || {}) as any;
@@ -129,9 +123,21 @@ export async function GET(request: Request) {
       // Defensive: export NA for STALE even if DB result isn't set yet.
       const resultExport = predicted === 'STALE' ? (p.result ?? 'NA') : (p.result ?? '');
       const isNA = resultExport === 'NA' || predicted === 'STALE';
-      if (isNA) staleOrNA += 1;
+      if (isNA) {
+        staleOrNA += 1;
+        naCount += 1;
+      }
+
+      const trade = tradeByPredId.get(String(p.id));
+      const isLate = trade?.trade_status === 'LATE';
+
       const isJudged = resultExport === 'TRUE' || resultExport === 'FALSE' || resultExport === 'TIE';
-      if (isJudged) judgedCount += 1;
+      if (isJudged && !isLate) {
+        judgedCount += 1;
+        if (resultExport === 'TRUE') trueCount += 1;
+        else if (resultExport === 'FALSE') falseCount += 1;
+        else if (resultExport === 'TIE') tieCount += 1;
+      }
 
       const hasBounds = p.expected_low != null && p.expected_high != null;
       if (!isNA && p.validated_at && hasBounds) {
@@ -143,6 +149,7 @@ export async function GET(request: Request) {
         p0_at: cellText(p.p0_at),
         due_at: cellText(p.due_at),
         validated_at: cellText(p.validated_at),
+        horizon_seconds: cellNum(p.horizon_seconds),
         predicted_direction: predicted,
         p0: cellNum(p.p0),
         p1: cellNum(p.p1),
@@ -225,6 +232,8 @@ export async function GET(request: Request) {
     ];
     const signalRate = totalPredictions > 0 ? signalCount / totalPredictions : null;
     const staleRate = totalPredictions > 0 ? staleOrNA / totalPredictions : null;
+    const denomAccuracy = trueCount + falseCount; // exclude ties & NA, and exclude LATE via counting above
+    const accuracy = denomAccuracy > 0 ? trueCount / denomAccuracy : null;
     const winRateOK = totalTradesOK > 0 ? winsOK / totalTradesOK : null;
     const avgPnlOK = totalTradesOK > 0 ? cumulativePnlOK / totalTradesOK : null;
     const avgHoldSecondsOK = totalTradesOK > 0 ? sumHoldOK / totalTradesOK : null;

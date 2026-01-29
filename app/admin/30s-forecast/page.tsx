@@ -19,7 +19,7 @@ export default async function AdminThirtySecondForecastPage() {
   if (!isAdmin) {
     return (
       <main className="flex-1 min-w-0">
-        <Header title="Admin 30s Global Ounce Forecast" subtitle="Forbidden" />
+        <Header title="Admin 1m Global Ounce Forecast" subtitle="Forbidden" />
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="rounded-xl border border-red-800 bg-red-950/40 p-5 text-red-200">
             <div className="text-lg font-semibold">403 — Forbidden</div>
@@ -34,12 +34,10 @@ export default async function AdminThirtySecondForecastPage() {
 
   return (
     <main className="flex-1 min-w-0">
-      <Header title="Admin 30s Global Ounce Forecast" subtitle="Rolling 30-second predictions + validation + $10 notional trade simulation" />
+      <Header title="Admin 1m Global Ounce Forecast" subtitle="Server-based minute bot (head-of-minute) + $10 notional paper trades" />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <ThirtySecondForecastPanel />
-        <div className="mt-6 text-xs text-gray-500">
-          Note: this loop runs only while this page is open (client calls the server tick endpoint every 30s).
-        </div>
+        <div className="mt-6 text-xs text-gray-500">Note: this bot is server-driven via Vercel Cron (runs every minute).</div>
       </div>
     </main>
   );

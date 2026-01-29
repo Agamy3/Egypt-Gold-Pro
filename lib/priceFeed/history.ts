@@ -85,3 +85,38 @@ export async function getNearestPriceAroundTime(
   return { ok: true, price: best.v, atIso: best.iso, atMs: best.t };
 }
 
+/**
+ * Get the most recent prediction price at-or-before a target time.
+ * Used for strict "p60sAgo reference" selection for the minute-bot.
+ */
+export async function getLatestPriceAtOrBeforeTime(
+  supabase: SupabaseClient,
+  targetMs: number,
+  opts?: { source?: string }
+): Promise<{ ok: true; price: number; atIso: string; atMs: number } | { ok: false; error: string }> {
+  const source = opts?.source ?? 'goldapi_xauusd';
+  const targetIso = new Date(targetMs).toISOString();
+
+  const { data, error } = await supabase
+    .from('admin_30s_predictions')
+    .select('p0, p0_at')
+    .eq('source', source)
+    .lte('p0_at', targetIso)
+    .order('p0_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: 'No reference price found' };
+
+  const price = Number((data as any).p0);
+  const atIso = String((data as any).p0_at);
+  const atMs = Date.parse(atIso);
+
+  if (!isFinite(price) || price <= 0 || !isFinite(atMs) || !atIso) {
+    return { ok: false, error: 'Invalid reference price row' };
+  }
+
+  return { ok: true, price, atIso, atMs };
+}
+

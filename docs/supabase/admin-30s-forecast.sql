@@ -139,3 +139,14 @@ begin
   end if;
 end $$;
 
+-- ============================================
+-- CLEAR BOT DATA (ADMIN-ONLY; run manually)
+-- ============================================
+-- WARNING: This deletes ALL bot history.
+-- Prefer running in Supabase SQL editor as a one-off maintenance action.
+--
+-- If FK constraints complain, use CASCADE form:
+--   truncate table public.admin_30s_predictions, public.admin_30s_trades restart identity cascade;
+truncate table public.admin_30s_trades;
+truncate table public.admin_30s_predictions;
+
