@@ -71,7 +71,7 @@ export default function MobileDrawer() {
   }
 
   return (
-    <div className="lg:hidden">
+    <div className="md:hidden">
       <button
         type="button"
         onClick={() => setOpen(true)}

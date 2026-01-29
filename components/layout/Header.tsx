@@ -65,7 +65,7 @@ export default function Header({ title, subtitle, showLogo = true }: HeaderProps
             <button
               type="button"
               onClick={toggleSidebar}
-              className="flex items-center justify-center p-2 rounded-md text-gray-300 hover:bg-gray-800 transition-colors"
+              className="hidden md:inline-flex items-center justify-center p-2 rounded-md text-gray-300 hover:bg-gray-800 transition-colors"
               aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               title={sidebarCollapsed ? (lang === 'ar' ? 'توسيع القائمة' : 'Expand sidebar') : (lang === 'ar' ? 'طي القائمة' : 'Collapse sidebar')}
             >

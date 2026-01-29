@@ -83,9 +83,11 @@ export default function RootLayout({
       <body className="touch-pan-y bg-black">
         <LanguageProvider>
           <div className="min-h-screen flex bg-black">
-            <Sidebar />
+            <aside className="hidden md:block">
+              <Sidebar />
+            </aside>
             <div className="flex-1 flex flex-col min-w-0">
-              <div className="px-4 pt-3 flex items-center justify-between lg:hidden">
+              <div className="px-4 pt-3 flex items-center justify-between md:hidden">
                 <MobileDrawer />
               </div>
               {children}

@@ -172,7 +172,7 @@ export default function Sidebar() {
   return (
     <aside 
       className={classNames(
-        'hidden lg:flex lg:flex-col bg-black border-r border-gray-900 transition-all duration-300',
+        'hidden md:flex md:flex-col bg-black border-r border-gray-900 transition-all duration-300',
         'w-56 xl:w-64'
       )}
     >
