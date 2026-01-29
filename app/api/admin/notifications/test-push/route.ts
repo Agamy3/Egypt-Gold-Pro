@@ -265,7 +265,8 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    if (error instanceof Error && 'status' in error) {
+    // Check if it's an AdminAuthError
+    if (error && typeof error === 'object' && 'status' in error) {
       return adminErrorToResponse(error);
     }
     console.error('[TEST-PUSH] Error:', error);
