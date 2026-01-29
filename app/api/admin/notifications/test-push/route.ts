@@ -206,11 +206,9 @@ export async function POST(request: NextRequest) {
               channel: 'webpush',
               status: 'sent',
               created_at: new Date().toISOString(),
-            }).catch(() => {
-              // Table might not exist, ignore
             });
           } catch {
-            // Ignore
+            // Table might not exist, ignore
           }
         } else {
           failed++;
@@ -238,11 +236,9 @@ export async function POST(request: NextRequest) {
               status: 'failed',
               error: errorMsg,
               created_at: new Date().toISOString(),
-            }).catch(() => {
-              // Table might not exist, ignore
             });
           } catch {
-            // Ignore
+            // Table might not exist, ignore
           }
         }
       } catch (error) {
