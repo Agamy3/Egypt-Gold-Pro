@@ -68,6 +68,9 @@ function NotificationsContent() {
   const [showAddRule, setShowAddRule] = useState(false);
   const [editingRule, setEditingRule] = useState<NotificationRule | null>(null);
 
+  // Local pct change rule (v1 rules table)
+  const [localPctEnabled, setLocalPctEnabled] = useState(false);
+
   // In-app notifications state
   const [inAppNotifications, setInAppNotifications] = useState<InAppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -92,9 +95,55 @@ function NotificationsContent() {
     fetchProfile();
     fetchWatchlist();
     fetchRules();
+    fetchLocalPctRule();
     fetchInAppNotifications();
     startActivityPing();
   }, []);
+
+  const fetchLocalPctRule = async () => {
+    try {
+      const res = await fetch('/api/notifications/local-pct-change-rule', { cache: 'no-store' });
+      if (!res.ok) return;
+      const json = (await res.json()) as any;
+      if (json?.ok) setLocalPctEnabled(Boolean(json.enabled));
+    } catch {
+      // ignore
+    }
+  };
+
+  const setLocalPctRuleEnabled = async (enabled: boolean) => {
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const params = {
+        thresholdPct: 0.0005,
+        windowSeconds: 300,
+        minAgeSeconds: 60,
+        cooldownSeconds: 600,
+        country: 'EG',
+        karat: 24,
+      };
+
+      const res = await fetch('/api/notifications/local-pct-change-rule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, params }),
+      });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Failed to update rule');
+      setLocalPctEnabled(enabled);
+      setSuccess(
+        enabled
+          ? (lang === 'ar' ? 'تم تفعيل تنبيه تغير السعر المحلي 0.05%' : 'Enabled local 0.05% move alerts')
+          : (lang === 'ar' ? 'تم إيقاف تنبيه تغير السعر المحلي 0.05%' : 'Disabled local 0.05% move alerts')
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update rule');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const checkPWAStatus = () => {
     if (typeof window === 'undefined') return;
@@ -827,6 +876,34 @@ function NotificationsContent() {
               >
                 {lang === 'ar' ? '+ إضافة قاعدة' : '+ Add Rule'}
               </button>
+            </div>
+
+            {/* Quick toggle: local 0.05% move push alerts (v1 rules table) */}
+            <div className="mb-6 rounded-lg border border-gray-800 bg-gray-950 p-4">
+              <div className={`flex items-start justify-between gap-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-gray-100">
+                    {lang === 'ar'
+                      ? 'تنبيه عند تغير السعر المحلي بنسبة 0.05%'
+                      : 'Notify me when local price changes by 0.05%'}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-400">
+                    {lang === 'ar'
+                      ? 'يتطلب تفعيل إشعارات الدفع. حد أقصى إشعار كل 10 دقائق.'
+                      : 'Requires push enabled. Max 1 notification per 10 minutes.'}
+                  </div>
+                </div>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={localPctEnabled}
+                    disabled={saving}
+                    onChange={(e) => void setLocalPctRuleEnabled(e.target.checked)}
+                    className="w-5 h-5 text-blue-600 bg-gray-800 border-gray-700 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-300">{localPctEnabled ? (lang === 'ar' ? 'مفعل' : 'On') : (lang === 'ar' ? 'معطل' : 'Off')}</span>
+                </label>
+              </div>
             </div>
 
             {rules.length === 0 ? (

@@ -13,8 +13,10 @@ import { getMultiCurrencyRates, convertMoney, getCountryCurrency } from '@/lib/f
 import { sendEmail } from '@/lib/email/mailer';
 import { formatNotificationEmail } from '@/lib/email';
 import { sendPushNotification } from '@/lib/push';
+import { getProvidedCronSecret, isCronSecretValid } from '@/lib/cron/cronSecret';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
@@ -22,6 +24,8 @@ type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
 interface NotificationRule {
   id: number;
   user_id: string;
+  rule_type?: string;
+  params?: any;
   country: Country;
   karat: number;
   side: 'buy' | 'sell';
@@ -200,13 +204,201 @@ async function evaluateRule(
   };
 }
 
+function asNum(x: unknown): number | null {
+  const n = typeof x === 'number' ? x : Number(x);
+  return isFinite(n) ? n : null;
+}
+
+async function getLocalPctChangePoints(input: {
+  country: Country;
+  karat: number;
+  windowSeconds: number;
+  minAgeSeconds: number;
+}): Promise<
+  | { ok: true; latest: { price: number; atIso: string; trusted: boolean }; prev: { price: number; atIso: string; trusted: boolean } }
+  | { ok: false; error: string }
+> {
+  const supabase = getServerClient();
+  const country = input.country;
+  const karat = input.karat;
+
+  for (const trusted of [true, false] as const) {
+    const { data: latestRow, error: latestErr } = await supabase
+      .from('market_snapshots_norm')
+      .select('price, created_at, trusted')
+      .eq('country', country)
+      .eq('karat', karat)
+      .eq('trusted', trusted)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestErr) return { ok: false, error: latestErr.message };
+    if (!latestRow) continue;
+
+    const latestPrice = asNum((latestRow as any).price);
+    const latestAt = String((latestRow as any).created_at || '');
+    if (latestPrice == null || latestPrice <= 0 || !latestAt) continue;
+
+    const latestAtMs = Date.parse(latestAt);
+    const minAtIso = new Date(latestAtMs - input.windowSeconds * 1000).toISOString();
+    const maxAtIso = new Date(latestAtMs - input.minAgeSeconds * 1000).toISOString();
+
+    const { data: prevRow, error: prevErr } = await supabase
+      .from('market_snapshots_norm')
+      .select('price, created_at, trusted')
+      .eq('country', country)
+      .eq('karat', karat)
+      .eq('trusted', trusted)
+      .gte('created_at', minAtIso)
+      .lte('created_at', maxAtIso)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (prevErr) return { ok: false, error: prevErr.message };
+    if (!prevRow) continue;
+
+    const prevPrice = asNum((prevRow as any).price);
+    const prevAt = String((prevRow as any).created_at || '');
+    if (prevPrice == null || prevPrice <= 0 || !prevAt) continue;
+
+    return {
+      ok: true,
+      latest: { price: latestPrice, atIso: latestAt, trusted: Boolean((latestRow as any).trusted) },
+      prev: { price: prevPrice, atIso: prevAt, trusted: Boolean((prevRow as any).trusted) },
+    };
+  }
+
+  return { ok: false, error: 'No suitable local price points found' };
+}
+
+async function maybeSendLocalPctChange(rule: NotificationRule): Promise<{ triggered: boolean; sent: boolean; error?: string }> {
+  const supabaseAdmin = getServerClient();
+  const params = (rule.params || {}) as any;
+
+  const thresholdPct = asNum(params.thresholdPct) ?? 0.0005;
+  const windowSeconds = Math.max(60, Math.min(3600, Math.floor(asNum(params.windowSeconds) ?? 300)));
+  const minAgeSeconds = Math.max(10, Math.min(windowSeconds, Math.floor(asNum(params.minAgeSeconds) ?? 60)));
+  const cooldownSeconds = Math.max(60, Math.min(24 * 3600, Math.floor(asNum(params.cooldownSeconds) ?? 600)));
+  const karat = Math.floor(asNum(params.karat) ?? rule.karat ?? 24);
+
+  // Country: prefer user profile preferred_country, else params, else EG
+  let country: Country = 'EG';
+  const { data: profile } = await supabaseAdmin
+    .from('user_profiles')
+    .select('preferred_country')
+    .eq('id', rule.user_id)
+    .maybeSingle();
+
+  const c = (profile?.preferred_country || params.country || 'EG') as Country;
+  if (['EG', 'AE', 'SA', 'US'].includes(c)) country = c;
+
+  const points = await getLocalPctChangePoints({ country, karat, windowSeconds, minAgeSeconds });
+  if (!points.ok) return { triggered: false, sent: false, error: points.error };
+
+  const pct = Math.abs((points.latest.price - points.prev.price) / points.prev.price);
+  if (!(pct >= thresholdPct)) return { triggered: false, sent: false };
+
+  // Cooldown check: most recent sent delivery within cooldownSeconds
+  const sinceIso = new Date(Date.now() - cooldownSeconds * 1000).toISOString();
+  const { data: recentSent } = await supabaseAdmin
+    .from('notification_deliveries')
+    .select('id')
+    .eq('rule_id', rule.id)
+    .eq('channel', 'push')
+    .eq('status', 'sent')
+    .gte('sent_at', sinceIso)
+    .order('sent_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (recentSent?.id) return { triggered: true, sent: false };
+
+  const dedupeKey = `localpct:${rule.id}:${country}:${karat}:${points.latest.atIso}`;
+  const { data: existing } = await supabaseAdmin
+    .from('notification_deliveries')
+    .select('id')
+    .eq('rule_id', rule.id)
+    .eq('dedupe_key', dedupeKey)
+    .maybeSingle();
+  if (existing?.id) return { triggered: true, sent: false };
+
+  // Reserve delivery row to prevent duplicates across retries
+  const { data: delivery, error: insErr } = await supabaseAdmin
+    .from('notification_deliveries')
+    .insert({
+      rule_id: rule.id,
+      user_id: rule.user_id,
+      channel: 'push',
+      status: 'skipped',
+      dedupe_key: dedupeKey,
+      error: null,
+    })
+    .select('id')
+    .single();
+  if (insErr) return { triggered: true, sent: false, error: insErr.message };
+
+  const direction = points.latest.price > points.prev.price ? 'UP' : 'DOWN';
+  const directionAr = direction === 'UP' ? 'ارتفاع' : 'انخفاض';
+
+  const titleEn = 'Local gold price moved';
+  const bodyEn = `Moved ${direction} by ${(pct * 100).toFixed(2)}% in the last few minutes. (${country} ${karat}k)`;
+  const titleAr = 'تحرك سعر الذهب المحلي';
+  const bodyAr = `تحرك ${directionAr} بنسبة ${(pct * 100).toFixed(2)}% خلال الدقائق الأخيرة. (${country} ${karat}k)`;
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com';
+
+  const { data: subs } = await supabaseAdmin
+    .from('web_push_subscriptions')
+    .select('endpoint, p256dh, auth')
+    .eq('user_id', rule.user_id);
+
+  if (!subs || subs.length === 0) {
+    await supabaseAdmin.from('notification_deliveries').update({ status: 'failed', error: 'No push subscriptions' }).eq('id', delivery.id);
+    return { triggered: true, sent: false, error: 'No push subscriptions' };
+  }
+
+  let sentAny = false;
+  let lastError: string | null = null;
+
+  for (const sub of subs) {
+    const pushRes = await sendPushNotification(
+      { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+      {
+        title: titleEn,
+        body: bodyEn,
+        url: `${siteUrl}/?country=${country}`,
+      }
+    );
+
+    if (pushRes.success) {
+      sentAny = true;
+    } else {
+      lastError = pushRes.error ?? 'push_failed';
+      if (pushRes.error === 'Subscription expired') {
+        await supabaseAdmin.from('web_push_subscriptions').delete().eq('endpoint', sub.endpoint);
+      }
+    }
+  }
+
+  await supabaseAdmin
+    .from('notification_deliveries')
+    .update({
+      status: sentAny ? 'sent' : 'failed',
+      error: sentAny ? null : lastError,
+      sent_at: new Date().toISOString(),
+    })
+    .eq('id', delivery.id);
+
+  return { triggered: true, sent: sentAny, error: sentAny ? undefined : (lastError ?? undefined) };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const secret = searchParams.get('secret');
-    const expectedSecret = process.env.CRON_SECRET;
-
-    if (!expectedSecret || secret !== expectedSecret) {
+    const provided = getProvidedCronSecret(request) || secret;
+    if (!isCronSecretValid(provided)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -230,7 +422,12 @@ export async function GET(request: NextRequest) {
 
     // Group rules by country for efficient market data fetching
     const rulesByCountry = new Map<Country, NotificationRule[]>();
+    const localPctRules: NotificationRule[] = [];
     for (const rule of rules as NotificationRule[]) {
+      if ((rule as any).rule_type === 'local_pct_change') {
+        localPctRules.push(rule);
+        continue;
+      }
       const existing = rulesByCountry.get(rule.country) || [];
       rulesByCountry.set(rule.country, [...existing, rule]);
     }
@@ -242,6 +439,23 @@ export async function GET(request: NextRequest) {
       failed: 0,
       errors: [] as string[],
     };
+
+    // Evaluate local % change rules (per-user local market)
+    for (const rule of localPctRules) {
+      results.evaluated++;
+      try {
+        const r = await maybeSendLocalPctChange(rule);
+        if (r.triggered) results.triggered++;
+        if (r.sent) results.sent++;
+        if (r.triggered && !r.sent && r.error) {
+          results.failed++;
+          results.errors.push(`Rule ${rule.id}: ${r.error}`);
+        }
+      } catch (e) {
+        results.failed++;
+        results.errors.push(`Rule ${rule.id}: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+    }
 
     // Fetch FX rates once
     const fxRates = await getMultiCurrencyRates();

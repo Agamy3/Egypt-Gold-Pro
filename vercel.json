@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/news-ingest",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/notifications-eval",
+      "schedule": "* * * * *"
     }
   ]
 }

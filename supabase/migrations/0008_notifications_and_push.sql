@@ -8,6 +8,8 @@
 CREATE TABLE IF NOT EXISTS public.user_notification_rules (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  rule_type TEXT NOT NULL DEFAULT 'threshold_cross',
+  params JSONB NOT NULL DEFAULT '{}'::jsonb,
   country TEXT NOT NULL CHECK (country IN ('EG', 'AE', 'SA', 'US')),
   karat INTEGER NOT NULL CHECK (karat IN (14, 18, 21, 24)),
   side TEXT NOT NULL DEFAULT 'buy' CHECK (side IN ('buy', 'sell')),
@@ -20,11 +22,35 @@ CREATE TABLE IF NOT EXISTS public.user_notification_rules (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ensure columns exist if table was created previously without them
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'user_notification_rules'
+  ) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'user_notification_rules' AND column_name = 'rule_type'
+    ) THEN
+      ALTER TABLE public.user_notification_rules ADD COLUMN rule_type TEXT NOT NULL DEFAULT 'threshold_cross';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'user_notification_rules' AND column_name = 'params'
+    ) THEN
+      ALTER TABLE public.user_notification_rules ADD COLUMN params JSONB NOT NULL DEFAULT '{}'::jsonb;
+    END IF;
+  END IF;
+END $$;
+
 -- Indexes for notification rules
 CREATE INDEX IF NOT EXISTS idx_user_notification_rules_user_id ON public.user_notification_rules(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_notification_rules_enabled ON public.user_notification_rules(enabled) WHERE enabled = TRUE;
 CREATE INDEX IF NOT EXISTS idx_user_notification_rules_country_karat ON public.user_notification_rules(country, karat);
 CREATE INDEX IF NOT EXISTS idx_user_notification_rules_created_at ON public.user_notification_rules(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_notification_rules_rule_type_enabled ON public.user_notification_rules(rule_type, enabled) WHERE enabled = TRUE;
 
 -- Updated_at trigger for notification rules
 DROP TRIGGER IF EXISTS update_user_notification_rules_updated_at ON public.user_notification_rules;
