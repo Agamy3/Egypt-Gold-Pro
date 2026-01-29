@@ -123,28 +123,36 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Navigation requests (HTML pages)
+  // Use network-first: always try network first, only fallback to cache/offline if network truly fails
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: 'no-store' })
         .then((response) => {
-          // For auth pages, don't cache the response
-          if (isAuthNavigation(url.pathname)) {
-            return response;
+          // Only cache successful responses (200-299)
+          if (response.status >= 200 && response.status < 300) {
+            // For auth pages, don't cache the response
+            if (isAuthNavigation(url.pathname)) {
+              return response;
+            }
+            // For other pages, cache the response for offline use
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseClone).catch((err) => {
+                console.error('[SW] Error caching response:', err);
+              });
+            });
           }
-          // For other pages, cache the response
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseClone);
-          });
           return response;
         })
-        .catch(() => {
-          // Network failed - try cache
+        .catch((error) => {
+          // Network truly failed - try cache
+          console.log('[SW] Network failed for navigation, trying cache:', url.pathname, error);
           return caches.match(request).then((cachedResponse) => {
             if (cachedResponse) {
               return cachedResponse;
             }
-            // No cache - return offline page
+            // No cache - return offline page as last resort
+            console.log('[SW] No cache found, returning offline page');
             return caches.match(OFFLINE_PAGE);
           });
         })

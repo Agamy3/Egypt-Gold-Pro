@@ -96,7 +96,8 @@ export async function POST(request: NextRequest) {
     const notificationBody = bodyText || 'If you can read this, push notifications are working.';
     const notificationUrl = url || '/account/notifications?from=test-push';
 
-    let subscriptions: Array<{ id: number | string; user_id: string; endpoint: string; p256dh: string; auth: string }> = [];
+    // Subscription ID from DB is BIGSERIAL (number), but we'll handle both
+    let subscriptions: Array<{ id: number; user_id: string; endpoint: string; p256dh: string; auth: string }> = [];
 
     // Fetch subscriptions based on target
     // Use push_subscriptions (matches subscribe endpoint)
