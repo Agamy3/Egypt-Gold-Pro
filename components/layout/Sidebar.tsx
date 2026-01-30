@@ -148,6 +148,12 @@ export default function Sidebar() {
           icon: <span>🛠️</span>,
         },
         {
+          href: '/admin/forecast-only',
+          labelEn: 'Forecast Only',
+          labelAr: 'توقع فقط',
+          icon: <span>📈</span>,
+        },
+        {
           href: '/admin/news',
           labelEn: 'News Admin',
           labelAr: 'إدارة الأخبار',
