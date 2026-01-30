@@ -3,10 +3,12 @@ import 'server-only';
 import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { advisoryUnlock, tryAdvisoryLock } from '@/lib/db/advisoryLock';
 import { getAccount, getOrders, getPositions, placeBracketOrder } from '@/lib/brokers/alpacaPaper';
 import { decideActions } from '@/lib/trading/strategy/decide';
 
 const LOCK_LEASE_SECONDS = 110;
+const LOCK_KEY_ALPACA_ADVISORY = 771_220_311;
 
 function num(x: unknown): number | null {
   const n = typeof x === 'number' ? x : Number(x);
@@ -19,9 +21,11 @@ function clampInt(n: number, min: number, max: number) {
 
 export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Date()) {
   const nowIso = now.toISOString();
-  // Row-based lease lock (prevents overlapping runs and can't get stuck indefinitely).
+  // Prefer row-based lease lock (prevents overlapping runs and can't get stuck indefinitely).
+  // Fallback to advisory lock if some PostgREST instance is temporarily serving a stale schema.
   const lockToken = randomUUID();
   const lockUntilIso = new Date(now.getTime() + LOCK_LEASE_SECONDS * 1000).toISOString();
+  let lockMode: 'lease' | 'advisory' | null = null;
   try {
     const { data: lockedRow, error: lockErr } = await supabase
       .from('alpaca_paper_state')
@@ -31,9 +35,21 @@ export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Dat
       .select('run_lock_token')
       .maybeSingle();
 
-    if (lockErr) return { ok: false as const, error: lockErr.message };
-    if (!lockedRow || (lockedRow as any).run_lock_token !== lockToken) {
-      return { ok: true as const, skipped: true, reason: 'lock_not_acquired', serverAsOf: nowIso };
+    if (lockErr) {
+      const msg = lockErr.message || '';
+      if (msg.includes('run_lock_until') && msg.includes('does not exist')) {
+        const adv = await tryAdvisoryLock(supabase, LOCK_KEY_ALPACA_ADVISORY);
+        if (!adv.ok) return { ok: false as const, error: adv.error };
+        if (!adv.acquired) return { ok: true as const, skipped: true, reason: 'lock_not_acquired', serverAsOf: nowIso };
+        lockMode = 'advisory';
+      } else {
+        return { ok: false as const, error: lockErr.message };
+      }
+    } else {
+      if (!lockedRow || (lockedRow as any).run_lock_token !== lockToken) {
+        return { ok: true as const, skipped: true, reason: 'lock_not_acquired', serverAsOf: nowIso };
+      }
+      lockMode = 'lease';
     }
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
@@ -257,12 +273,16 @@ export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Dat
       intervalSeconds,
     };
   } finally {
-    // Best-effort unlock; lock also expires automatically by run_lock_until.
-    await supabase
-      .from('alpaca_paper_state')
-      .update({ run_lock_until: nowIso, run_lock_token: null, updated_at: nowIso })
-      .eq('key', 'default')
-      .eq('run_lock_token', lockToken);
+    if (lockMode === 'lease') {
+      // Best-effort unlock; lock also expires automatically by run_lock_until.
+      await supabase
+        .from('alpaca_paper_state')
+        .update({ run_lock_until: nowIso, run_lock_token: null, updated_at: nowIso })
+        .eq('key', 'default')
+        .eq('run_lock_token', lockToken);
+    } else if (lockMode === 'advisory') {
+      await advisoryUnlock(supabase, LOCK_KEY_ALPACA_ADVISORY);
+    }
   }
 }
 
