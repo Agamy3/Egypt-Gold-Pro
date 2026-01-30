@@ -43,48 +43,60 @@ function sleepMs(ms: number): Promise<void> {
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin();
-    const supabase = getServerClient();
+    // Default: validation-only (recommended). Add ?create=1 to also create for current minute (still idempotent).
+    const url = new URL(request.url);
+    const create = url.searchParams.get('create') === '1';
 
+    // Same alignment proof as cron.
+    const arrivedAt = new Date();
+    const nextBoundary = nextUtcMinuteBoundary(arrivedAt);
+    const waitMs = nextBoundary.getTime() - arrivedAt.getTime();
+
+    // IMPORTANT: don't hold advisory lock during sleep; it can block the next minute.
+    let sleptMs = 0;
+    if (waitMs > 250) {
+      sleptMs = Math.min(waitMs, 55_000);
+      console.log('[minute-bot][admin] will-sleep', {
+        arrivedAt: arrivedAt.toISOString(),
+        nextBoundary: nextBoundary.toISOString(),
+        waitMs,
+        sleptMs,
+      });
+      await sleepMs(sleptMs);
+    }
+
+    const afterSleep = new Date();
+    const t0 = floorToUtcMinute(afterSleep);
+    const offsetMs = afterSleep.getTime() - t0.getTime();
+
+    console.log('[minute-bot][admin] aligned', {
+      afterSleep: afterSleep.toISOString(),
+      t0: t0.toISOString(),
+      offsetMs,
+    });
+
+    const supabase = getServerClient();
     const lock = await tryAdvisoryLock(supabase, BOT_LOCK_KEY);
     if (!lock.ok) return withNoStoreHeaders(NextResponse.json({ ok: false, error: lock.error }, { status: 500 }));
     if (!lock.acquired) {
       return withNoStoreHeaders(
-        NextResponse.json({ ok: true, skipped: true, reason: 'lock_not_acquired', serverAsOf: new Date().toISOString() })
-      );
-    }
-
-    try {
-      // Default: validation-only (recommended). Add ?create=1 to also create for current minute (still idempotent).
-      const url = new URL(request.url);
-      const create = url.searchParams.get('create') === '1';
-
-      // Same alignment proof as cron (lets you verify without waiting for Vercel Cron).
-      const arrivedAt = new Date();
-      const nextBoundary = nextUtcMinuteBoundary(arrivedAt);
-      const waitMs = nextBoundary.getTime() - arrivedAt.getTime();
-
-      let sleptMs = 0;
-      if (waitMs > 250) {
-        sleptMs = Math.min(waitMs, 55_000);
-        console.log('[minute-bot][admin] will-sleep', {
+        NextResponse.json({
+          ok: true,
+          skipped: true,
+          reason: 'lock_not_acquired',
+          serverAsOf: new Date().toISOString(),
           arrivedAt: arrivedAt.toISOString(),
           nextBoundary: nextBoundary.toISOString(),
           waitMs,
           sleptMs,
-        });
-        await sleepMs(sleptMs);
-      }
+          afterSleep: afterSleep.toISOString(),
+          t0: t0.toISOString(),
+          offsetMs,
+        })
+      );
+    }
 
-      const afterSleep = new Date();
-      const t0 = floorToUtcMinute(afterSleep);
-      const offsetMs = afterSleep.getTime() - t0.getTime();
-
-      console.log('[minute-bot][admin] aligned', {
-        afterSleep: afterSleep.toISOString(),
-        t0: t0.toISOString(),
-        offsetMs,
-      });
-
+    try {
       const result = await runMinuteForecastBot({ supabase, now: afterSleep, create });
       const status = result.ok ? 200 : (result.status ?? 500);
       return withNoStoreHeaders(

@@ -188,6 +188,29 @@ export async function runMinuteForecastBot(input: {
     };
   }
 
+  // Minute-based idempotency only: if this minute's record already exists, skip creation.
+  // IMPORTANT: Do not gate on any "open"/unvalidated predictions/trades from other minutes.
+  const { data: existingMinute } = await supabase
+    .from('admin_30s_predictions')
+    .select('id')
+    .eq('minute_key', minuteKey)
+    .eq('source', source)
+    .eq('horizon_seconds', HORIZON_SECONDS)
+    .maybeSingle();
+
+  if (existingMinute?.id) {
+    return {
+      ok: true,
+      serverAsOf: nowIso,
+      validatedCount,
+      created: false,
+      provider,
+      source,
+      alignedTo: t0Iso,
+      createdMinuteKey: minuteKey,
+    };
+  }
+
   // Entry quote
   let entryQuote;
   try {
