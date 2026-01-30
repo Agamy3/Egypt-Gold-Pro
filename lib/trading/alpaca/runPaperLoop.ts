@@ -140,6 +140,15 @@ export async function runAlpacaPaperLoop(
     const universe = Array.isArray(st?.universe) ? st.universe.map(String) : [];
     const maxRisk = Math.min(Math.max(Number(st?.max_risk_per_trade_pct ?? 0.02), 0), 0.02);
 
+    // Dedupe protection: if a symbol has ANY open/pending order (including held bracket legs),
+    // do not place a new bracket for it. This prevents repeated "Run once now" from stacking orders.
+    const openOrders = await getOrders({ status: 'open', limit: 500 }).catch(() => []);
+    const symbolsWithOpenOrders = new Set(
+      openOrders
+        .map((o) => (o.symbol ? String(o.symbol).toUpperCase() : null))
+        .filter((s): s is string => Boolean(s))
+    );
+
     const decision = await decideActions({
       universe,
       account,
@@ -226,6 +235,25 @@ export async function runAlpacaPaperLoop(
     const placed: any[] = [];
     for (const a of decision.actions) {
       if (a.type !== 'BUY_BRACKET') continue;
+      if (symbolsWithOpenOrders.has(String(a.symbol).toUpperCase())) {
+        await supabase.from('alpaca_paper_trades').insert({
+          run_id: runId,
+          symbol: a.symbol,
+          side: 'BUY',
+          qty: a.qty,
+          entry_price: a.entryPrice,
+          stop_loss: a.stopLoss,
+          take_profit: a.takeProfit,
+          status: 'skipped',
+          meta: {
+            reason: 'open_order_exists',
+            score: a.score,
+            confidence0to1: a.confidence0to1,
+            reasons: a.reasons,
+          },
+        });
+        continue;
+      }
       try {
         const order = await placeBracketOrder({
           symbol: a.symbol,
