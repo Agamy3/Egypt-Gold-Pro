@@ -10,6 +10,7 @@ type StatusResp = {
   state?: any;
   account?: any;
   positions?: any[];
+  clock?: any;
   reservedCash?: number;
   longTermValue?: number;
   banner?: string;
@@ -139,6 +140,15 @@ export default function AlpacaPaperDashboard() {
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
           <div className="text-sm text-gray-400">Status</div>
           <div className="mt-2 space-y-2 text-sm">
+            <div className="text-gray-400">
+              Market:{' '}
+              <span className={`font-semibold ${status?.clock?.is_open ? 'text-emerald-300' : 'text-gray-200'}`}>
+                {status?.clock ? (status.clock.is_open ? 'OPEN' : 'CLOSED') : '—'}
+              </span>
+              {status?.clock?.next_open && !status?.clock?.is_open && (
+                <span className="text-xs text-gray-500"> (next open: {String(status.clock.next_open)})</span>
+              )}
+            </div>
             <div className="text-gray-400">
               Enabled:{' '}
               <span className={`font-semibold ${settings?.enabled ? 'text-emerald-300' : 'text-gray-200'}`}>
@@ -302,6 +312,28 @@ export default function AlpacaPaperDashboard() {
               className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-800 text-gray-200 hover:bg-gray-700 disabled:opacity-50"
             >
               Save settings
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={async () => {
+                if (!window.confirm('Reset strategy settings to defaults and clear halted/lock state?')) return;
+                try {
+                  setError(null);
+                  setLastAction(null);
+                  setSaving(true);
+                  await fetchJson('/api/admin/alpaca-paper/reset', { method: 'POST' });
+                  setLastAction('settings reset');
+                  await refresh();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className="px-3 py-2 rounded-md text-sm font-semibold bg-red-900/60 text-red-100 hover:bg-red-900 disabled:opacity-50"
+            >
+              Reset settings
             </button>
           </div>
         </div>

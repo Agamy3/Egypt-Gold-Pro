@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { advisoryUnlock, tryAdvisoryLock } from '@/lib/db/advisoryLock';
-import { getAccount, getOrders, getPositions, placeBracketOrder } from '@/lib/brokers/alpacaPaper';
+import { getAccount, getClock, getOrders, getPositions, placeBracketOrder } from '@/lib/brokers/alpacaPaper';
 import { decideActions } from '@/lib/trading/strategy/decide';
 
 const LOCK_LEASE_SECONDS = 110;
@@ -112,7 +112,7 @@ export async function runAlpacaPaperLoop(
   try {
     const runId = randomUUID();
 
-    const [account, positions] = await Promise.all([getAccount(), getPositions()]);
+    const [account, positions, clock] = await Promise.all([getAccount(), getPositions(), getClock().catch(() => null)]);
 
     const equity = num(account.equity) ?? 0;
     const lastEquity = num((account as any).last_equity) ?? null;
@@ -149,10 +149,15 @@ export async function runAlpacaPaperLoop(
         .filter((s): s is string => Boolean(s))
     );
 
+    const reservedCash = num(state?.reserved_cash) ?? 0;
+    const cash = num((account as any).cash) ?? 0;
+    const availableUsd = Math.max(0, cash - reservedCash);
+
     const decision = await decideActions({
       universe,
       account,
       positions,
+      availableUsd,
       maxRiskPerTradePct: maxRisk,
     });
 
@@ -235,6 +240,26 @@ export async function runAlpacaPaperLoop(
     const placed: any[] = [];
     for (const a of decision.actions) {
       if (a.type !== 'BUY_BRACKET') continue;
+      if (clock && clock.is_open === false && !force) {
+        await supabase.from('alpaca_paper_trades').insert({
+          run_id: runId,
+          symbol: a.symbol,
+          side: 'BUY',
+          qty: a.qty,
+          entry_price: a.entryPrice,
+          stop_loss: a.stopLoss,
+          take_profit: a.takeProfit,
+          status: 'skipped',
+          meta: {
+            reason: 'market_closed',
+            clock,
+            score: a.score,
+            confidence0to1: a.confidence0to1,
+            reasons: a.reasons,
+          },
+        });
+        continue;
+      }
       if (symbolsWithOpenOrders.has(String(a.symbol).toUpperCase())) {
         await supabase.from('alpaca_paper_trades').insert({
           run_id: runId,

@@ -41,6 +41,13 @@ export type AlpacaOrder = {
   legs?: AlpacaOrder[];
 };
 
+export type AlpacaClock = {
+  timestamp: string;
+  is_open: boolean;
+  next_open: string;
+  next_close: string;
+};
+
 type Timeframe = '1Min' | '5Min' | '15Min' | '1Hour' | '1Day';
 
 export type AlpacaBar = {
@@ -100,6 +107,10 @@ async function alpacaFetch<T>(baseUrl: string, path: string, init?: RequestInit)
 
 export async function getAccount(): Promise<AlpacaAccount> {
   return alpacaFetch<AlpacaAccount>(getTradingBaseUrl(), '/v2/account');
+}
+
+export async function getClock(): Promise<AlpacaClock> {
+  return alpacaFetch<AlpacaClock>(getTradingBaseUrl(), '/v2/clock');
 }
 
 export async function getPositions(): Promise<AlpacaPosition[]> {

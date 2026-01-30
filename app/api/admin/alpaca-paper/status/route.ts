@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 
 import { requireAdmin, adminErrorToResponse } from '@/lib/auth/admin';
 import { getServerClient } from '@/lib/supabase/server';
-import { getAccount, getPositions } from '@/lib/brokers/alpacaPaper';
+import { getAccount, getClock, getPositions } from '@/lib/brokers/alpacaPaper';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest) {
       supabase.from('alpaca_paper_state').select('*').eq('key', 'default').maybeSingle(),
     ]);
 
-    const [account, positions] = await Promise.all([getAccount(), getPositions()]);
+    const [account, positions, clock] = await Promise.all([getAccount(), getPositions(), getClock().catch(() => null)]);
 
     const { data: reserveSum } = await supabase
       .from('alpaca_reserve_ledger')
@@ -49,6 +49,7 @@ export async function GET(_req: NextRequest) {
         state: state ?? null,
         account,
         positions,
+        clock,
         reservedCash,
         longTermValue,
         banner: 'Paper trading (simulated) — no real money.',

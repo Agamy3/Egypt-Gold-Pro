@@ -3,11 +3,10 @@ import type { NextRequest } from 'next/server';
 
 import { requireAdmin, adminErrorToResponse } from '@/lib/auth/admin';
 import { getServerClient } from '@/lib/supabase/server';
+import { DEFAULT_ALPACA_SETTINGS } from '@/lib/trading/alpaca/defaults';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-
-const DEFAULT_UNIVERSE = ['SPY', 'QQQ', 'DIA', 'IWM', 'GLD', 'TLT', 'AAPL', 'MSFT', 'AMZN', 'GOOGL'];
 
 function withNoStoreHeaders(res: NextResponse) {
   res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -78,16 +77,16 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (getErr) return withNoStoreHeaders(NextResponse.json({ ok: false, error: getErr.message }, { status: 500 }));
 
-    const currentUniverse = normalizeUniverse((current as any)?.universe, DEFAULT_UNIVERSE);
+    const currentUniverse = normalizeUniverse((current as any)?.universe, DEFAULT_ALPACA_SETTINGS.universe);
     const parsedUniverse =
       body?.universe !== undefined ? normalizeUniverse(body.universe, currentUniverse) : currentUniverse;
 
     const row = {
       key: 'default',
       enabled: Boolean((current as any)?.enabled ?? false),
-      interval_seconds: intervalSeconds ?? Number((current as any)?.interval_seconds ?? 60),
-      max_risk_per_trade_pct: maxRisk ?? (asNum((current as any)?.max_risk_per_trade_pct) ?? 0.02),
-      max_daily_drawdown_pct: maxDD ?? (asNum((current as any)?.max_daily_drawdown_pct) ?? 0.05),
+      interval_seconds: intervalSeconds ?? Number((current as any)?.interval_seconds ?? DEFAULT_ALPACA_SETTINGS.interval_seconds),
+      max_risk_per_trade_pct: maxRisk ?? (asNum((current as any)?.max_risk_per_trade_pct) ?? DEFAULT_ALPACA_SETTINGS.max_risk_per_trade_pct),
+      max_daily_drawdown_pct: maxDD ?? (asNum((current as any)?.max_daily_drawdown_pct) ?? DEFAULT_ALPACA_SETTINGS.max_daily_drawdown_pct),
       universe: parsedUniverse as any,
       updated_at: new Date().toISOString(),
     };

@@ -33,12 +33,16 @@ export async function decideActions(input: {
   universe: string[];
   account: AlpacaAccount;
   positions: AlpacaPosition[];
+  availableUsd?: number;
   maxRiskPerTradePct: number;
   scoreThreshold?: number;
 }): Promise<StrategyDecision> {
   const scoreThreshold = input.scoreThreshold ?? 70;
 
   const equity = num(input.account.equity) ?? 0;
+  const cash = num((input.account as any).cash) ?? 0;
+  const buyingPower = num((input.account as any).buying_power) ?? null;
+  const availableUsd = Math.max(0, input.availableUsd ?? cash);
   const inPos = new Set(input.positions.map((p) => p.symbol));
 
   // Use realtime quotes for entry reference (reduces Alpaca base_price mismatches vs bar closes).
@@ -78,23 +82,44 @@ export async function decideActions(input: {
   candidates.sort((a, b) => b.score - a.score);
 
   const actions: StrategyDecision['actions'] = [];
-  let picked = 0;
+  const eligible = candidates.filter((c) => c.score >= scoreThreshold);
+  if (eligible.length === 0) {
+    // keep behavior: emit SKIPs for visibility (top few only)
+    for (const c of candidates.slice(0, 5)) actions.push({ type: 'SKIP', symbol: c.symbol, reason: `score_below_threshold:${c.score}` });
+    return { actions, considered: candidates.length };
+  }
 
-  for (const c of candidates) {
-    if (picked >= 1) break; // MVP: at most 1 new position per run (capital preservation)
-    if (c.score < scoreThreshold) {
-      actions.push({ type: 'SKIP', symbol: c.symbol, reason: `score_below_threshold:${c.score}` });
+  // Initial allocation: spread a conservative budget across top-scoring symbols.
+  const MAX_NEW_POSITIONS = availableUsd < 1_000 ? 1 : 3;
+  const MIN_NOTIONAL_USD = 200;
+  const TOTAL_BUDGET_USD = Math.max(0, Math.min(availableUsd, buyingPower ?? availableUsd) * 0.15); // use ~15% of available cash per run
+  const PER_POSITION_BUDGET_CAP_USD = Math.max(0, Math.min(TOTAL_BUDGET_USD, (buyingPower ?? availableUsd) * 0.07)); // hard cap per position
+
+  const picked = eligible.slice(0, MAX_NEW_POSITIONS);
+  const weights = picked.map((c) => Math.max(1, c.score - scoreThreshold + 1));
+  const weightSum = weights.reduce((a, b) => a + b, 0);
+
+  for (let i = 0; i < picked.length; i++) {
+    const c = picked[i];
+    const w = weights[i] / weightSum;
+    const rawBudget = TOTAL_BUDGET_USD * w;
+    const budget = Math.min(PER_POSITION_BUDGET_CAP_USD, rawBudget);
+    if (budget < MIN_NOTIONAL_USD) {
+      actions.push({ type: 'SKIP', symbol: c.symbol, reason: `budget_too_small:${budget.toFixed(2)}` });
       continue;
     }
 
     const { stopLoss, takeProfit, stopDistance } = computeStops({ entry: c.price, atr: c.atr });
-    const qty = positionSizing({
+
+    const qtyByRisk = positionSizing({
       equityUsd: equity,
       maxRiskPct: input.maxRiskPerTradePct,
       stopDistance,
-      maxNotionalUsd: equity * 0.05, // extra conservative: 5% equity cap
+      maxNotionalUsd: budget,
       price: c.price,
     });
+    const qtyByBudget = Math.floor(budget / c.price);
+    const qty = Math.max(0, Math.min(qtyByRisk, qtyByBudget));
 
     if (qty <= 0) {
       actions.push({ type: 'SKIP', symbol: c.symbol, reason: 'qty_zero' });
@@ -113,7 +138,6 @@ export async function decideActions(input: {
       reasons: c.reasons,
       indicators: c.indicators,
     });
-    picked += 1;
   }
 
   return { actions, considered: candidates.length };
