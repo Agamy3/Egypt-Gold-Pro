@@ -36,6 +36,7 @@ export default function AlpacaPaperDashboard() {
   const [trades, setTrades] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [lastAction, setLastAction] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const settings = status?.settings ?? {};
@@ -103,6 +104,12 @@ export default function AlpacaPaperDashboard() {
         {status?.banner ?? 'Paper trading (simulated) — no real money.'}
       </div>
 
+      {lastAction && (
+        <div className="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-sm text-gray-200">
+          <span className="text-gray-400">Last action:</span> {lastAction}
+        </div>
+      )}
+
       {error && (
         <div className="rounded-md border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-200">{error}</div>
       )}
@@ -156,8 +163,16 @@ export default function AlpacaPaperDashboard() {
                 onClick={async () => {
                   try {
                     setError(null);
+                    setLastAction(null);
                     setRunning(true);
-                    await fetchJson('/api/admin/alpaca-paper/run', { method: 'POST' });
+                    const res = (await fetchJson<any>('/api/admin/alpaca-paper/run', { method: 'POST' })) as any;
+                    if (res?.skipped) {
+                      setLastAction(`run skipped: ${String(res.reason || 'unknown')}`);
+                    } else {
+                      setLastAction(
+                        `run ok: placed=${String(res.placedCount ?? 0)} considered=${String(res.considered ?? '—')} runId=${String(res.runId ?? '—')}`
+                      );
+                    }
                     await refresh();
                   } catch (e) {
                     setError(e instanceof Error ? e.message : String(e));
@@ -175,9 +190,15 @@ export default function AlpacaPaperDashboard() {
                 onClick={async () => {
                   try {
                     setError(null);
+                    setLastAction(null);
                     setSaving(true);
                     const nextEnabled = !Boolean(settings?.enabled);
-                    await fetchJson('/api/admin/alpaca-paper/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: nextEnabled }) });
+                    await fetchJson('/api/admin/alpaca-paper/toggle', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ enabled: nextEnabled }),
+                    });
+                    setLastAction(nextEnabled ? 'strategy enabled' : 'strategy disabled');
                     await refresh();
                   } catch (e) {
                     setError(e instanceof Error ? e.message : String(e));
@@ -232,6 +253,7 @@ export default function AlpacaPaperDashboard() {
               onClick={async () => {
                 try {
                   setError(null);
+                  setLastAction(null);
                   setSaving(true);
                   await fetchJson('/api/admin/alpaca-paper/settings', {
                     method: 'POST',
@@ -243,6 +265,7 @@ export default function AlpacaPaperDashboard() {
                       universe: universeDraft,
                     }),
                   });
+                  setLastAction('settings saved');
                   await refresh();
                 } catch (e) {
                   setError(e instanceof Error ? e.message : String(e));
