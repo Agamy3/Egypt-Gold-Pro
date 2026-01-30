@@ -21,6 +21,43 @@ function clampInt(n: number, min: number, max: number) {
 
 export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Date()) {
   const nowIso = now.toISOString();
+
+  // Fast-path skip checks (avoid taking lock when we know we will skip anyway).
+  const { data: settings, error: sErr } = await supabase
+    .from('alpaca_paper_settings')
+    .select('*')
+    .eq('key', 'default')
+    .maybeSingle();
+  if (sErr) return { ok: false as const, error: sErr.message };
+  const st = settings as any;
+  const enabled = Boolean(st?.enabled);
+  const intervalSeconds = clampInt(Number(st?.interval_seconds ?? 60), 60, 300);
+
+  const { data: stateRow } = await supabase.from('alpaca_paper_state').select('*').eq('key', 'default').maybeSingle();
+  const state = (stateRow as any) ?? { key: 'default' };
+
+  if (!enabled) {
+    return { ok: true as const, serverAsOf: nowIso, skipped: true, reason: 'disabled', settings: st ?? null, state };
+  }
+  if (state?.halted) {
+    return { ok: true as const, serverAsOf: nowIso, skipped: true, reason: 'halted', settings: st ?? null, state };
+  }
+
+  const lastRunAtMs = state?.last_run_at ? Date.parse(String(state.last_run_at)) : null;
+  if (lastRunAtMs && now.getTime() - lastRunAtMs < intervalSeconds * 1000) {
+    const nextEligibleAt = new Date(lastRunAtMs + intervalSeconds * 1000).toISOString();
+    return {
+      ok: true as const,
+      serverAsOf: nowIso,
+      skipped: true,
+      reason: 'interval_not_elapsed',
+      nextEligibleAt,
+      intervalSeconds,
+      settings: st ?? null,
+      state,
+    };
+  }
+
   // Prefer row-based lease lock (prevents overlapping runs and can't get stuck indefinitely).
   // Fallback to advisory lock if some PostgREST instance is temporarily serving a stale schema.
   const lockToken = randomUUID();
@@ -47,7 +84,19 @@ export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Dat
       }
     } else {
       if (!lockedRow || (lockedRow as any).run_lock_token !== lockToken) {
-        return { ok: true as const, skipped: true, reason: 'lock_not_acquired', serverAsOf: nowIso };
+        // Best-effort: include lock expiry so UI can show "try again in X seconds".
+        const { data: lockInfo } = await supabase
+          .from('alpaca_paper_state')
+          .select('run_lock_until')
+          .eq('key', 'default')
+          .maybeSingle();
+        return {
+          ok: true as const,
+          skipped: true,
+          reason: 'lock_not_acquired',
+          serverAsOf: nowIso,
+          lockUntil: (lockInfo as any)?.run_lock_until ?? null,
+        };
       }
       lockMode = 'lease';
     }
@@ -56,31 +105,6 @@ export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Dat
   }
 
   try {
-    const { data: settings, error: sErr } = await supabase
-      .from('alpaca_paper_settings')
-      .select('*')
-      .eq('key', 'default')
-      .maybeSingle();
-    if (sErr) return { ok: false as const, error: sErr.message };
-    const st = settings as any;
-    const enabled = Boolean(st?.enabled);
-    const intervalSeconds = clampInt(Number(st?.interval_seconds ?? 60), 60, 300);
-
-    const { data: stateRow } = await supabase.from('alpaca_paper_state').select('*').eq('key', 'default').maybeSingle();
-    const state = (stateRow as any) ?? { key: 'default' };
-
-    if (!enabled) {
-      return { ok: true as const, serverAsOf: nowIso, skipped: true, reason: 'disabled', settings: st ?? null, state };
-    }
-    if (state?.halted) {
-      return { ok: true as const, serverAsOf: nowIso, skipped: true, reason: 'halted', settings: st ?? null, state };
-    }
-
-    const lastRunAt = state?.last_run_at ? Date.parse(String(state.last_run_at)) : null;
-    if (lastRunAt && now.getTime() - lastRunAt < intervalSeconds * 1000) {
-      return { ok: true as const, serverAsOf: nowIso, skipped: true, reason: 'interval_not_elapsed', settings: st ?? null, state };
-    }
-
     const runId = randomUUID();
 
     const [account, positions] = await Promise.all([getAccount(), getPositions()]);
