@@ -154,6 +154,12 @@ export default function Sidebar() {
           icon: <span>📈</span>,
         },
         {
+          href: '/admin/alpaca-paper',
+          labelEn: 'Alpaca Paper',
+          labelAr: 'ألباكا (تجريبي)',
+          icon: <span>🧪</span>,
+        },
+        {
           href: '/admin/news',
           labelEn: 'News Admin',
           labelAr: 'إدارة الأخبار',
