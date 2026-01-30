@@ -2,13 +2,21 @@ export function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 export function computeStops(input: { entry: number; atr: number | null; kStop?: number; kTp?: number }) {
   const kStop = input.kStop ?? 1.2;
   const kTp = input.kTp ?? 1.8;
   const atr = input.atr ?? 0;
   const stopDistance = Math.max(0.01, atr * kStop);
-  const stopLoss = Math.max(0.01, input.entry - stopDistance);
-  const takeProfit = Math.max(0.01, input.entry + atr * kTp);
+  const stopLossRaw = Math.max(0.01, input.entry - stopDistance);
+  const takeProfitRaw = Math.max(0.01, input.entry + atr * kTp);
+
+  // Alpaca rejects prices with excessive precision; normalize to 2 decimals.
+  const stopLoss = round2(stopLossRaw);
+  const takeProfit = round2(takeProfitRaw);
   return { stopLoss, takeProfit, stopDistance };
 }
 

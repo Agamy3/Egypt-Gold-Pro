@@ -165,9 +165,14 @@ export default function AlpacaPaperDashboard() {
                     setError(null);
                     setLastAction(null);
                     setRunning(true);
-                    const res = (await fetchJson<any>('/api/admin/alpaca-paper/run', { method: 'POST' })) as any;
+                    const res = (await fetchJson<any>('/api/admin/alpaca-paper/run', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ force: true }),
+                    })) as any;
                     if (res?.skipped) {
-                      setLastAction(`run skipped: ${String(res.reason || 'unknown')}`);
+                      const extra = res?.lockUntil ? ` (lockUntil=${String(res.lockUntil)})` : res?.nextEligibleAt ? ` (nextEligibleAt=${String(res.nextEligibleAt)})` : '';
+                      setLastAction(`run skipped: ${String(res.reason || 'unknown')}${extra}`);
                     } else {
                       setLastAction(
                         `run ok: placed=${String(res.placedCount ?? 0)} considered=${String(res.considered ?? '—')} runId=${String(res.runId ?? '—')}`
@@ -336,6 +341,7 @@ export default function AlpacaPaperDashboard() {
                 <th className="text-left px-4 py-2">stop</th>
                 <th className="text-left px-4 py-2">tp</th>
                 <th className="text-left px-4 py-2">status</th>
+                <th className="text-left px-4 py-2">error</th>
                 <th className="text-left px-4 py-2">pnl</th>
               </tr>
             </thead>
@@ -350,12 +356,13 @@ export default function AlpacaPaperDashboard() {
                   <td className="px-4 py-2">{t.stop_loss ?? '—'}</td>
                   <td className="px-4 py-2">{t.take_profit ?? '—'}</td>
                   <td className="px-4 py-2">{t.status}</td>
+                  <td className="px-4 py-2 text-xs text-red-200/90">{t?.meta?.error ? String(t.meta.error) : '—'}</td>
                   <td className="px-4 py-2">{t.pnl ?? '—'}</td>
                 </tr>
               ))}
               {trades.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-gray-400" colSpan={9}>
+                  <td className="px-4 py-4 text-gray-400" colSpan={10}>
                     No trades yet.
                   </td>
                 </tr>

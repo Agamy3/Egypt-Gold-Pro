@@ -123,6 +123,10 @@ export async function placeBracketOrder(input: {
   takeProfit: number;
 }): Promise<AlpacaOrder> {
   const side: AlpacaOrderSide = input.side === 'BUY' ? 'buy' : 'sell';
+  const stop = Number(input.stopLoss);
+  const tp = Number(input.takeProfit);
+  if (!isFinite(stop) || !isFinite(tp)) throw new Error('Invalid stopLoss/takeProfit');
+
   const body = {
     symbol: input.symbol,
     qty: String(input.qty),
@@ -130,8 +134,8 @@ export async function placeBracketOrder(input: {
     type: 'market',
     time_in_force: 'day',
     order_class: 'bracket',
-    take_profit: { limit_price: String(input.takeProfit) },
-    stop_loss: { stop_price: String(input.stopLoss) },
+    take_profit: { limit_price: tp.toFixed(2) },
+    stop_loss: { stop_price: stop.toFixed(2) },
   };
   return alpacaFetch<AlpacaOrder>(getTradingBaseUrl(), '/v2/orders', { method: 'POST', body: JSON.stringify(body) });
 }

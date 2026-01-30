@@ -19,7 +19,11 @@ function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
-export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Date()) {
+export async function runAlpacaPaperLoop(
+  supabase: SupabaseClient,
+  now = new Date(),
+  opts?: { force?: boolean }
+) {
   const nowIso = now.toISOString();
 
   // Fast-path skip checks (avoid taking lock when we know we will skip anyway).
@@ -31,12 +35,13 @@ export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Dat
   if (sErr) return { ok: false as const, error: sErr.message };
   const st = settings as any;
   const enabled = Boolean(st?.enabled);
+  const force = Boolean(opts?.force);
   const intervalSeconds = clampInt(Number(st?.interval_seconds ?? 60), 60, 300);
 
   const { data: stateRow } = await supabase.from('alpaca_paper_state').select('*').eq('key', 'default').maybeSingle();
   const state = (stateRow as any) ?? { key: 'default' };
 
-  if (!enabled) {
+  if (!enabled && !force) {
     return { ok: true as const, serverAsOf: nowIso, skipped: true, reason: 'disabled', settings: st ?? null, state };
   }
   if (state?.halted) {

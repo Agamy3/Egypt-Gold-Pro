@@ -20,7 +20,9 @@ export async function POST(_req: NextRequest) {
   try {
     await requireAdmin();
     const supabase = getServerClient();
-    const result = await runAlpacaPaperLoop(supabase, new Date());
+    const body = (await _req.json().catch(() => null)) as any;
+    const force = Boolean(body?.force);
+    const result = await runAlpacaPaperLoop(supabase, new Date(), { force });
     return withNoStoreHeaders(NextResponse.json(result, { status: result.ok ? 200 : 500 }));
   } catch (err) {
     return withNoStoreHeaders(adminErrorToResponse(err));
