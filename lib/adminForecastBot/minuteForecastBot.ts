@@ -32,11 +32,27 @@ export type MinuteBotRunResult = {
   validatedCount: number;
   created: boolean;
   createdPrediction?: any;
+  forecastUpserted?: boolean;
+  forecastRow?: any;
   provider: 'goldapi' | 'gold_api_free';
   source: string;
   alignedTo: string;
   createdMinuteKey: string | null;
 } | { ok: false; error: string; status?: number };
+
+function computeDirectionFromPrediction(input: {
+  predicted_direction: 'UP' | 'DOWN' | 'STALE';
+  p0: number | null;
+  predicted_price: number | null;
+}): 'UP' | 'DOWN' | 'TIE' | 'STALE' | 'NA' {
+  if (input.predicted_direction === 'STALE') return 'STALE';
+  const p0 = input.p0;
+  const pp = input.predicted_price;
+  if (p0 == null || !isFinite(p0) || p0 <= 0 || pp == null || !isFinite(pp)) return 'NA';
+  const eps = 1e-9;
+  if (Math.abs(pp - p0) <= eps) return 'TIE';
+  return pp > p0 ? 'UP' : 'DOWN';
+}
 
 /**
  * Runs:
@@ -56,7 +72,167 @@ export async function runMinuteForecastBot(input: {
   const nowIso = now.toISOString();
   const nowMs = now.getTime();
 
-  // Validate all due predictions across all sources.
+  // Minute boundary info (shared across forecast + prediction)
+  const provider = getPriceFeedProvider();
+  const source = sourceForProvider(provider);
+  const t0 = floorToUtcMinute(now);
+  const t0Iso = t0.toISOString();
+  const minuteKey = toMinuteKeyUtc(t0);
+  const dueAtIso = nextUtcMinuteBoundary(t0).toISOString();
+
+  // ============================
+  // Forecast stream (decoupled)
+  // Always upsert a forecast row for this minute_key, independent of trade validation.
+  // ============================
+  let forecastUpserted = false;
+  let forecastRow: any = null;
+
+  if (shouldCreate) {
+    // If the forecast already exists for this minute, do not block; just skip upsert.
+    const { data: existingForecast } = await supabase
+      .from('minute_forecasts')
+      .select('id')
+      .eq('minute_key', minuteKey)
+      .eq('country', 'GLOBAL')
+      .eq('karat', 24)
+      .maybeSingle();
+
+    if (!existingForecast?.id) {
+      // Entry quote + heuristic (same logic as prediction creation below)
+      let entryQuote;
+      try {
+        entryQuote = await fetchQuoteForProvider(provider);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { ok: false, error: msg, status: 502 };
+      }
+
+      const p0 = entryQuote.price;
+      const quoteTimestampMs = entryQuote.timestampMs;
+      const missingTimestamp = Boolean(entryQuote.missingTimestamp);
+      const isStale = !missingTimestamp && nowMs - quoteTimestampMs > STALE_AFTER_MS;
+      const staleAgeSec = Math.max(0, (nowMs - quoteTimestampMs) / 1000);
+
+      let predicted_direction: 'UP' | 'DOWN' | 'STALE' = 'STALE';
+      let meta: Record<string, unknown> = {};
+      let predicted_delta: number | null = null;
+      let predicted_price: number | null = null;
+      let confidence: number | null = null;
+      let expected_low: number | null = null;
+      let expected_high: number | null = null;
+
+      if (isStale) {
+        predicted_direction = 'STALE';
+        meta = {
+          reason: 'stale_data',
+          staleAfterMs: STALE_AFTER_MS,
+          quoteTimestampMs,
+          staleAgeSec,
+          provider,
+          missingTimestamp,
+          minuteBoundaryIso: t0Iso,
+        };
+      } else {
+        const recentRes = await getRecentPricesForVolatility(supabase, {
+          secondsBack: VOL_WINDOW_SECONDS,
+          limit: 300,
+          source,
+        });
+        const recentPrices = recentRes.ok ? recentRes.prices : [];
+
+        const targetMs = t0.getTime() - HORIZON_SECONDS * 1000;
+        const refRes = await getLatestPriceAtOrBeforeTime(supabase, targetMs, { source });
+
+        let pAgo = p0;
+        let pAgoAtMs = nowMs;
+        let referenceMissing = false;
+        if (refRes.ok) {
+          pAgo = refRes.price;
+          pAgoAtMs = refRes.atMs;
+        } else if (recentRes.ok && recentRes.points.length > 0) {
+          pAgo = recentRes.points[0].v;
+          pAgoAtMs = recentRes.points[0].t;
+          referenceMissing = true;
+        } else {
+          referenceMissing = true;
+        }
+
+        const h = decideDirection({
+          isStale,
+          p0,
+          p30sAgoPrice: pAgo,
+          p30sAgoAtMs: pAgoAtMs,
+          recentPrices,
+          nowTsMs: nowMs,
+          quoteTimestampMs,
+          provider,
+          referenceMissing,
+          missingTimestamp,
+          absoluteMin: 0.1,
+          k: 0.8,
+          windowSeconds: VOL_WINDOW_SECONDS,
+        });
+
+        predicted_direction = h.direction;
+        predicted_delta = h.predicted_delta;
+        predicted_price = h.predicted_price;
+        confidence = h.confidence;
+        expected_low = h.expected_low;
+        expected_high = h.expected_high;
+        meta = {
+          ...h.meta,
+          quoteTimestampMs,
+          staleAgeSec,
+          provider,
+          missingTimestamp,
+          minuteBoundaryIso: t0Iso,
+          horizonSeconds: HORIZON_SECONDS,
+          refTargetMs: targetMs,
+          refError: refRes.ok ? null : refRes.error,
+          recentError: recentRes.ok ? null : recentRes.error,
+          predicted_delta,
+          expected_low,
+          expected_high,
+        };
+      }
+
+      const direction = computeDirectionFromPrediction({
+        predicted_direction,
+        p0,
+        predicted_price,
+      });
+
+      const forecastInsert = {
+        minute_key: minuteKey,
+        country: 'GLOBAL',
+        scope: 'global',
+        karat: 24,
+        p0,
+        predicted_price,
+        direction,
+        confidence,
+        provider,
+        source,
+        meta,
+        updated_at: nowIso,
+      };
+
+      const { data: fcRows, error: fcErr } = await supabase
+        .from('minute_forecasts')
+        .upsert(forecastInsert, {
+          onConflict: 'minute_key,country,karat',
+          ignoreDuplicates: false,
+        })
+        .select('*');
+
+      if (fcErr) return { ok: false, error: fcErr.message, status: 500 };
+      forecastUpserted = true;
+      forecastRow = Array.isArray(fcRows) && fcRows.length > 0 ? fcRows[0] : null;
+    }
+  }
+
+  // Validate all due predictions across all sources (trades are derived here).
+  // This is intentionally independent from the forecast stream above.
   const { data: due, error: dueErr } = await supabase
     .from('admin_30s_predictions')
     .select('id, predicted_direction, p0, p0_at, due_at, meta, source, predicted_price, expected_low, expected_high')
@@ -167,20 +343,14 @@ export async function runMinuteForecastBot(input: {
     });
   }
 
-  // Create prediction for current minute boundary (idempotent)
-  const provider = getPriceFeedProvider();
-  const source = sourceForProvider(provider);
-  const t0 = floorToUtcMinute(now);
-  const t0Iso = t0.toISOString();
-  const minuteKey = toMinuteKeyUtc(t0);
-  const dueAtIso = nextUtcMinuteBoundary(t0).toISOString();
-
   if (!shouldCreate) {
     return {
       ok: true,
       serverAsOf: nowIso,
       validatedCount,
       created: false,
+      forecastUpserted,
+      forecastRow: forecastRow ?? undefined,
       provider,
       source,
       alignedTo: t0Iso,
@@ -204,6 +374,8 @@ export async function runMinuteForecastBot(input: {
       serverAsOf: nowIso,
       validatedCount,
       created: false,
+      forecastUpserted,
+      forecastRow: forecastRow ?? undefined,
       provider,
       source,
       alignedTo: t0Iso,
@@ -343,6 +515,8 @@ export async function runMinuteForecastBot(input: {
     validatedCount,
     created: Boolean(created),
     createdPrediction: created ?? undefined,
+    forecastUpserted,
+    forecastRow: forecastRow ?? undefined,
     provider,
     source,
     alignedTo: t0Iso,
