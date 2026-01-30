@@ -215,62 +215,89 @@ async function getLocalPctChangePoints(input: {
   windowSeconds: number;
   minAgeSeconds: number;
 }): Promise<
-  | { ok: true; latest: { price: number; atIso: string; trusted: boolean }; prev: { price: number; atIso: string; trusted: boolean } }
+  | { ok: true; latest: { price: number; atIso: string }; prev: { price: number; atIso: string } }
   | { ok: false; error: string }
 > {
   const supabase = getServerClient();
   const country = input.country;
   const karat = input.karat;
 
-  for (const trusted of [true, false] as const) {
-    const { data: latestRow, error: latestErr } = await supabase
+  function median(nums: number[]): number | null {
+    const arr = nums.filter((n) => isFinite(n) && n > 0).sort((a, b) => a - b);
+    if (arr.length === 0) return null;
+    const mid = Math.floor(arr.length / 2);
+    return arr.length % 2 === 0 ? (arr[mid - 1] + arr[mid]) / 2 : arr[mid];
+  }
+
+  async function getLatestBucketIso(): Promise<string | null> {
+    const { data, error } = await supabase
       .from('market_snapshots_norm')
-      .select('price, created_at, trusted')
+      .select('created_at')
       .eq('country', country)
       .eq('karat', karat)
-      .eq('trusted', trusted)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    const iso = data ? String((data as any).created_at || '') : '';
+    return iso || null;
+  }
+
+  async function getMedianAtBucket(createdAtIso: string): Promise<number | null> {
+    const { data, error } = await supabase
+      .from('market_snapshots_norm')
+      .select('price')
+      .eq('country', country)
+      .eq('karat', karat)
+      .eq('created_at', createdAtIso)
+      .limit(5000);
+    if (error) throw new Error(error.message);
+    const prices = (data || []).map((r: any) => asNum(r.price)).filter((n): n is number => n != null);
+    return median(prices);
+  }
+
+  try {
+    const tLatestIso = await getLatestBucketIso();
+    if (!tLatestIso) return { ok: false, error: 'No local price buckets found' };
+
+    const tLatestMs = Date.parse(tLatestIso);
+    const minAgeMs = input.minAgeSeconds * 1000;
+    const windowMs = input.windowSeconds * 1000;
+    const minIso = new Date(tLatestMs - windowMs).toISOString();
+    const maxIso = new Date(tLatestMs - minAgeMs).toISOString();
+
+    // Find the most recent DISTINCT created_at bucket within [tLatest-window, tLatest-minAge]
+    const { data: prevBucket, error: prevBucketErr } = await supabase
+      .from('market_snapshots_norm')
+      .select('created_at')
+      .eq('country', country)
+      .eq('karat', karat)
+      .gte('created_at', minIso)
+      .lte('created_at', maxIso)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (latestErr) return { ok: false, error: latestErr.message };
-    if (!latestRow) continue;
+    if (prevBucketErr) return { ok: false, error: prevBucketErr.message };
 
-    const latestPrice = asNum((latestRow as any).price);
-    const latestAt = String((latestRow as any).created_at || '');
-    if (latestPrice == null || latestPrice <= 0 || !latestAt) continue;
+    const tPrevIso = prevBucket ? String((prevBucket as any).created_at || '') : '';
+    if (!tPrevIso) return { ok: false, error: 'No previous bucket found within window' };
 
-    const latestAtMs = Date.parse(latestAt);
-    const minAtIso = new Date(latestAtMs - input.windowSeconds * 1000).toISOString();
-    const maxAtIso = new Date(latestAtMs - input.minAgeSeconds * 1000).toISOString();
+    const latestMedian = await getMedianAtBucket(tLatestIso);
+    const prevMedian = await getMedianAtBucket(tPrevIso);
 
-    const { data: prevRow, error: prevErr } = await supabase
-      .from('market_snapshots_norm')
-      .select('price, created_at, trusted')
-      .eq('country', country)
-      .eq('karat', karat)
-      .eq('trusted', trusted)
-      .gte('created_at', minAtIso)
-      .lte('created_at', maxAtIso)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (prevErr) return { ok: false, error: prevErr.message };
-    if (!prevRow) continue;
-
-    const prevPrice = asNum((prevRow as any).price);
-    const prevAt = String((prevRow as any).created_at || '');
-    if (prevPrice == null || prevPrice <= 0 || !prevAt) continue;
+    if (latestMedian == null || prevMedian == null || prevMedian <= 0) {
+      return { ok: false, error: 'Median price unavailable for latest/prev buckets' };
+    }
 
     return {
       ok: true,
-      latest: { price: latestPrice, atIso: latestAt, trusted: Boolean((latestRow as any).trusted) },
-      prev: { price: prevPrice, atIso: prevAt, trusted: Boolean((prevRow as any).trusted) },
+      latest: { price: latestMedian, atIso: tLatestIso },
+      prev: { price: prevMedian, atIso: tPrevIso },
     };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Local median query failed' };
   }
-
-  return { ok: false, error: 'No suitable local price points found' };
 }
 
 async function maybeSendLocalPctChange(rule: NotificationRule): Promise<{ triggered: boolean; sent: boolean; error?: string }> {
@@ -298,7 +325,21 @@ async function maybeSendLocalPctChange(rule: NotificationRule): Promise<{ trigge
   if (!points.ok) return { triggered: false, sent: false, error: points.error };
 
   const pct = Math.abs((points.latest.price - points.prev.price) / points.prev.price);
-  if (!(pct >= thresholdPct)) return { triggered: false, sent: false };
+  const triggered = pct >= thresholdPct;
+  console.log('[local_pct_change]', {
+    ruleId: rule.id,
+    userId: rule.user_id,
+    country,
+    karat,
+    t_latest: points.latest.atIso,
+    price_latest: points.latest.price,
+    t_prev: points.prev.atIso,
+    price_prev: points.prev.price,
+    pct,
+    thresholdPct,
+    triggered,
+  });
+  if (!triggered) return { triggered: false, sent: false };
 
   // Cooldown check: most recent sent delivery within cooldownSeconds
   const sinceIso = new Date(Date.now() - cooldownSeconds * 1000).toISOString();
@@ -314,7 +355,8 @@ async function maybeSendLocalPctChange(rule: NotificationRule): Promise<{ trigge
     .maybeSingle();
   if (recentSent?.id) return { triggered: true, sent: false };
 
-  const dedupeKey = `localpct:${rule.id}:${country}:${karat}:${points.latest.atIso}`;
+  const tLatestKeyIso = new Date(points.latest.atIso).toISOString();
+  const dedupeKey = `localpct:${rule.id}:${country}:${karat}:${tLatestKeyIso}`;
   const { data: existing } = await supabaseAdmin
     .from('notification_deliveries')
     .select('id')
