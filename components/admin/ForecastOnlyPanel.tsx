@@ -12,10 +12,49 @@ type Row = {
   source: string | null;
   created_at: string;
   updated_at: string | null;
+  horizon_minutes: number | null;
+  due_at: string | null;
   validated_at: string | null;
   p1: number | null;
   outcome: string | null;
 };
+
+type BotSettings = {
+  tradingEnabled: boolean;
+  predictionHorizonMinutes: number;
+  tradeFrequencyMinutes: number;
+  updatedAt: string | null;
+};
+
+async function getBotSettings(signal?: AbortSignal): Promise<BotSettings> {
+  const res = await fetch('/api/admin/bot-settings/minute-bot', { cache: 'no-store', credentials: 'include', signal });
+  const json = (await res.json()) as any;
+  if (!res.ok || !json?.ok) throw new Error(json?.error || `Settings failed (${res.status})`);
+  return {
+    tradingEnabled: json.tradingEnabled !== false,
+    predictionHorizonMinutes: Number(json.predictionHorizonMinutes ?? 1),
+    tradeFrequencyMinutes: Number(json.tradeFrequencyMinutes ?? 1),
+    updatedAt: json.updatedAt ?? null,
+  };
+}
+
+async function saveBotSettings(input: { predictionHorizonMinutes: number; tradeFrequencyMinutes: number }): Promise<BotSettings> {
+  const res = await fetch('/api/admin/bot-settings/minute-bot', {
+    method: 'POST',
+    cache: 'no-store',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const json = (await res.json()) as any;
+  if (!res.ok || !json?.ok) throw new Error(json?.error || `Settings update failed (${res.status})`);
+  return {
+    tradingEnabled: json.tradingEnabled !== false,
+    predictionHorizonMinutes: Number(json.predictionHorizonMinutes ?? 1),
+    tradeFrequencyMinutes: Number(json.tradeFrequencyMinutes ?? 1),
+    updatedAt: json.updatedAt ?? null,
+  };
+}
 
 type StatusResponse = {
   ok: boolean;
@@ -56,6 +95,10 @@ export default function ForecastOnlyPanel() {
   const [serverAsOf, setServerAsOf] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [displayTz, setDisplayTz] = useState<'local' | 'utc'>('local');
+  const [settings, setSettings] = useState<BotSettings | null>(null);
+  const [horizonInput, setHorizonInput] = useState<string>('1');
+  const [freqInput, setFreqInput] = useState<string>('1');
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const inflight = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -70,9 +113,12 @@ export default function ForecastOnlyPanel() {
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
-      const s = await getStatus(7, 1000, ac.signal);
+      const [s, bs] = await Promise.all([getStatus(7, 1000, ac.signal), getBotSettings(ac.signal)]);
       setServerAsOf(s.serverAsOf ?? new Date().toISOString());
       setRows(s.rows ?? []);
+      setSettings(bs);
+      setHorizonInput(String(bs.predictionHorizonMinutes));
+      setFreqInput(String(bs.tradeFrequencyMinutes));
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') return;
       setError(e instanceof Error ? e.message : `${e}`);
@@ -125,6 +171,48 @@ export default function ForecastOnlyPanel() {
           >
             Refresh
           </button>
+          <div className="flex items-center gap-2 flex-wrap rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2">
+            <div className="text-sm text-gray-300 font-semibold">Settings</div>
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <span className="text-gray-400">Horizon (min)</span>
+              <input
+                value={horizonInput}
+                onChange={(e) => setHorizonInput(e.target.value)}
+                inputMode="numeric"
+                className="w-16 bg-gray-950 border border-gray-800 rounded-md px-2 py-1 text-gray-200"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <span className="text-gray-400">Trade freq (min)</span>
+              <input
+                value={freqInput}
+                onChange={(e) => setFreqInput(e.target.value)}
+                inputMode="numeric"
+                className="w-16 bg-gray-950 border border-gray-800 rounded-md px-2 py-1 text-gray-200"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  setError(null);
+                  const horizon = Number(horizonInput);
+                  const freq = Number(freqInput);
+                  const updated = await saveBotSettings({ predictionHorizonMinutes: horizon, tradeFrequencyMinutes: freq });
+                  setSettings(updated);
+                  setSavedAt(new Date().toISOString());
+                  setTimeout(() => setSavedAt(null), 2500);
+                  await refresh();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : `${e}`);
+                }
+              }}
+              className="px-3 py-1.5 rounded-md text-sm font-semibold bg-gold-600 text-black hover:bg-gold-500"
+            >
+              Save
+            </button>
+            {savedAt && <span className="text-xs text-emerald-300">Saved</span>}
+          </div>
           <label className="flex items-center gap-2 text-sm text-gray-300">
             <span className="text-gray-400">Time:</span>
             <select
@@ -141,6 +229,13 @@ export default function ForecastOnlyPanel() {
           Last refresh: <span className="text-gray-200">{serverAsOf ?? '—'}</span>
         </div>
       </div>
+
+      {settings && (
+        <div className="text-xs text-gray-400">
+          Forecast validates at: <span className="text-gray-200">minute + {settings.predictionHorizonMinutes}m</span>{' '}
+          (due_at). Trades run every <span className="text-gray-200">{settings.tradeFrequencyMinutes}m</span> when Trading is ON.
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-200">{error}</div>
@@ -161,6 +256,8 @@ export default function ForecastOnlyPanel() {
                 <th className="text-left px-4 py-2">predicted</th>
                 <th className="text-left px-4 py-2">dir</th>
                 <th className="text-left px-4 py-2">conf</th>
+                <th className="text-left px-4 py-2">horizon</th>
+                <th className="text-left px-4 py-2">due_at</th>
                 <th className="text-left px-4 py-2">validated_at</th>
                 <th className="text-left px-4 py-2">p1</th>
                 <th className="text-left px-4 py-2">outcome</th>
@@ -180,6 +277,8 @@ export default function ForecastOnlyPanel() {
                     <DirectionBadge dir={r.direction} />
                   </td>
                   <td className="px-4 py-2">{r.confidence == null ? '—' : `${(r.confidence * 100).toFixed(0)}%`}</td>
+                  <td className="px-4 py-2">{r.horizon_minutes ?? '—'}</td>
+                  <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-400">{r.due_at ?? '—'}</td>
                   <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-400">{r.validated_at ?? '—'}</td>
                   <td className="px-4 py-2">{fmt(r.p1, 2)}</td>
                   <td className="px-4 py-2">{r.outcome ?? '—'}</td>
@@ -190,7 +289,7 @@ export default function ForecastOnlyPanel() {
               ))}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-gray-400" colSpan={12}>
+                  <td className="px-4 py-4 text-gray-400" colSpan={14}>
                     No forecast rows found in the selected window.
                   </td>
                 </tr>

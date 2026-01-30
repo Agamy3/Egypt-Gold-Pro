@@ -30,7 +30,7 @@ type ListResponse = {
 };
 
 type BotSettingsResponse =
-  | { ok: true; tradingEnabled: boolean; updatedAt: string | null }
+  | { ok: true; tradingEnabled: boolean; predictionHorizonMinutes: number; tradeFrequencyMinutes: number; updatedAt: string | null }
   | { ok: false; error: string };
 
 async function getStatus(days = 7, limit = 200, signal?: AbortSignal) {
@@ -45,20 +45,20 @@ async function getBotSettings(signal?: AbortSignal) {
   const res = await fetch('/api/admin/bot-settings/minute-bot', { cache: 'no-store', credentials: 'include', signal });
   const json = (await res.json()) as BotSettingsResponse;
   if (!res.ok || !json.ok) throw new Error((json as any).error || `Settings failed (${res.status})`);
-  return json as { ok: true; tradingEnabled: boolean; updatedAt: string | null };
+  return json as { ok: true; tradingEnabled: boolean; predictionHorizonMinutes: number; tradeFrequencyMinutes: number; updatedAt: string | null };
 }
 
-async function setBotSettings(tradingEnabled: boolean) {
+async function setBotSettings(input: { tradingEnabled?: boolean; predictionHorizonMinutes?: number; tradeFrequencyMinutes?: number }) {
   const res = await fetch('/api/admin/bot-settings/minute-bot', {
     method: 'POST',
     cache: 'no-store',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tradingEnabled }),
+    body: JSON.stringify(input),
   });
   const json = (await res.json()) as BotSettingsResponse;
   if (!res.ok || !json.ok) throw new Error((json as any).error || `Settings update failed (${res.status})`);
-  return json as { ok: true; tradingEnabled: boolean; updatedAt: string | null };
+  return json as { ok: true; tradingEnabled: boolean; predictionHorizonMinutes: number; tradeFrequencyMinutes: number; updatedAt: string | null };
 }
 
 function fmt(n: number | null | undefined, digits = 2) {
@@ -74,6 +74,9 @@ export default function ThirtySecondForecastPanel() {
   const [stats, setStats] = useState<ListResponse['stats'] | null>(null);
   const [predictions, setPredictions] = useState<any[]>([]);
   const [tradingEnabled, setTradingEnabled] = useState<boolean | null>(null);
+  const [horizonInput, setHorizonInput] = useState<string>('1');
+  const [freqInput, setFreqInput] = useState<string>('1');
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const inflight = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -95,6 +98,8 @@ export default function ThirtySecondForecastPanel() {
       setStats(s.stats ?? null);
       setPredictions(s.predictions ?? []);
       setTradingEnabled(settings.tradingEnabled);
+      setHorizonInput(String(settings.predictionHorizonMinutes ?? 1));
+      setFreqInput(String(settings.tradeFrequencyMinutes ?? 1));
     } catch (e) {
       // Ignore abort errors (component unmount or rapid refreshes)
       if (e instanceof Error && e.name === 'AbortError') return;
@@ -146,7 +151,7 @@ export default function ThirtySecondForecastPanel() {
               try {
                 setError(null);
                 const next = !(tradingEnabled ?? true);
-                const updated = await setBotSettings(next);
+                const updated = await setBotSettings({ tradingEnabled: next });
                 setTradingEnabled(updated.tradingEnabled);
                 await refreshStatus();
               } catch (e) {
@@ -159,6 +164,49 @@ export default function ThirtySecondForecastPanel() {
           >
             {tradingEnabled === false ? 'Start Trading' : 'Stop Trading'}
           </button>
+          <div className="flex items-center gap-2 flex-wrap rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2">
+            <div className="text-sm text-gray-300 font-semibold">Settings</div>
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <span className="text-gray-400">Horizon (min)</span>
+              <input
+                value={horizonInput}
+                onChange={(e) => setHorizonInput(e.target.value)}
+                inputMode="numeric"
+                className="w-16 bg-gray-950 border border-gray-800 rounded-md px-2 py-1 text-gray-200"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <span className="text-gray-400">Trade freq (min)</span>
+              <input
+                value={freqInput}
+                onChange={(e) => setFreqInput(e.target.value)}
+                inputMode="numeric"
+                className="w-16 bg-gray-950 border border-gray-800 rounded-md px-2 py-1 text-gray-200"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  setError(null);
+                  const horizon = Number(horizonInput);
+                  const freq = Number(freqInput);
+                  const updated = await setBotSettings({ predictionHorizonMinutes: horizon, tradeFrequencyMinutes: freq });
+                  setHorizonInput(String(updated.predictionHorizonMinutes ?? horizon));
+                  setFreqInput(String(updated.tradeFrequencyMinutes ?? freq));
+                  setSavedAt(new Date().toISOString());
+                  setTimeout(() => setSavedAt(null), 2500);
+                  await refreshStatus();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : `${e}`);
+                }
+              }}
+              className="px-3 py-1.5 rounded-md text-sm font-semibold bg-gold-600 text-black hover:bg-gold-500"
+            >
+              Save
+            </button>
+            {savedAt && <span className="text-xs text-emerald-300">Saved</span>}
+          </div>
           <button
             type="button"
             onClick={() => void refreshStatus()}
@@ -200,6 +248,11 @@ export default function ThirtySecondForecastPanel() {
           Trading is <span className="font-semibold">OFF</span>. Forecasts continue; trades are paused.
         </div>
       )}
+
+      <div className="text-xs text-gray-400">
+        Forecast validates at: <span className="text-gray-200">minute + {horizonInput || '—'}m</span> (due_at). Trades run every{' '}
+        <span className="text-gray-200">{freqInput || '—'}m</span> when Trading is ON.
+      </div>
 
       {error && (
         <div className="rounded-md border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-200">

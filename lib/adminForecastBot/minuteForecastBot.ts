@@ -8,7 +8,6 @@ import { decideDirection } from '@/lib/forecast/thirtySecondHeuristic';
 import { floorToUtcMinute, nextUtcMinuteBoundary, toMinuteKeyUtc } from '@/lib/time/minuteBoundary';
 
 const STALE_AFTER_MS = 120_000;
-const HORIZON_SECONDS = 60;
 const VOL_WINDOW_SECONDS = 300; // 5 minutes
 const NOTIONAL_USD = 10;
 
@@ -37,6 +36,12 @@ export type MinuteBotRunResult = {
   tradingEnabled?: boolean;
   forecastValidated?: boolean;
   validatedForecastMinuteKey?: string | null;
+  predictionHorizonMinutes?: number;
+  tradeFrequencyMinutes?: number;
+  shouldTrade?: boolean;
+  tradeSkipReason?: string | null;
+  forecastValidatedCount?: number;
+  forecastValidatedDueCount?: number;
   provider: 'goldapi' | 'gold_api_free';
   source: string;
   alignedTo: string;
@@ -48,6 +53,25 @@ async function getTradingEnabled(supabase: SupabaseClient): Promise<boolean> {
   if (error) return true; // fail-open if settings table missing/misconfigured
   const v = (data as any)?.value as any;
   return v?.tradingEnabled !== false;
+}
+
+function clampInt(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+async function getMinuteBotSettings(supabase: SupabaseClient): Promise<{
+  tradingEnabled: boolean;
+  predictionHorizonMinutes: number;
+  tradeFrequencyMinutes: number;
+}> {
+  const { data, error } = await supabase.from('bot_settings').select('value').eq('key', 'minute_bot').maybeSingle();
+  if (error) return { tradingEnabled: true, predictionHorizonMinutes: 1, tradeFrequencyMinutes: 1 };
+  const v = (data as any)?.value as any;
+  return {
+    tradingEnabled: v?.tradingEnabled !== false,
+    predictionHorizonMinutes: clampInt(Number(v?.predictionHorizonMinutes ?? 1), 1, 60),
+    tradeFrequencyMinutes: clampInt(Number(v?.tradeFrequencyMinutes ?? 1), 1, 60),
+  };
 }
 
 function computeDirectionFromPrediction(input: {
@@ -101,56 +125,73 @@ export async function runMinuteForecastBot(input: {
   const t0 = floorToUtcMinute(now);
   const t0Iso = t0.toISOString();
   const minuteKey = toMinuteKeyUtc(t0);
-  const dueAtIso = nextUtcMinuteBoundary(t0).toISOString();
+  const settings = await getMinuteBotSettings(supabase);
+  const tradingEnabled = settings.tradingEnabled;
+  const predictionHorizonMinutes = settings.predictionHorizonMinutes;
+  const tradeFrequencyMinutes = settings.tradeFrequencyMinutes;
+  const horizonSeconds = predictionHorizonMinutes * 60;
+  const forecastDueAtIso = new Date(t0.getTime() + predictionHorizonMinutes * 60_000).toISOString();
+  const tradeDueAtIso = forecastDueAtIso;
 
-  const tradingEnabled = await getTradingEnabled(supabase);
+  const minuteIndex = Math.floor(t0.getTime() / 60_000);
+  const shouldTrade = tradingEnabled && minuteIndex % tradeFrequencyMinutes === 0;
+  const tradeSkipReason = !tradingEnabled ? 'trading_disabled' : shouldTrade ? null : 'frequency_skip';
 
   // ============================
-  // Step 1) Validate previous minute forecast (independent of trades)
+  // Step 1) Validate due forecasts (timing-correct via due_at; tolerant to late cron)
   // ============================
   let forecastValidated = false;
-  let validatedForecastMinuteKey: string | null = null;
-  try {
-    const prevMinuteKey = toMinuteKeyUtc(new Date(t0.getTime() - 60_000));
-    validatedForecastMinuteKey = prevMinuteKey;
+  let forecastValidatedCount = 0;
+  let forecastValidatedDueCount = 0;
+  const dueCutoffIso = new Date(t0.getTime() + 7000).toISOString();
 
-    const { data: prevForecast, error: prevErr } = await supabase
+  try {
+    const { data: dueForecasts, error: dueFErr } = await supabase
       .from('minute_forecasts')
-      .select('id, minute_key, p0, direction, validated_at, meta')
-      .eq('minute_key', prevMinuteKey)
+      .select('id, minute_key, p0, direction, validated_at, meta, due_at')
       .eq('country', 'GLOBAL')
       .eq('karat', 24)
-      .maybeSingle();
+      .is('validated_at', null)
+      .lte('due_at', dueCutoffIso)
+      .order('due_at', { ascending: true })
+      .limit(50);
 
-    if (!prevErr && prevForecast && !(prevForecast as any).validated_at) {
+    if (!dueFErr && dueForecasts && dueForecasts.length > 0) {
+      forecastValidatedDueCount = dueForecasts.length;
       const q = await fetchQuoteForProvider(provider);
       const p1 = q.price;
-      const p0 = asNumber((prevForecast as any).p0);
-      const dir = String((prevForecast as any).direction || 'NA') as any;
-      const outcome = computeOutcome({ direction: dir, p0, p1 });
 
-      const mergedMeta = {
-        ...((prevForecast as any).meta || {}),
-        validationQuoteTimestampMs: q.timestampMs,
-        validationProvider: q.provider,
-      };
+      for (const row of dueForecasts as any[]) {
+        const p0 = asNumber(row.p0);
+        const dir = String(row.direction || 'NA') as any;
+        const outcome = computeOutcome({ direction: dir, p0, p1 });
+        const mergedMeta = {
+          ...(row.meta || {}),
+          validationQuoteTimestampMs: q.timestampMs,
+          validationProvider: q.provider,
+        };
 
-      const { error: updErr } = await supabase
-        .from('minute_forecasts')
-        .update({
-          validated_at: nowIso,
-          p1,
-          outcome,
-          updated_at: nowIso,
-          meta: mergedMeta,
-        })
-        .eq('id', (prevForecast as any).id);
+        const { error: updErr } = await supabase
+          .from('minute_forecasts')
+          .update({
+            validated_at: nowIso,
+            p1,
+            outcome,
+            updated_at: nowIso,
+            meta: mergedMeta,
+          })
+          .eq('id', row.id);
 
-      if (!updErr) forecastValidated = true;
+        if (!updErr) forecastValidatedCount += 1;
+      }
+
+      forecastValidated = forecastValidatedCount > 0;
     }
   } catch {
     // best-effort; don't block forecast creation
   }
+
+  const validatedForecastMinuteKey = toMinuteKeyUtc(new Date(t0.getTime() - 60_000));
 
   // ============================
   // Forecast stream (decoupled)
@@ -212,7 +253,7 @@ export async function runMinuteForecastBot(input: {
         });
         const recentPrices = recentRes.ok ? recentRes.prices : [];
 
-        const targetMs = t0.getTime() - HORIZON_SECONDS * 1000;
+        const targetMs = t0.getTime() - horizonSeconds * 1000;
         const refRes = await getLatestPriceAtOrBeforeTime(supabase, targetMs, { source });
 
         let pAgo = p0;
@@ -258,7 +299,7 @@ export async function runMinuteForecastBot(input: {
           provider,
           missingTimestamp,
           minuteBoundaryIso: t0Iso,
-          horizonSeconds: HORIZON_SECONDS,
+          horizonSeconds,
           refTargetMs: targetMs,
           refError: refRes.ok ? null : refRes.error,
           recentError: recentRes.ok ? null : recentRes.error,
@@ -282,6 +323,8 @@ export async function runMinuteForecastBot(input: {
         p0,
         predicted_price,
         direction,
+        horizon_minutes: predictionHorizonMinutes,
+        due_at: forecastDueAtIso,
         confidence,
         provider,
         source,
@@ -426,10 +469,40 @@ export async function runMinuteForecastBot(input: {
       tradingEnabled,
       forecastValidated,
       validatedForecastMinuteKey,
+      predictionHorizonMinutes,
+      tradeFrequencyMinutes,
+      shouldTrade,
+      tradeSkipReason,
+      forecastValidatedCount,
+      forecastValidatedDueCount,
       provider,
       source,
       alignedTo: t0Iso,
       createdMinuteKey: null,
+    };
+  }
+
+  if (!shouldTrade) {
+    return {
+      ok: true,
+      serverAsOf: nowIso,
+      validatedCount,
+      created: false,
+      forecastUpserted,
+      forecastRow: forecastRow ?? undefined,
+      tradingEnabled,
+      forecastValidated,
+      validatedForecastMinuteKey,
+      predictionHorizonMinutes,
+      tradeFrequencyMinutes,
+      shouldTrade,
+      tradeSkipReason,
+      forecastValidatedCount,
+      forecastValidatedDueCount,
+      provider,
+      source,
+      alignedTo: t0Iso,
+      createdMinuteKey: minuteKey,
     };
   }
 
@@ -440,7 +513,7 @@ export async function runMinuteForecastBot(input: {
     .select('id')
     .eq('minute_key', minuteKey)
     .eq('source', source)
-    .eq('horizon_seconds', HORIZON_SECONDS)
+    .eq('horizon_seconds', horizonSeconds)
     .maybeSingle();
 
   if (existingMinute?.id) {
@@ -454,6 +527,12 @@ export async function runMinuteForecastBot(input: {
       tradingEnabled,
       forecastValidated,
       validatedForecastMinuteKey,
+      predictionHorizonMinutes,
+      tradeFrequencyMinutes,
+      shouldTrade,
+      tradeSkipReason,
+      forecastValidatedCount,
+      forecastValidatedDueCount,
       provider,
       source,
       alignedTo: t0Iso,
@@ -505,7 +584,7 @@ export async function runMinuteForecastBot(input: {
     const recentPrices = recentRes.ok ? recentRes.prices : [];
 
     // Reference price: most recent <= t0 - 60s (strict)
-    const targetMs = t0.getTime() - HORIZON_SECONDS * 1000;
+    const targetMs = t0.getTime() - horizonSeconds * 1000;
     const refRes = await getLatestPriceAtOrBeforeTime(supabase, targetMs, { source });
 
     let pAgo = p0;
@@ -551,7 +630,7 @@ export async function runMinuteForecastBot(input: {
       provider,
       missingTimestamp,
       minuteBoundaryIso: t0Iso,
-      horizonSeconds: HORIZON_SECONDS,
+      horizonSeconds,
       refTargetMs: targetMs,
       refError: refRes.ok ? null : refRes.error,
       recentError: recentRes.ok ? null : recentRes.error,
@@ -561,11 +640,11 @@ export async function runMinuteForecastBot(input: {
   // DB-level idempotency: upsert with conflict on (minute_key, source, horizon_seconds) and DO NOTHING.
   const insertRow = {
     minute_key: minuteKey,
-    horizon_seconds: HORIZON_SECONDS,
+    horizon_seconds: horizonSeconds,
     predicted_direction,
     p0,
     p0_at: t0Iso,
-    due_at: dueAtIso,
+    due_at: tradeDueAtIso,
     source,
     meta,
     predicted_delta,
@@ -598,6 +677,12 @@ export async function runMinuteForecastBot(input: {
     tradingEnabled,
     forecastValidated,
     validatedForecastMinuteKey,
+    predictionHorizonMinutes,
+    tradeFrequencyMinutes,
+    shouldTrade,
+    tradeSkipReason,
+    forecastValidatedCount,
+    forecastValidatedDueCount,
     provider,
     source,
     alignedTo: t0Iso,

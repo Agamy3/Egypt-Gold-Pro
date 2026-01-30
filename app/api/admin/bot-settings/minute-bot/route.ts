@@ -22,6 +22,16 @@ function asBool(x: unknown): boolean | null {
   return null;
 }
 
+function asInt(x: unknown): number | null {
+  const n = typeof x === 'number' ? x : Number(x);
+  if (!isFinite(n)) return null;
+  return Math.floor(n);
+}
+
+function clampInt(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
 export async function GET() {
   try {
     await requireAdmin();
@@ -32,11 +42,15 @@ export async function GET() {
 
     const value = (data as any)?.value as any;
     const tradingEnabled = value?.tradingEnabled !== false;
+    const predictionHorizonMinutes = clampInt(Number(value?.predictionHorizonMinutes ?? 1), 1, 60);
+    const tradeFrequencyMinutes = clampInt(Number(value?.tradeFrequencyMinutes ?? 1), 1, 60);
 
     return withNoStoreHeaders(
       NextResponse.json({
         ok: true,
         tradingEnabled,
+        predictionHorizonMinutes,
+        tradeFrequencyMinutes,
         updatedAt: (data as any)?.updated_at ?? null,
       })
     );
@@ -51,18 +65,36 @@ export async function POST(req: NextRequest) {
     const supabase = getServerClient();
 
     const body = (await req.json().catch(() => null)) as any;
-    const nextVal = asBool(body?.tradingEnabled);
-    if (nextVal === null) {
+    const maybeTradingEnabled = body?.tradingEnabled !== undefined ? asBool(body?.tradingEnabled) : null;
+    const maybeHorizon = body?.predictionHorizonMinutes !== undefined ? asInt(body?.predictionHorizonMinutes) : null;
+    const maybeFreq = body?.tradeFrequencyMinutes !== undefined ? asInt(body?.tradeFrequencyMinutes) : null;
+
+    if (body?.tradingEnabled !== undefined && maybeTradingEnabled === null) {
+      return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'tradingEnabled must be boolean' }, { status: 400 }));
+    }
+    if (body?.predictionHorizonMinutes !== undefined && (maybeHorizon === null || maybeHorizon < 1 || maybeHorizon > 60)) {
       return withNoStoreHeaders(
-        NextResponse.json({ ok: false, error: 'Body must be { tradingEnabled: boolean }' }, { status: 400 })
+        NextResponse.json({ ok: false, error: 'predictionHorizonMinutes must be integer 1..60' }, { status: 400 })
+      );
+    }
+    if (body?.tradeFrequencyMinutes !== undefined && (maybeFreq === null || maybeFreq < 1 || maybeFreq > 60)) {
+      return withNoStoreHeaders(
+        NextResponse.json({ ok: false, error: 'tradeFrequencyMinutes must be integer 1..60' }, { status: 400 })
       );
     }
 
-    const row = {
-      key: 'minute_bot',
-      value: { tradingEnabled: nextVal },
-      updated_at: new Date().toISOString(),
+    // Merge with existing value so partial updates work.
+    const { data: existing, error: getErr } = await supabase.from('bot_settings').select('value').eq('key', 'minute_bot').maybeSingle();
+    if (getErr) return withNoStoreHeaders(NextResponse.json({ ok: false, error: getErr.message }, { status: 500 }));
+    const current = ((existing as any)?.value as any) ?? {};
+
+    const nextValue = {
+      tradingEnabled: maybeTradingEnabled ?? (current.tradingEnabled !== false),
+      predictionHorizonMinutes: clampInt(Number(maybeHorizon ?? current.predictionHorizonMinutes ?? 1), 1, 60),
+      tradeFrequencyMinutes: clampInt(Number(maybeFreq ?? current.tradeFrequencyMinutes ?? 1), 1, 60),
     };
+
+    const row = { key: 'minute_bot', value: nextValue, updated_at: new Date().toISOString() };
 
     const { data, error } = await supabase
       .from('bot_settings')
@@ -76,6 +108,8 @@ export async function POST(req: NextRequest) {
       NextResponse.json({
         ok: true,
         tradingEnabled: ((data as any)?.value as any)?.tradingEnabled !== false,
+        predictionHorizonMinutes: clampInt(Number(((data as any)?.value as any)?.predictionHorizonMinutes ?? 1), 1, 60),
+        tradeFrequencyMinutes: clampInt(Number(((data as any)?.value as any)?.tradeFrequencyMinutes ?? 1), 1, 60),
         updatedAt: (data as any)?.updated_at ?? null,
       })
     );

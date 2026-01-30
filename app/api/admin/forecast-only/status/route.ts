@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('minute_forecasts')
-      .select('minute_key, p0, predicted_price, direction, confidence, provider, source, created_at, updated_at, validated_at, p1, outcome')
+      .select('minute_key, p0, predicted_price, direction, confidence, provider, source, created_at, updated_at, horizon_minutes, due_at, validated_at, p1, outcome')
       .gte('created_at', sinceIso)
       .order('minute_key', { ascending: false })
       .order('updated_at', { ascending: false })
@@ -54,6 +54,8 @@ export async function GET(request: NextRequest) {
       source: string | null;
       created_at: string;
       updated_at: string | null;
+      horizon_minutes: number | null;
+      due_at: string | null;
       validated_at: string | null;
       p1: number | null;
       outcome: string | null;
@@ -70,6 +72,8 @@ export async function GET(request: NextRequest) {
         source: r?.source != null ? String(r.source) : null,
         created_at: String(r?.created_at ?? ''),
         updated_at: r?.updated_at != null ? String(r.updated_at) : null,
+        horizon_minutes: typeof r?.horizon_minutes === 'number' ? r.horizon_minutes : (r?.horizon_minutes != null ? Number(r.horizon_minutes) : null),
+        due_at: r?.due_at != null ? String(r.due_at) : null,
         validated_at: r?.validated_at != null ? String(r.validated_at) : null,
         p1: asNumber(r?.p1),
         outcome: r?.outcome != null ? String(r.outcome) : null,
