@@ -29,24 +29,31 @@ export async function GET(_req: NextRequest) {
     await requireAdmin();
     const supabase = getServerClient();
 
-    const { data: cols, error: colsErr } = await supabase
-      .from('information_schema.columns')
-      .select('column_name,data_type')
-      .eq('table_schema', 'public')
-      .eq('table_name', 'alpaca_paper_state')
-      .order('ordinal_position', { ascending: true });
-
-    // Try a tiny update using the new column to detect PostgREST schema cache staleness.
+    const nowIso = new Date().toISOString();
+    let lockSelectOk: boolean | null = null;
+    let lockSelectError: string | null = null;
     let lockUpdateOk: boolean | null = null;
     let lockUpdateError: string | null = null;
-    const nowIso = new Date().toISOString();
+
+    // PostgREST does NOT expose information_schema; instead we probe the column directly.
+    try {
+      const { error: selErr } = await supabase
+        .from('alpaca_paper_state')
+        .select('key, run_lock_until, run_lock_token')
+        .eq('key', 'default')
+        .maybeSingle();
+      lockSelectOk = !selErr;
+      lockSelectError = selErr ? selErr.message : null;
+    } catch (e) {
+      lockSelectOk = false;
+      lockSelectError = e instanceof Error ? e.message : String(e);
+    }
+
     try {
       const { error: updErr } = await supabase
         .from('alpaca_paper_state')
         .update({ run_lock_until: nowIso, updated_at: nowIso } as any)
-        .eq('key', 'default')
-        .select('key')
-        .maybeSingle();
+        .eq('key', 'default');
       lockUpdateOk = !updErr;
       lockUpdateError = updErr ? updErr.message : null;
     } catch (e) {
@@ -54,20 +61,17 @@ export async function GET(_req: NextRequest) {
       lockUpdateError = e instanceof Error ? e.message : String(e);
     }
 
-    if (colsErr) {
-      return withNoStoreHeaders(NextResponse.json({ ok: false, error: colsErr.message }, { status: 500 }));
-    }
-
     return withNoStoreHeaders(
       NextResponse.json({
         ok: true,
         serverAsOf: nowIso,
         supabaseHost: getSupabaseHost(),
-        columns: cols ?? [],
+        lockSelectOk,
+        lockSelectError,
         lockUpdateOk,
         lockUpdateError,
         hint:
-          lockUpdateOk === false && (lockUpdateError || '').includes('run_lock_until')
+          (lockSelectOk === false || lockUpdateOk === false) && ((lockSelectError || '') + (lockUpdateError || '')).includes('run_lock_until')
             ? "If columns exist but lockUpdate fails, PostgREST schema cache is stale. Run `select pg_notify('pgrst','reload schema');` or restart Supabase API."
             : null,
       })
