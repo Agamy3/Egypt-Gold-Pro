@@ -1,6 +1,6 @@
 import type { AlpacaAccount, AlpacaPosition } from '@/lib/brokers/alpacaPaper';
 import { computeIndicators } from '@/lib/trading/indicators';
-import { fetchHistory } from '@/lib/trading/data/market';
+import { fetchHistory, fetchRealtime } from '@/lib/trading/data/market';
 import { getNewsSentimentForSymbol } from '@/lib/trading/data/news';
 import { scoreSymbol } from '@/lib/trading/strategy/score';
 import { computeStops, positionSizing } from '@/lib/trading/strategy/risk';
@@ -41,6 +41,9 @@ export async function decideActions(input: {
   const equity = num(input.account.equity) ?? 0;
   const inPos = new Set(input.positions.map((p) => p.symbol));
 
+  // Use realtime quotes for entry reference (reduces Alpaca base_price mismatches vs bar closes).
+  const realtimeBySymbol = await fetchRealtime(input.universe);
+
   const candidates: Array<{ symbol: string; score: number; confidence0to1: number; reasons: string[]; price: number; atr: number | null; indicators: any }> = [];
 
   for (const symbol of input.universe) {
@@ -50,13 +53,14 @@ export async function decideActions(input: {
     const bars = await fetchHistory(symbol, '5Min', 200).catch(() => []);
     if (bars.length < 60) continue;
     const indicators = computeIndicators(bars.map((b) => ({ o: b.o, h: b.h, l: b.l, c: b.c })));
-    const lastClose = bars[bars.length - 1]?.c;
-    if (!isFinite(lastClose)) continue;
+    const rt = realtimeBySymbol[symbol];
+    const price = rt?.price;
+    if (!isFinite(price)) continue;
     const sentiment = await getNewsSentimentForSymbol(symbol);
 
     const s = scoreSymbol({
       indicators,
-      realtime: { price: lastClose, ts: bars[bars.length - 1]?.t ?? '' },
+      realtime: rt ?? null,
       sentiment,
     });
 
@@ -65,7 +69,7 @@ export async function decideActions(input: {
       score: s.score,
       confidence0to1: s.confidence0to1,
       reasons: s.reasons,
-      price: Number(lastClose),
+      price: Number(price),
       atr: indicators.atr14,
       indicators,
     });

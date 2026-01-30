@@ -10,9 +10,12 @@ export function computeStops(input: { entry: number; atr: number | null; kStop?:
   const kStop = input.kStop ?? 1.2;
   const kTp = input.kTp ?? 1.8;
   const atr = input.atr ?? 0;
-  const stopDistance = Math.max(0.01, atr * kStop);
+  // Alpaca bracket orders validate stop/tp against an internal base_price (often near the fill).
+  // To avoid 422s like "stop_price must be <= base_price - 0.01", enforce a small absolute gap.
+  const MIN_GAP = 0.05; // $0.05 cushion
+  const stopDistance = Math.max(0.01, atr * kStop, MIN_GAP);
   const stopLossRaw = Math.max(0.01, input.entry - stopDistance);
-  const takeProfitRaw = Math.max(0.01, input.entry + atr * kTp);
+  const takeProfitRaw = Math.max(0.01, input.entry + Math.max(atr * kTp, MIN_GAP));
 
   // Alpaca rejects prices with excessive precision; normalize to 2 decimals.
   const stopLoss = round2(stopLossRaw);
