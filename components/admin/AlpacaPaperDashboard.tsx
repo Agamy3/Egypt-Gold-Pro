@@ -197,6 +197,27 @@ export default function AlpacaPaperDashboard() {
                     setError(null);
                     setLastAction(null);
                     setSaving(true);
+                    await fetchJson('/api/admin/alpaca-paper/unlock', { method: 'POST' });
+                    setLastAction('lock cleared');
+                    await refresh();
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-800 text-gray-200 hover:bg-gray-700 disabled:opacity-50"
+              >
+                Clear lock
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  try {
+                    setError(null);
+                    setLastAction(null);
+                    setSaving(true);
                     const nextEnabled = !Boolean(settings?.enabled);
                     await fetchJson('/api/admin/alpaca-paper/toggle', {
                       method: 'POST',
