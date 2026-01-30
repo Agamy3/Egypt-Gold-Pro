@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('minute_forecasts')
-      .select('minute_key, p0, predicted_price, direction, confidence, provider, source, created_at, updated_at')
+      .select('minute_key, p0, predicted_price, direction, confidence, provider, source, created_at, updated_at, validated_at, p1, outcome')
       .gte('created_at', sinceIso)
       .order('minute_key', { ascending: false })
       .order('updated_at', { ascending: false })
@@ -54,6 +54,9 @@ export async function GET(request: NextRequest) {
       source: string | null;
       created_at: string;
       updated_at: string | null;
+      validated_at: string | null;
+      p1: number | null;
+      outcome: string | null;
     }> = [];
 
     for (const r of (data || []) as any[]) {
@@ -67,6 +70,9 @@ export async function GET(request: NextRequest) {
         source: r?.source != null ? String(r.source) : null,
         created_at: String(r?.created_at ?? ''),
         updated_at: r?.updated_at != null ? String(r.updated_at) : null,
+        validated_at: r?.validated_at != null ? String(r.validated_at) : null,
+        p1: asNumber(r?.p1),
+        outcome: r?.outcome != null ? String(r.outcome) : null,
       });
     }
 

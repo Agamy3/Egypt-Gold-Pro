@@ -34,11 +34,21 @@ export type MinuteBotRunResult = {
   createdPrediction?: any;
   forecastUpserted?: boolean;
   forecastRow?: any;
+  tradingEnabled?: boolean;
+  forecastValidated?: boolean;
+  validatedForecastMinuteKey?: string | null;
   provider: 'goldapi' | 'gold_api_free';
   source: string;
   alignedTo: string;
   createdMinuteKey: string | null;
 } | { ok: false; error: string; status?: number };
+
+async function getTradingEnabled(supabase: SupabaseClient): Promise<boolean> {
+  const { data, error } = await supabase.from('bot_settings').select('value').eq('key', 'minute_bot').maybeSingle();
+  if (error) return true; // fail-open if settings table missing/misconfigured
+  const v = (data as any)?.value as any;
+  return v?.tradingEnabled !== false;
+}
 
 function computeDirectionFromPrediction(input: {
   predicted_direction: 'UP' | 'DOWN' | 'STALE';
@@ -52,6 +62,19 @@ function computeDirectionFromPrediction(input: {
   const eps = 1e-9;
   if (Math.abs(pp - p0) <= eps) return 'TIE';
   return pp > p0 ? 'UP' : 'DOWN';
+}
+
+function computeOutcome(input: { direction: 'UP' | 'DOWN' | 'TIE' | 'STALE' | 'NA'; p0: number | null; p1: number | null }) {
+  const { direction, p0, p1 } = input;
+  if (direction === 'STALE') return 'stale' as const;
+  if (direction === 'NA') return 'na' as const;
+  if (p0 == null || !isFinite(p0) || p0 <= 0 || p1 == null || !isFinite(p1)) return 'na' as const;
+  const eps = 1e-9;
+  if (Math.abs(p1 - p0) <= eps) return 'tie' as const;
+  if (direction === 'TIE') return 'false' as const;
+  if (direction === 'UP') return p1 > p0 ? ('true' as const) : ('false' as const);
+  if (direction === 'DOWN') return p1 < p0 ? ('true' as const) : ('false' as const);
+  return 'na' as const;
 }
 
 /**
@@ -79,6 +102,55 @@ export async function runMinuteForecastBot(input: {
   const t0Iso = t0.toISOString();
   const minuteKey = toMinuteKeyUtc(t0);
   const dueAtIso = nextUtcMinuteBoundary(t0).toISOString();
+
+  const tradingEnabled = await getTradingEnabled(supabase);
+
+  // ============================
+  // Step 1) Validate previous minute forecast (independent of trades)
+  // ============================
+  let forecastValidated = false;
+  let validatedForecastMinuteKey: string | null = null;
+  try {
+    const prevMinuteKey = toMinuteKeyUtc(new Date(t0.getTime() - 60_000));
+    validatedForecastMinuteKey = prevMinuteKey;
+
+    const { data: prevForecast, error: prevErr } = await supabase
+      .from('minute_forecasts')
+      .select('id, minute_key, p0, direction, validated_at, meta')
+      .eq('minute_key', prevMinuteKey)
+      .eq('country', 'GLOBAL')
+      .eq('karat', 24)
+      .maybeSingle();
+
+    if (!prevErr && prevForecast && !(prevForecast as any).validated_at) {
+      const q = await fetchQuoteForProvider(provider);
+      const p1 = q.price;
+      const p0 = asNumber((prevForecast as any).p0);
+      const dir = String((prevForecast as any).direction || 'NA') as any;
+      const outcome = computeOutcome({ direction: dir, p0, p1 });
+
+      const mergedMeta = {
+        ...((prevForecast as any).meta || {}),
+        validationQuoteTimestampMs: q.timestampMs,
+        validationProvider: q.provider,
+      };
+
+      const { error: updErr } = await supabase
+        .from('minute_forecasts')
+        .update({
+          validated_at: nowIso,
+          p1,
+          outcome,
+          updated_at: nowIso,
+          meta: mergedMeta,
+        })
+        .eq('id', (prevForecast as any).id);
+
+      if (!updErr) forecastValidated = true;
+    }
+  } catch {
+    // best-effort; don't block forecast creation
+  }
 
   // ============================
   // Forecast stream (decoupled)
@@ -343,7 +415,7 @@ export async function runMinuteForecastBot(input: {
     });
   }
 
-  if (!shouldCreate) {
+  if (!shouldCreate || !tradingEnabled) {
     return {
       ok: true,
       serverAsOf: nowIso,
@@ -351,6 +423,9 @@ export async function runMinuteForecastBot(input: {
       created: false,
       forecastUpserted,
       forecastRow: forecastRow ?? undefined,
+      tradingEnabled,
+      forecastValidated,
+      validatedForecastMinuteKey,
       provider,
       source,
       alignedTo: t0Iso,
@@ -376,6 +451,9 @@ export async function runMinuteForecastBot(input: {
       created: false,
       forecastUpserted,
       forecastRow: forecastRow ?? undefined,
+      tradingEnabled,
+      forecastValidated,
+      validatedForecastMinuteKey,
       provider,
       source,
       alignedTo: t0Iso,
@@ -517,6 +595,9 @@ export async function runMinuteForecastBot(input: {
     createdPrediction: created ?? undefined,
     forecastUpserted,
     forecastRow: forecastRow ?? undefined,
+    tradingEnabled,
+    forecastValidated,
+    validatedForecastMinuteKey,
     provider,
     source,
     alignedTo: t0Iso,

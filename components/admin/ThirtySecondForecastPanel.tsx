@@ -29,12 +29,36 @@ type ListResponse = {
   predictions?: any[];
 };
 
+type BotSettingsResponse =
+  | { ok: true; tradingEnabled: boolean; updatedAt: string | null }
+  | { ok: false; error: string };
+
 async function getStatus(days = 7, limit = 200, signal?: AbortSignal) {
   const url = `/api/admin/forecast-bot/status?days=${days}&limit=${limit}`;
   const res = await fetch(url, { cache: 'no-store', credentials: 'include', signal });
   const json = (await res.json()) as ListResponse;
   if (!res.ok || !json.ok) throw new Error(json.error || `Status failed (${res.status})`);
   return json;
+}
+
+async function getBotSettings(signal?: AbortSignal) {
+  const res = await fetch('/api/admin/bot-settings/minute-bot', { cache: 'no-store', credentials: 'include', signal });
+  const json = (await res.json()) as BotSettingsResponse;
+  if (!res.ok || !json.ok) throw new Error((json as any).error || `Settings failed (${res.status})`);
+  return json as { ok: true; tradingEnabled: boolean; updatedAt: string | null };
+}
+
+async function setBotSettings(tradingEnabled: boolean) {
+  const res = await fetch('/api/admin/bot-settings/minute-bot', {
+    method: 'POST',
+    cache: 'no-store',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tradingEnabled }),
+  });
+  const json = (await res.json()) as BotSettingsResponse;
+  if (!res.ok || !json.ok) throw new Error((json as any).error || `Settings update failed (${res.status})`);
+  return json as { ok: true; tradingEnabled: boolean; updatedAt: string | null };
 }
 
 function fmt(n: number | null | undefined, digits = 2) {
@@ -49,6 +73,7 @@ export default function ThirtySecondForecastPanel() {
   const [latestPrediction, setLatestPrediction] = useState<any | null>(null);
   const [stats, setStats] = useState<ListResponse['stats'] | null>(null);
   const [predictions, setPredictions] = useState<any[]>([]);
+  const [tradingEnabled, setTradingEnabled] = useState<boolean | null>(null);
 
   const inflight = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -63,12 +88,13 @@ export default function ThirtySecondForecastPanel() {
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
-      const s = await getStatus(7, 200, ac.signal);
+      const [s, settings] = await Promise.all([getStatus(7, 200, ac.signal), getBotSettings(ac.signal)]);
       setLastTickAt(s.serverAsOf ?? new Date().toISOString());
       setLatest(s.latestQuote ?? null);
       setLatestPrediction(s.latestPrediction ?? null);
       setStats(s.stats ?? null);
       setPredictions(s.predictions ?? []);
+      setTradingEnabled(settings.tradingEnabled);
     } catch (e) {
       // Ignore abort errors (component unmount or rapid refreshes)
       if (e instanceof Error && e.name === 'AbortError') return;
@@ -116,6 +142,25 @@ export default function ThirtySecondForecastPanel() {
         <div className="flex items-center gap-3 flex-wrap">
           <button
             type="button"
+            onClick={async () => {
+              try {
+                setError(null);
+                const next = !(tradingEnabled ?? true);
+                const updated = await setBotSettings(next);
+                setTradingEnabled(updated.tradingEnabled);
+                await refreshStatus();
+              } catch (e) {
+                setError(e instanceof Error ? e.message : `${e}`);
+              }
+            }}
+            className={`px-3 py-2 rounded-md text-sm font-semibold ${
+              tradingEnabled === false ? 'bg-emerald-600 text-black hover:bg-emerald-500' : 'bg-red-600 text-white hover:bg-red-500'
+            }`}
+          >
+            {tradingEnabled === false ? 'Start Trading' : 'Stop Trading'}
+          </button>
+          <button
+            type="button"
             onClick={() => void refreshStatus()}
             className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-800 text-gray-200 hover:bg-gray-700"
           >
@@ -149,6 +194,12 @@ export default function ThirtySecondForecastPanel() {
           Last refresh: <span className="text-gray-200">{lastTickAt ?? '—'}</span>
         </div>
       </div>
+
+      {tradingEnabled === false && (
+        <div className="rounded-md border border-yellow-800 bg-yellow-950/40 px-3 py-2 text-sm text-yellow-200">
+          Trading is <span className="font-semibold">OFF</span>. Forecasts continue; trades are paused.
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-200">

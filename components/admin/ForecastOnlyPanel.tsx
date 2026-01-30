@@ -12,6 +12,9 @@ type Row = {
   source: string | null;
   created_at: string;
   updated_at: string | null;
+  validated_at: string | null;
+  p1: number | null;
+  outcome: string | null;
 };
 
 type StatusResponse = {
@@ -158,6 +161,9 @@ export default function ForecastOnlyPanel() {
                 <th className="text-left px-4 py-2">predicted</th>
                 <th className="text-left px-4 py-2">dir</th>
                 <th className="text-left px-4 py-2">conf</th>
+                <th className="text-left px-4 py-2">validated_at</th>
+                <th className="text-left px-4 py-2">p1</th>
+                <th className="text-left px-4 py-2">outcome</th>
                 <th className="text-left px-4 py-2">provider</th>
                 <th className="text-left px-4 py-2">source</th>
                 <th className="text-left px-4 py-2">created_at</th>
@@ -174,6 +180,9 @@ export default function ForecastOnlyPanel() {
                     <DirectionBadge dir={r.direction} />
                   </td>
                   <td className="px-4 py-2">{r.confidence == null ? '—' : `${(r.confidence * 100).toFixed(0)}%`}</td>
+                  <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-400">{r.validated_at ?? '—'}</td>
+                  <td className="px-4 py-2">{fmt(r.p1, 2)}</td>
+                  <td className="px-4 py-2">{r.outcome ?? '—'}</td>
                   <td className="px-4 py-2">{r.provider ?? '—'}</td>
                   <td className="px-4 py-2">{r.source ?? '—'}</td>
                   <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-400">{r.created_at ?? '—'}</td>
@@ -181,7 +190,7 @@ export default function ForecastOnlyPanel() {
               ))}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-gray-400" colSpan={9}>
+                  <td className="px-4 py-4 text-gray-400" colSpan={12}>
                     No forecast rows found in the selected window.
                   </td>
                 </tr>
