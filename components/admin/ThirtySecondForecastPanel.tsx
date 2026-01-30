@@ -29,9 +29,9 @@ type ListResponse = {
   predictions?: any[];
 };
 
-async function getStatus(days = 7, limit = 200) {
+async function getStatus(days = 7, limit = 200, signal?: AbortSignal) {
   const url = `/api/admin/forecast-bot/status?days=${days}&limit=${limit}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, { cache: 'no-store', credentials: 'include', signal });
   const json = (await res.json()) as ListResponse;
   if (!res.ok || !json.ok) throw new Error(json.error || `Status failed (${res.status})`);
   return json;
@@ -51,6 +51,7 @@ export default function ThirtySecondForecastPanel() {
   const [predictions, setPredictions] = useState<any[]>([]);
 
   const inflight = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const exportHref = useMemo(() => `/api/admin/30s-forecast/export?days=7`, []);
 
@@ -59,13 +60,18 @@ export default function ThirtySecondForecastPanel() {
     inflight.current = true;
     try {
       setError(null);
-      const s = await getStatus(7, 200);
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+      const s = await getStatus(7, 200, ac.signal);
       setLastTickAt(s.serverAsOf ?? new Date().toISOString());
       setLatest(s.latestQuote ?? null);
       setLatestPrediction(s.latestPrediction ?? null);
       setStats(s.stats ?? null);
       setPredictions(s.predictions ?? []);
     } catch (e) {
+      // Ignore abort errors (component unmount or rapid refreshes)
+      if (e instanceof Error && e.name === 'AbortError') return;
       setError(e instanceof Error ? e.message : `${e}`);
       // keep last good state
     } finally {
@@ -74,7 +80,34 @@ export default function ThirtySecondForecastPanel() {
   };
 
   useEffect(() => {
-    void refreshStatus();
+    let active = true;
+
+    const safeRefresh = async () => {
+      if (!active) return;
+      await refreshStatus();
+    };
+
+    void safeRefresh();
+
+    const interval = window.setInterval(() => {
+      void safeRefresh();
+    }, 10_000);
+
+    const onFocus = () => void safeRefresh();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void safeRefresh();
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      abortRef.current?.abort();
+    };
   }, []);
 
   return (
@@ -93,7 +126,7 @@ export default function ThirtySecondForecastPanel() {
             onClick={async () => {
               try {
                 setError(null);
-                const res = await fetch('/api/admin/forecast-bot/run-now', { method: 'POST', cache: 'no-store' });
+                const res = await fetch('/api/admin/forecast-bot/run-now', { method: 'POST', cache: 'no-store', credentials: 'include' });
                 const json = (await res.json()) as any;
                 if (!res.ok || !json?.ok) throw new Error(json?.error || `Run-now failed (${res.status})`);
                 await refreshStatus();
