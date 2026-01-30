@@ -13,7 +13,7 @@ import { getMultiCurrencyRates, convertMoney, getCountryCurrency } from '@/lib/f
 import { sendEmail } from '@/lib/email/mailer';
 import { formatNotificationEmail } from '@/lib/email';
 import { sendPushNotification } from '@/lib/push';
-import { getProvidedCronSecret, isCronSecretValid } from '@/lib/cron/cronSecret';
+import { getProvidedCronSecret, isCronRequestAuthorized } from '@/lib/cron/cronSecret';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -440,7 +440,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const secret = searchParams.get('secret');
     const provided = getProvidedCronSecret(request) || secret;
-    if (!isCronSecretValid(provided)) {
+    if (!isCronRequestAuthorized(request, provided)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

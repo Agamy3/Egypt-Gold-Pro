@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getServerClient } from '@/lib/supabase/server';
 import { runMinuteForecastBot } from '@/lib/adminForecastBot/minuteForecastBot';
-import { getProvidedCronSecret, isCronSecretValid } from '@/lib/cron/cronSecret';
+import { getProvidedCronSecret, isCronRequestAuthorized } from '@/lib/cron/cronSecret';
 import { tryAdvisoryLock, advisoryUnlock } from '@/lib/db/advisoryLock';
 
 export const dynamic = 'force-dynamic';
@@ -44,7 +44,7 @@ function sleepMs(ms: number): Promise<void> {
 
 async function handler(req: NextRequest) {
   const provided = getProvidedCronSecret(req);
-  if (!isCronSecretValid(provided)) {
+  if (!isCronRequestAuthorized(req, provided)) {
     return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }));
   }
 

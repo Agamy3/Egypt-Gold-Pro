@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAdmin, adminErrorToResponse } from '@/lib/auth/admin';
 import { getServerClient } from '@/lib/supabase/server';
-import { getProvidedCronSecret, isCronSecretValid } from '@/lib/cron/cronSecret';
+import { getProvidedCronSecret, isCronRequestAuthorized } from '@/lib/cron/cronSecret';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   try {
     // Auth: cron secret OR admin session.
     const provided = getProvidedCronSecret(req);
-    if (!isCronSecretValid(provided)) {
+    if (!isCronRequestAuthorized(req, provided)) {
       await requireAdmin();
     }
 
