@@ -3,11 +3,10 @@ import 'server-only';
 import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { advisoryUnlock, tryAdvisoryLock } from '@/lib/db/advisoryLock';
 import { getAccount, getOrders, getPositions, placeBracketOrder } from '@/lib/brokers/alpacaPaper';
 import { decideActions } from '@/lib/trading/strategy/decide';
 
-const LOCK_KEY_ALPACA = 771_220_311;
+const LOCK_LEASE_SECONDS = 110;
 
 function num(x: unknown): number | null {
   const n = typeof x === 'number' ? x : Number(x);
@@ -20,9 +19,25 @@ function clampInt(n: number, min: number, max: number) {
 
 export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Date()) {
   const nowIso = now.toISOString();
-  const lock = await tryAdvisoryLock(supabase, LOCK_KEY_ALPACA);
-  if (!lock.ok) return { ok: false as const, error: lock.error };
-  if (!lock.acquired) return { ok: true as const, skipped: true, reason: 'lock_not_acquired', serverAsOf: nowIso };
+  // Row-based lease lock (prevents overlapping runs and can't get stuck indefinitely).
+  const lockToken = randomUUID();
+  const lockUntilIso = new Date(now.getTime() + LOCK_LEASE_SECONDS * 1000).toISOString();
+  try {
+    const { data: lockedRow, error: lockErr } = await supabase
+      .from('alpaca_paper_state')
+      .update({ run_lock_until: lockUntilIso, run_lock_token: lockToken, updated_at: nowIso })
+      .eq('key', 'default')
+      .or(`run_lock_until.is.null,run_lock_until.lt.${nowIso}`)
+      .select('run_lock_token')
+      .maybeSingle();
+
+    if (lockErr) return { ok: false as const, error: lockErr.message };
+    if (!lockedRow || (lockedRow as any).run_lock_token !== lockToken) {
+      return { ok: true as const, skipped: true, reason: 'lock_not_acquired', serverAsOf: nowIso };
+    }
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+  }
 
   try {
     const { data: settings, error: sErr } = await supabase
@@ -242,7 +257,12 @@ export async function runAlpacaPaperLoop(supabase: SupabaseClient, now = new Dat
       intervalSeconds,
     };
   } finally {
-    await advisoryUnlock(supabase, LOCK_KEY_ALPACA);
+    // Best-effort unlock; lock also expires automatically by run_lock_until.
+    await supabase
+      .from('alpaca_paper_state')
+      .update({ run_lock_until: nowIso, run_lock_token: null, updated_at: nowIso })
+      .eq('key', 'default')
+      .eq('run_lock_token', lockToken);
   }
 }
 
