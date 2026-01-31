@@ -6,6 +6,7 @@ import { useLang } from '@/components/LanguageProvider';
 import Footer from '@/components/Footer';
 import Modal from '@/components/ui/Modal';
 import Header from '@/components/layout/Header';
+import Link from 'next/link';
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
@@ -996,7 +997,15 @@ function NotificationsContent() {
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-1">{notif.title}</h3>
+                        <div className={`flex items-center justify-between gap-3 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+                          <h3 className="text-sm font-semibold text-gray-200 mb-1">{notif.title}</h3>
+                          <Link
+                            href={`/account/notifications/${notif.id}`}
+                            className="text-xs text-blue-300 hover:text-blue-200 whitespace-nowrap"
+                          >
+                            {lang === 'ar' ? 'عرض' : 'View'}
+                          </Link>
+                        </div>
                         <p className="text-sm text-gray-400">{notif.body}</p>
                         <p className="text-xs text-gray-500 mt-2">
                           {new Date(notif.created_at).toLocaleString()}

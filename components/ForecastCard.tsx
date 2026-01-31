@@ -12,6 +12,7 @@ import ForecastMiniChart from './ForecastMiniChart';
 import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
 import HoverTip from './ui/HoverTip';
+import ShareSignalButton, { SignalTrustBadges } from '@/components/ShareSignalButton';
 
 interface ForecastData {
   direction: 'UP' | 'DOWN' | 'SIDEWAYS';
@@ -427,6 +428,20 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
             <span className={`px-2 py-1 rounded text-xs font-medium ${confidenceColors[forecast.confidence]}`}>
               {getConfidenceLabel(forecast.confidence)}
             </span>
+          </div>
+
+          {/* Viral share + trust badges (regular user UI; keep compact and RTL-safe) */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <SignalTrustBadges lastUpdatedAt={parsedMeta.lastPointAtIso ?? parsedMeta.serverAsOf} validatedAfterMinutes={null} />
+            <ShareSignalButton
+              direction={(forecast.direction === 'SIDEWAYS' ? 'STALE' : forecast.direction) as 'UP' | 'DOWN' | 'STALE'}
+              country={country}
+              scope={scope}
+              price={seriesPoints.length ? seriesPoints[seriesPoints.length - 1].v : null}
+              currency={chartUnit}
+              lastUpdatedAt={parsedMeta.lastPointAtIso ?? parsedMeta.serverAsOf}
+              validatedAfterMinutes={null}
+            />
           </div>
         </div>
         <div className={lang === 'ar' ? 'text-left' : 'text-right'}>
