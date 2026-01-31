@@ -68,21 +68,12 @@ export function SignalTrustBadges(props: {
   const last = safeParseDate(props.lastUpdatedAt ?? null);
   const hhmm = last ? formatHHMM(last) : null;
 
-  const validatedAfter = typeof props.validatedAfterMinutes === 'number' && isFinite(props.validatedAfterMinutes)
-    ? Math.max(0, Math.round(props.validatedAfterMinutes))
-    : null;
-
   const lastUpdatedLabel = rtl ? 'آخر تحديث' : 'Last updated';
-  const validatedAfterLabel = rtl ? 'تم التحقق بعد' : 'Validated after';
-  const notValidatedLabel = rtl ? 'لم يتم التحقق بعد' : 'Not validated yet';
 
   return (
     <div className={`flex flex-wrap items-center gap-2 ${rtl ? 'flex-row-reverse' : ''} ${props.className ?? ''}`}>
       <span className="inline-flex items-center rounded-full border border-gray-700 bg-gray-950/40 px-2 py-0.5 text-xs text-gray-300">
         {lastUpdatedLabel}: {hhmm ?? '—'}
-      </span>
-      <span className="inline-flex items-center rounded-full border border-gray-700 bg-gray-950/40 px-2 py-0.5 text-xs text-gray-300">
-        {validatedAfter != null ? `${validatedAfterLabel}: ${validatedAfter} ${rtl ? 'دقيقة' : 'min'}` : notValidatedLabel}
       </span>
     </div>
   );

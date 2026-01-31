@@ -444,25 +444,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
             />
           </div>
         </div>
-        <div className={lang === 'ar' ? 'text-left' : 'text-right'}>
-          <div className="text-2xl font-bold text-gray-100">{forecast.score}</div>
-          <div className="text-xs text-gray-400">{t(lang, 'score')}</div>
-        </div>
       </div>
-
-      {cleanReasons.length > 0 && (
-        <div className="mb-4">
-          <h4 className={`text-sm font-semibold text-gray-300 mb-2 ${lang === 'ar' ? 'text-right' : ''}`}>{t(lang, 'keyFactors')}:</h4>
-          <ul className={`space-y-1 ${lang === 'ar' ? 'text-right' : ''}`}>
-            {cleanReasons.map((reason, index) => (
-              <li key={index} className={`text-sm text-gray-300 flex items-start ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-                <span className={`text-gray-500 ${lang === 'ar' ? 'ml-2' : 'mr-2'}`}>•</span>
-                <span>{reason}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
 
       {/* Dropdowns and Chart */}
       {ChartSection}
