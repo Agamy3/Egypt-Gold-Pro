@@ -113,6 +113,12 @@ export default function SilverCard(props: { isPremium: boolean; lang: 'en' | 'ar
             </div>
           </div>
 
+          <div className={`text-xs text-gray-500 ${lang === 'ar' ? 'text-right' : ''}`}>
+            {lang === 'ar'
+              ? 'مُشتق من السعر العالمي للفضة (XAG) + سعر الصرف'
+              : 'Derived from global silver spot (XAG) + FX rate'}
+          </div>
+
           <div className={`${lang === 'ar' ? 'text-right' : ''}`}>
             <div className="text-gray-200 font-semibold">{lang === 'ar' ? 'افتح إشارات الفضة' : 'Unlock Silver Signals'}</div>
             <ul className="mt-2 text-sm text-gray-400 space-y-1">
@@ -161,6 +167,12 @@ export default function SilverCard(props: { isPremium: boolean; lang: 'en' | 'ar
             ? 'الفضة تتحرك أسرع من الذهب وقد تغيّر اتجاهها بسرعة. اعتبرها إشارة وليست ضمانًا.'
             : 'Silver moves faster than gold and can change direction quickly. Use it as a signal, not certainty.'}
         </div>
+      </div>
+
+      <div className={`mt-2 text-xs text-gray-500 ${lang === 'ar' ? 'text-right' : ''}`}>
+        {lang === 'ar'
+          ? 'مُشتق من السعر العالمي للفضة (XAG) + سعر الصرف'
+          : 'Derived from global silver spot (XAG) + FX rate'}
       </div>
 
       <div className={`mt-3 flex items-center justify-between gap-3 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>

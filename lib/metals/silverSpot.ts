@@ -1,6 +1,6 @@
 import 'server-only';
 
-export async function fetchSpotXagUsd(): Promise<
+export async function fetchXagUsd(): Promise<
   | { ok: true; priceUsdPerOunce: number; tsIso: string; source: string }
   | { ok: false; error: string }
 > {
@@ -27,7 +27,10 @@ export async function fetchSpotXagUsd(): Promise<
 
     return { ok: true, priceUsdPerOunce: n, tsIso, source: 'gold-api.com' };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'fetchSpotXagUsd failed' };
+    return { ok: false, error: e instanceof Error ? e.message : 'fetchXagUsd failed' };
   }
 }
+
+// Back-compat alias (used by older code paths)
+export const fetchSpotXagUsd = fetchXagUsd;
 

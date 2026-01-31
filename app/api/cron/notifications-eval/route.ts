@@ -14,7 +14,7 @@ import { sendEmail } from '@/lib/email/mailer';
 import { formatNotificationEmail } from '@/lib/email';
 import { sendPushNotification } from '@/lib/push';
 import { getProvidedCronSecret, isCronRequestAuthorized } from '@/lib/cron/cronSecret';
-import { fetchSpotXagUsd } from '@/lib/metals/silverSpot';
+import { fetchXagUsd } from '@/lib/metals/silverSpot';
 import { fetchUsdTo } from '@/lib/fx/frankfurter';
 
 export const dynamic = 'force-dynamic';
@@ -219,7 +219,7 @@ async function writeSilverSnapshotsNow(): Promise<
   const serverAsOf = new Date().toISOString();
   const TROY_OUNCE_GRAMS = 31.1034768;
   try {
-    const spot = await fetchSpotXagUsd();
+    const spot = await fetchXagUsd();
     if (!spot.ok) return { ok: false, error: spot.error, serverAsOf };
 
     const currencies: Array<Currency> = ['EGP', 'AED', 'SAR', 'USD'];

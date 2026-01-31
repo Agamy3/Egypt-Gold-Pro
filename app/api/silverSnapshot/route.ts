@@ -4,6 +4,7 @@ import { getServerUser } from '@/lib/supabase/server-auth';
 import { getUserPremiumStatus } from '@/lib/auth/getUserPremiumStatus';
 import { getCountryCurrency } from '@/lib/fx-multi';
 import { getServerClient } from '@/lib/supabase/server';
+import { getLocalSilver } from '@/lib/metals/localSilver';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -43,23 +44,13 @@ export async function GET(req: NextRequest) {
   const c = String(searchParams.get('country') || 'EG').toUpperCase();
   const country: Country = (['EG', 'AE', 'SA', 'US'].includes(c) ? c : 'EG') as Country;
 
-  const currency = getCountryCurrency(country);
   const supabase = getServerClient();
+  const currency = getCountryCurrency(country);
 
-  const { data: rows, error } = await supabase
-    .from('silver_spot_snapshots')
-    .select('*')
-    .eq('country', country)
-    .order('created_at', { ascending: false })
-    .limit(2);
-
-  if (error) return noStore(NextResponse.json({ ok: false, error: error.message }, { status: 400 }));
-
-  const latest = rows && rows[0] ? (rows[0] as any) : null;
-  const prev = rows && rows[1] ? (rows[1] as any) : null;
-
+  const derived = await getLocalSilver(country);
   const serverAsOf = new Date().toISOString();
-  if (!latest) {
+
+  if (!derived.ok) {
     return noStore(
       NextResponse.json({
         ok: true,
@@ -71,27 +62,78 @@ export async function GET(req: NextRequest) {
         direction: 'STALE' as Direction,
         confidence: 'low' as Confidence,
         lastUpdatedAt: null,
-        meta: { serverAsOf, reason: 'no_rows' },
+        meta: {
+          serverAsOf,
+          derived: true,
+          spotSource: 'gold-api',
+          fxSource: 'frankfurter',
+          spotAsOf: null,
+          fxDate: null,
+          reason: derived.error,
+        },
       })
     );
   }
 
-  const priceOz = asNum(latest.price_per_oz);
-  const priceG = asNum(latest.price_per_g);
-  const lastUpdatedAt = String(latest.created_at || '');
+  // Write a derived snapshot row (server-only) so direction comparisons work even if cron missed.
+  const insertRow = {
+    country,
+    currency,
+    price_per_oz: derived.priceLocalPerOunce,
+    price_per_g: derived.priceLocalPerGram,
+    spot_usd_per_oz: derived.spotUsdPerOunce,
+    usd_to_local: derived.usdToLocal,
+    source_spot: derived.meta.sourceSpot,
+    source_fx: derived.meta.sourceFx,
+    spot_asof: derived.meta.spotAsOf,
+    fx_date: derived.meta.fxDate,
+  } as any;
+
+  try {
+    await supabase.from('silver_spot_snapshots').insert(insertRow);
+  } catch {
+    // ignore insert failures (table may not exist yet)
+  }
+
+  // Read last 2 snapshots for direction & confidence
+  let rows: any[] | null = null;
+  try {
+    const r = await supabase
+      .from('silver_spot_snapshots')
+      .select('price_per_oz, created_at')
+      .eq('country', country)
+      .order('created_at', { ascending: false })
+      .limit(2);
+    rows = (r as any).data ?? null;
+  } catch {
+    rows = null;
+  }
+
+  const latest = rows && rows[0] ? (rows[0] as any) : null;
+  const prev = rows && rows[1] ? (rows[1] as any) : null;
+
+  const priceOz = derived.priceLocalPerOunce;
+  const priceG = derived.priceLocalPerGram;
+  const lastUpdatedAt = derived.meta.asOfIso;
 
   let direction: Direction = 'STALE';
   let confidence: Confidence = 'low';
 
   const prevOz = prev ? asNum(prev.price_per_oz) : null;
-  if (priceOz != null && prevOz != null && prevOz > 0) {
+  if (prevOz != null && prevOz > 0) {
     const pct = (priceOz - prevOz) / prevOz;
     const absPct = Math.abs(pct);
-    // Direction threshold: 0.10% (silver is noisy)
     if (absPct >= 0.001) {
       direction = pct > 0 ? 'UP' : 'DOWN';
       confidence = confidenceFromPct(absPct);
     }
+  }
+
+  // Stale if our source timestamp is too old
+  const spotAtMs = Date.parse(derived.meta.spotAsOf);
+  if (isFinite(spotAtMs) && Date.now() - spotAtMs > 120_000) {
+    direction = 'STALE';
+    confidence = 'low';
   }
 
   return noStore(
@@ -107,10 +149,11 @@ export async function GET(req: NextRequest) {
       lastUpdatedAt: lastUpdatedAt || null,
       meta: {
         serverAsOf,
-        spotAsOf: latest.spot_asof ?? null,
-        fxDate: latest.fx_date ?? null,
-        sourceSpot: latest.source_spot ?? null,
-        sourceFx: latest.source_fx ?? null,
+        spotSource: 'gold-api',
+        fxSource: 'frankfurter',
+        spotAsOf: derived.meta.spotAsOf,
+        fxDate: derived.meta.fxDate,
+        derived: true,
       },
     })
   );

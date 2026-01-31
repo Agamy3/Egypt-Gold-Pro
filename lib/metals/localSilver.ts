@@ -2,7 +2,7 @@ import 'server-only';
 
 import { getCountryCurrency } from '@/lib/fx-multi';
 import { fetchUsdTo } from '@/lib/fx/frankfurter';
-import { fetchSpotXagUsd } from '@/lib/metals/silverSpot';
+import { fetchXagUsd } from '@/lib/metals/silverSpot';
 
 const TROY_OUNCE_GRAMS = 31.1034768;
 
@@ -21,7 +21,7 @@ export async function getLocalSilver(country: 'EG' | 'AE' | 'SA' | 'US'): Promis
 > {
   const currency = getCountryCurrency(country);
 
-  const spot = await fetchSpotXagUsd();
+  const spot = await fetchXagUsd();
   if (!spot.ok) return { ok: false, error: spot.error };
 
   const fx = await fetchUsdTo(currency);
