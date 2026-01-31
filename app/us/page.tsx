@@ -6,6 +6,7 @@ import ForecastCard from '@/components/ForecastCard';
 import Header from '@/components/layout/Header';
 import { useLang } from '@/components/LanguageProvider';
 import { useSearchParams } from 'next/navigation';
+import SilverCard from '@/components/SilverCard';
 
 // Constants for US retail premium estimates
 const RETAIL_PREMIUM_PCT = 0.03; // 3% default
@@ -61,12 +62,23 @@ function USPageContent() {
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
   const [forecast, setForecast] = useState<any>(null);
   const [macro, setMacro] = useState<any>(null);
+  const [isPremium, setIsPremium] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const currency = (searchParams.get('currency') || 'USD') as 'USD';
 
   useEffect(() => {
+    const fetchPremiumStatus = async () => {
+      try {
+        const res = await fetch('/api/user/premium-status', { cache: 'no-store' });
+        const json = (await res.json().catch(() => null)) as any;
+        setIsPremium(Boolean(json?.status?.isPremium));
+      } catch {
+        setIsPremium(false);
+      }
+    };
+
     const fetchSnapshot = async () => {
       try {
         const url = `/api/marketSnapshot?country=US&currency=USD`;
@@ -106,10 +118,12 @@ function USPageContent() {
       }
     };
 
+    fetchPremiumStatus();
     fetchSnapshot();
     fetchForecast();
     fetchMacro();
     const interval = setInterval(() => {
+      fetchPremiumStatus();
       fetchSnapshot();
       fetchForecast();
       fetchMacro();
@@ -188,6 +202,9 @@ function USPageContent() {
                 <div className="text-red-400 font-semibold">N/A</div>
               )}
             </div>
+
+            {/* Silver (Premium-only) */}
+            <SilverCard isPremium={isPremium} lang={lang} country="US" />
 
             {/* Spot vs Retail Premium */}
             {spot24kPerGram && (
