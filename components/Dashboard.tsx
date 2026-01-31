@@ -7,6 +7,7 @@ import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
 import AdGateClient from './ads/AdGateClient';
 import PremiumMacroPanel from './PremiumMacroPanel';
+import SilverCard from './SilverCard';
 
 interface DashboardProps {
   snapshot: {
@@ -265,6 +266,9 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             <div className="text-red-400 font-semibold">{t(lang, 'referenceUnavailable')}</div>
           )}
         </div>
+
+        {/* Silver (Premium-only) */}
+        <SilverCard isPremium={isPremium} lang={lang} country={country as any} />
 
         {/* Market 21k */}
         <div 

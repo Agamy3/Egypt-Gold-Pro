@@ -14,6 +14,8 @@ import { sendEmail } from '@/lib/email/mailer';
 import { formatNotificationEmail } from '@/lib/email';
 import { sendPushNotification } from '@/lib/push';
 import { getProvidedCronSecret, isCronRequestAuthorized } from '@/lib/cron/cronSecret';
+import { fetchSpotXagUsd } from '@/lib/metals/silverSpot';
+import { fetchUsdTo } from '@/lib/fx/frankfurter';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -207,6 +209,275 @@ async function evaluateRule(
 function asNum(x: unknown): number | null {
   const n = typeof x === 'number' ? x : Number(x);
   return isFinite(n) ? n : null;
+}
+
+async function writeSilverSnapshotsNow(): Promise<
+  | { ok: true; inserted: number; serverAsOf: string; spotAsOf: string; fxDateByCurrency: Record<string, string> }
+  | { ok: false; error: string; serverAsOf: string }
+> {
+  const supabaseAdmin = getServerClient();
+  const serverAsOf = new Date().toISOString();
+  const TROY_OUNCE_GRAMS = 31.1034768;
+  try {
+    const spot = await fetchSpotXagUsd();
+    if (!spot.ok) return { ok: false, error: spot.error, serverAsOf };
+
+    const currencies: Array<Currency> = ['EGP', 'AED', 'SAR', 'USD'];
+    const fxByCurrency: Record<string, { rate: number; date: string; source: string }> = {};
+    for (const cur of currencies) {
+      const fx = await fetchUsdTo(cur);
+      if (!fx.ok) return { ok: false, error: fx.error, serverAsOf };
+      fxByCurrency[cur] = { rate: fx.rate, date: fx.date, source: fx.source };
+    }
+
+    const countries: Array<Country> = ['EG', 'AE', 'SA', 'US'];
+    const rows = countries.map((country) => {
+      const cur = getCountryCurrency(country) as Currency;
+      const fx = fxByCurrency[cur];
+      const pricePerOz = spot.priceUsdPerOunce * fx.rate;
+      const pricePerG = pricePerOz / TROY_OUNCE_GRAMS;
+      return {
+        country,
+        currency: cur,
+        price_per_oz: pricePerOz,
+        price_per_g: pricePerG,
+        spot_usd_per_oz: spot.priceUsdPerOunce,
+        usd_to_local: fx.rate,
+        source_spot: spot.source,
+        source_fx: fx.source,
+        spot_asof: spot.tsIso,
+        fx_date: fx.date,
+      };
+    });
+
+    const { data, error } = await supabaseAdmin.from('silver_spot_snapshots').insert(rows).select('id');
+    if (error) return { ok: false, error: error.message, serverAsOf };
+
+    const fxDateByCurrency: Record<string, string> = {};
+    for (const [k, v] of Object.entries(fxByCurrency)) fxDateByCurrency[k] = v.date;
+
+    return {
+      ok: true,
+      inserted: (data || []).length,
+      serverAsOf,
+      spotAsOf: spot.tsIso,
+      fxDateByCurrency,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'writeSilverSnapshotsNow failed', serverAsOf };
+  }
+}
+
+function isPremiumProfileRow(profile: any): boolean {
+  const isPremium = Boolean(profile?.is_premium);
+  const expires = profile?.premium_expires_at ? new Date(String(profile.premium_expires_at)) : null;
+  const expired = expires ? expires.getTime() < Date.now() : false;
+  return isPremium && !expired;
+}
+
+async function maybeSendSilverPctChange(rule: NotificationRule): Promise<{ triggered: boolean; sent: boolean; error?: string }> {
+  const supabaseAdmin = getServerClient();
+  const params = (rule.params || {}) as any;
+
+  const countryParam = String(params.country ?? rule.country ?? 'EG').toUpperCase();
+  const country = (['EG', 'AE', 'SA', 'US'].includes(countryParam) ? countryParam : 'EG') as Country;
+
+  const dirThresholdPct = asNum(params.thresholdPct) ?? 0.0010; // 0.10% for direction
+  const windowSeconds = Math.max(60, Math.min(3600, Math.floor(asNum(params.windowSeconds) ?? 900))); // default 15m
+  const minAgeSeconds = Math.max(10, Math.min(windowSeconds, Math.floor(asNum(params.minAgeSeconds) ?? 60)));
+  const cooldownSeconds = Math.max(60, Math.min(24 * 3600, Math.floor(asNum(params.cooldownSeconds) ?? 1800))); // default 30m
+
+  // Premium gating (server-side)
+  const { data: profile } = await supabaseAdmin
+    .from('user_profiles')
+    .select('is_premium, premium_expires_at, email, email_notifications_enabled, push_notifications_enabled, app_notifications_enabled')
+    .eq('id', rule.user_id)
+    .maybeSingle();
+  if (!isPremiumProfileRow(profile)) return { triggered: false, sent: false, error: 'premium_required' };
+
+  // Latest 3 snapshots for direction flip detection
+  const { data: snaps, error } = await supabaseAdmin
+    .from('silver_spot_snapshots')
+    .select('price_per_oz, created_at, currency')
+    .eq('country', country)
+    .order('created_at', { ascending: false })
+    .limit(3);
+  if (error) return { triggered: false, sent: false, error: error.message };
+  if (!snaps || snaps.length < 2) return { triggered: false, sent: false, error: 'insufficient_silver_history' };
+
+  const latest = snaps[0] as any;
+  const prev = snaps[1] as any;
+  const prev2 = snaps[2] as any | null;
+
+  const latestAtIso = String(latest.created_at || '');
+  const latestAtMs = Date.parse(latestAtIso);
+  if (!isFinite(latestAtMs)) return { triggered: false, sent: false, error: 'bad_latest_timestamp' };
+  if (Date.now() - latestAtMs > 120_000) return { triggered: false, sent: false, error: 'stale' }; // do not spam on stale
+
+  const p0 = asNum(latest.price_per_oz);
+  const p1 = asNum(prev.price_per_oz);
+  if (p0 == null || p1 == null || p1 <= 0) return { triggered: false, sent: false, error: 'bad_prices' };
+  const pctNow = (p0 - p1) / p1;
+  const dirNow = Math.abs(pctNow) >= dirThresholdPct ? (pctNow > 0 ? 'UP' : 'DOWN') : 'STALE';
+
+  let dirPrev: 'UP' | 'DOWN' | 'STALE' = 'STALE';
+  if (prev2) {
+    const p2 = asNum(prev2.price_per_oz);
+    if (p2 != null && p2 > 0) {
+      const pctPrev = (p1 - p2) / p2;
+      dirPrev = Math.abs(pctPrev) >= dirThresholdPct ? (pctPrev > 0 ? 'UP' : 'DOWN') : 'STALE';
+    }
+  }
+
+  const flipTriggered = dirNow !== 'STALE' && dirPrev !== 'STALE' && dirNow !== dirPrev;
+
+  // Big move within window (0.30% default)
+  const windowStartIso = new Date(latestAtMs - windowSeconds * 1000).toISOString();
+  const maxIso = new Date(latestAtMs - minAgeSeconds * 1000).toISOString();
+  const { data: baselineRow } = await supabaseAdmin
+    .from('silver_spot_snapshots')
+    .select('price_per_oz, created_at')
+    .eq('country', country)
+    .gte('created_at', windowStartIso)
+    .lte('created_at', maxIso)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  let moveTriggered = false;
+  let movePct = 0;
+  if (baselineRow) {
+    const pb = asNum((baselineRow as any).price_per_oz);
+    if (pb != null && pb > 0) {
+      movePct = Math.abs((p0 - pb) / pb);
+      moveTriggered = movePct >= 0.003; // 0.30%
+    }
+  }
+
+  const triggered = flipTriggered || moveTriggered;
+  if (!triggered) return { triggered: false, sent: false };
+
+  // Cooldown applies only to "move" triggers (flip bypasses cooldown)
+  if (!flipTriggered) {
+    const sinceIso = new Date(Date.now() - cooldownSeconds * 1000).toISOString();
+    const { data: recentSent } = await supabaseAdmin
+      .from('notification_deliveries')
+      .select('id')
+      .eq('rule_id', rule.id)
+      .eq('status', 'sent')
+      .gte('sent_at', sinceIso)
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recentSent?.id) return { triggered: true, sent: false };
+  }
+
+  const kind = flipTriggered ? 'flip' : 'move';
+  const dedupeKey = `silver:${rule.id}:${country}:${new Date(latestAtIso).toISOString()}:${kind}`;
+  const { data: existing } = await supabaseAdmin
+    .from('notification_deliveries')
+    .select('id')
+    .eq('rule_id', rule.id)
+    .eq('dedupe_key', dedupeKey)
+    .maybeSingle();
+  if (existing?.id) return { triggered: true, sent: false };
+
+  const { data: delivery, error: insErr } = await supabaseAdmin
+    .from('notification_deliveries')
+    .insert({
+      rule_id: rule.id,
+      user_id: rule.user_id,
+      channel: 'push',
+      status: 'skipped',
+      dedupe_key: dedupeKey,
+      error: null,
+    })
+    .select('id')
+    .single();
+  if (insErr) return { triggered: true, sent: false, error: insErr.message };
+
+  const currency = String(latest.currency || '');
+  const pctForBody = flipTriggered ? Math.abs(pctNow) : movePct;
+  const titleEn = 'Silver moved';
+  const bodyEn = flipTriggered
+    ? `Direction flipped to ${dirNow}. (${country} • ${currency})`
+    : `Moved by ${(pctForBody * 100).toFixed(2)}% in the last 15 minutes. (${country} • ${currency})`;
+  const titleAr = 'تحركت الفضة';
+  const bodyAr = flipTriggered
+    ? `تغير الاتجاه إلى ${dirNow === 'UP' ? 'طالع' : 'نازل'}. (${country} • ${currency})`
+    : `تحركت بنسبة ${(pctForBody * 100).toFixed(2)}% خلال آخر 15 دقيقة. (${country} • ${currency})`;
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com';
+  const url = `${siteUrl}/?country=${country}`;
+
+  const pushEnabled = (profile?.push_notifications_enabled ?? profile?.app_notifications_enabled ?? true);
+  const emailEnabled = profile?.email_notifications_enabled ?? true;
+
+  let pushSent = false;
+  let emailSent = false;
+  let lastError: string | null = null;
+
+  if (pushEnabled) {
+    const { data: subs } = await supabaseAdmin
+      .from('web_push_subscriptions')
+      .select('endpoint, p256dh, auth')
+      .eq('user_id', rule.user_id);
+
+    if (subs && subs.length > 0) {
+      for (const sub of subs) {
+        const pushRes = await sendPushNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          { title: titleEn, body: bodyEn, url }
+        );
+        if (pushRes.success) pushSent = true;
+        else {
+          lastError = pushRes.error ?? 'push_failed';
+          if (pushRes.error === 'Subscription expired') {
+            await supabaseAdmin.from('web_push_subscriptions').delete().eq('endpoint', sub.endpoint);
+          }
+        }
+      }
+    } else {
+      lastError = 'No push subscriptions';
+    }
+  }
+
+  const to = profile?.email ? String(profile.email) : null;
+  if (emailEnabled && to) {
+    const subject = titleEn;
+    const html = `<p>${bodyEn}</p><p><a href="${url}">${url}</a></p><p><small>Silver is more volatile. Use it as a signal, not certainty.</small></p>`;
+    const r = await sendEmail({ to, subject, html });
+    emailSent = r.success;
+    if (!r.success) lastError = r.error ?? lastError;
+  }
+
+  const sentAny = pushSent || emailSent;
+  await supabaseAdmin
+    .from('notification_deliveries')
+    .update({
+      status: sentAny ? 'sent' : 'failed',
+      channel: pushSent ? 'push' : 'email',
+      error: sentAny ? null : lastError,
+      sent_at: new Date().toISOString(),
+    })
+    .eq('id', delivery.id);
+
+  // Also create localized in-app notification (best effort)
+  try {
+    await supabaseAdmin.from('in_app_notifications').insert({
+      user_id: rule.user_id,
+      country,
+      title: titleAr,
+      body: bodyAr,
+      url: `/account/notifications`,
+      kind: 'alert',
+      read: false,
+    } as any);
+  } catch {
+    // ignore
+  }
+
+  return { triggered: true, sent: sentAny, error: sentAny ? undefined : (lastError ?? undefined) };
 }
 
 async function getLocalPctChangePoints(input: {
@@ -446,6 +717,7 @@ export async function GET(request: NextRequest) {
 
     const supabaseAdmin = getServerClient();
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com';
+    const silverWrite = await writeSilverSnapshotsNow();
 
     // Fetch all enabled rules
     const { data: rules, error: rulesError } = await supabaseAdmin
@@ -459,15 +731,20 @@ export async function GET(request: NextRequest) {
     }
 
     if (!rules || rules.length === 0) {
-      return NextResponse.json({ message: 'No enabled rules to evaluate', evaluated: 0 });
+      return NextResponse.json({ message: 'No enabled rules to evaluate', evaluated: 0, silver: silverWrite });
     }
 
     // Group rules by country for efficient market data fetching
     const rulesByCountry = new Map<Country, NotificationRule[]>();
     const localPctRules: NotificationRule[] = [];
+    const silverPctRules: NotificationRule[] = [];
     for (const rule of rules as NotificationRule[]) {
       if ((rule as any).rule_type === 'local_pct_change') {
         localPctRules.push(rule);
+        continue;
+      }
+      if ((rule as any).rule_type === 'silver_pct_change') {
+        silverPctRules.push(rule);
         continue;
       }
       const existing = rulesByCountry.get(rule.country) || [];
@@ -487,6 +764,23 @@ export async function GET(request: NextRequest) {
       results.evaluated++;
       try {
         const r = await maybeSendLocalPctChange(rule);
+        if (r.triggered) results.triggered++;
+        if (r.sent) results.sent++;
+        if (r.triggered && !r.sent && r.error) {
+          results.failed++;
+          results.errors.push(`Rule ${rule.id}: ${r.error}`);
+        }
+      } catch (e) {
+        results.failed++;
+        results.errors.push(`Rule ${rule.id}: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+    }
+
+    // Evaluate SILVER rules (premium-only)
+    for (const rule of silverPctRules) {
+      results.evaluated++;
+      try {
+        const r = await maybeSendSilverPctChange(rule);
         if (r.triggered) results.triggered++;
         if (r.sent) results.sent++;
         if (r.triggered && !r.sent && r.error) {
@@ -580,6 +874,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       ...results,
+      silver: silverWrite,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

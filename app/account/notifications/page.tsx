@@ -71,6 +71,8 @@ function NotificationsContent() {
 
   // Local pct change rule (v1 rules table)
   const [localPctEnabled, setLocalPctEnabled] = useState(false);
+  const [silverPctEnabled, setSilverPctEnabled] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
 
   // In-app notifications state
   const [inAppNotifications, setInAppNotifications] = useState<InAppNotification[]>([]);
@@ -93,13 +95,25 @@ function NotificationsContent() {
   useEffect(() => {
     checkPWAStatus();
     checkPushSupport();
+    fetchPremiumStatus();
     fetchProfile();
     fetchWatchlist();
     fetchRules();
     fetchLocalPctRule();
+    fetchSilverPctRule();
     fetchInAppNotifications();
     startActivityPing();
   }, []);
+
+  const fetchPremiumStatus = async () => {
+    try {
+      const res = await fetch('/api/user/premium-status', { cache: 'no-store' });
+      const json = (await res.json().catch(() => null)) as any;
+      setIsPremium(Boolean(json?.status?.isPremium));
+    } catch {
+      setIsPremium(false);
+    }
+  };
 
   const fetchLocalPctRule = async () => {
     try {
@@ -107,6 +121,17 @@ function NotificationsContent() {
       if (!res.ok) return;
       const json = (await res.json()) as any;
       if (json?.ok) setLocalPctEnabled(Boolean(json.enabled));
+    } catch {
+      // ignore
+    }
+  };
+
+  const fetchSilverPctRule = async () => {
+    try {
+      const res = await fetch('/api/notifications/silver-pct-change-rule', { cache: 'no-store' });
+      if (!res.ok) return;
+      const json = (await res.json()) as any;
+      if (json?.ok) setSilverPctEnabled(Boolean(json.enabled));
     } catch {
       // ignore
     }
@@ -138,6 +163,39 @@ function NotificationsContent() {
         enabled
           ? (lang === 'ar' ? 'تم تفعيل تنبيه تغير السعر المحلي 0.05%' : 'Enabled local 0.05% move alerts')
           : (lang === 'ar' ? 'تم إيقاف تنبيه تغير السعر المحلي 0.05%' : 'Disabled local 0.05% move alerts')
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update rule');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setSilverPctRuleEnabled = async (enabled: boolean) => {
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const params = {
+        country: 'EG',
+        thresholdPct: 0.001, // direction threshold
+        windowSeconds: 900, // 15 minutes
+        minAgeSeconds: 60,
+        cooldownSeconds: 1800, // 30 minutes
+      };
+
+      const res = await fetch('/api/notifications/silver-pct-change-rule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, params }),
+      });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Failed to update rule');
+      setSilverPctEnabled(enabled);
+      setSuccess(
+        enabled
+          ? (lang === 'ar' ? 'تم تفعيل تنبيهات الفضة' : 'Enabled silver alerts')
+          : (lang === 'ar' ? 'تم إيقاف تنبيهات الفضة' : 'Disabled silver alerts')
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to update rule');
@@ -904,6 +962,52 @@ function NotificationsContent() {
                   />
                   <span className="text-sm text-gray-300">{localPctEnabled ? (lang === 'ar' ? 'مفعل' : 'On') : (lang === 'ar' ? 'معطل' : 'Off')}</span>
                 </label>
+              </div>
+            </div>
+
+            {/* Quick toggle: Silver alerts (Premium-only) */}
+            <div className="mb-6 rounded-lg border border-gray-800 bg-gray-950 p-4">
+              <div className={`flex items-start justify-between gap-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-gray-100">
+                    {lang === 'ar' ? 'تنبيهات الفضة (مميز)' : 'Silver alerts (Premium)'}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-400">
+                    {lang === 'ar'
+                      ? 'تنبيه عند تغيّر اتجاه الفضة أو حركة قوية خلال 15 دقيقة. (يتطلب إشعارات الدفع)'
+                      : 'Alert on silver direction flip or big move within 15 minutes. (Requires push enabled)'}
+                  </div>
+                  <div className="mt-2 rounded-md border border-amber-700 bg-amber-900/20 px-3 py-2 text-xs text-amber-200">
+                    <div className="font-semibold">{lang === 'ar' ? 'الفضة أكثر تقلبًا' : 'Silver is more volatile'}</div>
+                    <div className="mt-1">
+                      {lang === 'ar'
+                        ? 'الفضة تتحرك أسرع من الذهب وقد تغيّر اتجاهها بسرعة. اعتبرها إشارة وليست ضمانًا.'
+                        : 'Silver moves faster than gold and can change direction quickly. Use it as a signal, not certainty.'}
+                    </div>
+                  </div>
+                  {!isPremium && (
+                    <div className={`mt-3 text-xs text-gray-300 ${lang === 'ar' ? 'text-right' : ''}`}>
+                      <div className="font-semibold">{lang === 'ar' ? 'افتح إشارات الفضة' : 'Unlock Silver Signals'}</div>
+                      <Link href="/premium" className="mt-2 inline-flex text-blue-300 hover:text-blue-200">
+                        {lang === 'ar' ? 'اشترك بريميوم' : 'Go Premium'}
+                      </Link>
+                    </div>
+                  )}
+                </div>
+                {isPremium ? (
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={silverPctEnabled}
+                      disabled={saving}
+                      onChange={(e) => void setSilverPctRuleEnabled(e.target.checked)}
+                      className="w-5 h-5 text-blue-600 bg-gray-800 border-gray-700 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-300">{silverPctEnabled ? (lang === 'ar' ? 'مفعل' : 'On') : (lang === 'ar' ? 'معطل' : 'Off')}</span>
+                  </label>
+                ) : (
+                  <span className="text-xs text-gray-500">{lang === 'ar' ? 'مقفل' : 'Locked'}</span>
+                )}
               </div>
             </div>
 
