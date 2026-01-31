@@ -1,10 +1,12 @@
 import 'server-only';
 
-type CacheEntry = { rate: number; date: string; expiresAtMs: number };
+import { getMultiCurrencyRates } from '@/lib/fx-multi';
+
+type CacheEntry = { rate: number; date: string; source: string; expiresAtMs: number };
 const cache = new Map<string, CacheEntry>();
 
 export async function fetchUsdTo(currency: string): Promise<
-  | { ok: true; rate: number; date: string; source: 'frankfurter' }
+  | { ok: true; rate: number; date: string; source: 'frankfurter' | 'open.er-api.com' }
   | { ok: false; error: string }
 > {
   const cur = String(currency || '').trim().toUpperCase();
@@ -14,7 +16,21 @@ export async function fetchUsdTo(currency: string): Promise<
   const now = Date.now();
   const cached = cache.get(cur);
   if (cached && cached.expiresAtMs > now) {
-    return { ok: true, rate: cached.rate, date: cached.date, source: 'frankfurter' };
+    return { ok: true, rate: cached.rate, date: cached.date, source: cached.source as any };
+  }
+
+  // Frankfurter (ECB-based) often does not include EGP/AED/SAR.
+  // For our supported countries, use the existing open.er-api.com provider as a reliable fallback.
+  if (cur === 'EGP' || cur === 'AED' || cur === 'SAR') {
+    const fx = await getMultiCurrencyRates();
+    const rate =
+      cur === 'EGP' ? fx.usd_egp :
+      cur === 'AED' ? fx.usd_aed :
+      fx.usd_sar;
+    if (!rate || !isFinite(rate) || rate <= 0) return { ok: false, error: `Invalid FX rate for USD/${cur}` };
+    const date = new Date(fx.fetchedAt).toISOString().slice(0, 10);
+    cache.set(cur, { rate, date, source: 'open.er-api.com', expiresAtMs: now + 10 * 60 * 1000 });
+    return { ok: true, rate, date, source: 'open.er-api.com' };
   }
 
   try {
@@ -27,7 +43,7 @@ export async function fetchUsdTo(currency: string): Promise<
     if (!isFinite(rate) || rate <= 0) return { ok: false, error: `Invalid FX rate for USD/${cur}` };
     const date = typeof json?.date === 'string' ? json.date : new Date().toISOString().slice(0, 10);
 
-    cache.set(cur, { rate, date, expiresAtMs: now + 10 * 60 * 1000 });
+    cache.set(cur, { rate, date, source: 'frankfurter', expiresAtMs: now + 10 * 60 * 1000 });
     return { ok: true, rate, date, source: 'frankfurter' };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'fetchUsdTo failed' };
