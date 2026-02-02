@@ -16,9 +16,22 @@ import { sendPushNotification } from '@/lib/push';
 import { getProvidedCronSecret, isCronRequestAuthorized } from '@/lib/cron/cronSecret';
 import { fetchXagUsd } from '@/lib/metals/silverSpot';
 import { fetchUsdTo } from '@/lib/fx/frankfurter';
+import { tryAdvisoryLock, advisoryUnlock } from '@/lib/db/advisoryLock';
+import { runNotificationCycle } from '@/lib/notifications/runNotificationCycle';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+export const maxDuration = 120;
+
+function withNoStoreHeaders(res: NextResponse) {
+  res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.headers.set('Pragma', 'no-cache');
+  res.headers.set('Expires', '0');
+  return res;
+}
+
+// Stable bigint lock key for pg advisory lock
+const NOTIFICATIONS_LOCK_KEY = 813_902_771;
 
 type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
@@ -141,7 +154,7 @@ async function evaluateRule(
   // Send push if enabled and user has subscriptions
   if (pushEnabled) {
     const { data: subscriptions } = await supabaseAdmin
-      .from('web_push_subscriptions')
+      .from('push_subscriptions')
       .select('endpoint, p256dh, auth')
       .eq('user_id', rule.user_id);
 
@@ -169,7 +182,7 @@ async function evaluateRule(
           // If subscription expired, remove it
           if (pushResult.error === 'Subscription expired') {
             await supabaseAdmin
-              .from('web_push_subscriptions')
+              .from('push_subscriptions')
               .delete()
               .eq('endpoint', sub.endpoint);
           }
@@ -419,7 +432,7 @@ async function maybeSendSilverPctChange(rule: NotificationRule): Promise<{ trigg
 
   if (pushEnabled) {
     const { data: subs } = await supabaseAdmin
-      .from('web_push_subscriptions')
+      .from('push_subscriptions')
       .select('endpoint, p256dh, auth')
       .eq('user_id', rule.user_id);
 
@@ -433,7 +446,7 @@ async function maybeSendSilverPctChange(rule: NotificationRule): Promise<{ trigg
         else {
           lastError = pushRes.error ?? 'push_failed';
           if (pushRes.error === 'Subscription expired') {
-            await supabaseAdmin.from('web_push_subscriptions').delete().eq('endpoint', sub.endpoint);
+            await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
           }
         }
       }
@@ -662,7 +675,7 @@ async function maybeSendLocalPctChange(rule: NotificationRule): Promise<{ trigge
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com';
 
   const { data: subs } = await supabaseAdmin
-    .from('web_push_subscriptions')
+    .from('push_subscriptions')
     .select('endpoint, p256dh, auth')
     .eq('user_id', rule.user_id);
 
@@ -689,7 +702,7 @@ async function maybeSendLocalPctChange(rule: NotificationRule): Promise<{ trigge
     } else {
       lastError = pushRes.error ?? 'push_failed';
       if (pushRes.error === 'Subscription expired') {
-        await supabaseAdmin.from('web_push_subscriptions').delete().eq('endpoint', sub.endpoint);
+        await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
       }
     }
   }
@@ -707,15 +720,29 @@ async function maybeSendLocalPctChange(rule: NotificationRule): Promise<{ trigge
 }
 
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const secret = searchParams.get('secret');
-    const provided = getProvidedCronSecret(request) || secret;
-    if (!isCronRequestAuthorized(request, provided)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  const arrivedAt = new Date().toISOString();
+  const { searchParams } = new URL(request.url);
+  const secret = searchParams.get('secret');
+  const provided = getProvidedCronSecret(request) || secret;
+  if (!isCronRequestAuthorized(request, provided)) {
+    return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }));
+  }
 
-    const supabaseAdmin = getServerClient();
+  const supabaseAdmin = getServerClient();
+  const lock = await tryAdvisoryLock(supabaseAdmin, NOTIFICATIONS_LOCK_KEY);
+  if (!lock.ok) {
+    return withNoStoreHeaders(NextResponse.json({ ok: false, error: lock.error, arrivedAt }, { status: 500 }));
+  }
+  if (!lock.acquired) {
+    return withNoStoreHeaders(
+      NextResponse.json(
+        { ok: true, skipped: true, reason: 'lock_not_acquired', serverAsOf: new Date().toISOString(), arrivedAt },
+        { status: 200 }
+      )
+    );
+  }
+
+  try {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com';
     const silverWrite = await writeSilverSnapshotsNow();
 
@@ -727,21 +754,26 @@ export async function GET(request: NextRequest) {
 
     if (rulesError) {
       console.error('Error fetching rules:', rulesError);
-      return NextResponse.json({ error: rulesError.message }, { status: 500 });
+      return withNoStoreHeaders(NextResponse.json({ ok: false, error: rulesError.message, arrivedAt }, { status: 500 }));
     }
 
     if (!rules || rules.length === 0) {
-      return NextResponse.json({ message: 'No enabled rules to evaluate', evaluated: 0, silver: silverWrite });
+      return withNoStoreHeaders(
+        NextResponse.json({ ok: true, message: 'No enabled rules to evaluate', evaluated: 0, silver: silverWrite, arrivedAt })
+      );
     }
 
-    // Group rules by country for efficient market data fetching
+    // Canonical local_pct_change evaluator (trusted-only) + full diagnostics
+    const cycle = await runNotificationCycle({ dryRun: false });
+
+    // Group remaining rules by country for efficient market data fetching
     const rulesByCountry = new Map<Country, NotificationRule[]>();
-    const localPctRules: NotificationRule[] = [];
+    let localPctCount = 0;
     const silverPctRules: NotificationRule[] = [];
     for (const rule of rules as NotificationRule[]) {
       if ((rule as any).rule_type === 'local_pct_change') {
-        localPctRules.push(rule);
-        continue;
+        localPctCount++;
+        continue; // handled by shared engine
       }
       if ((rule as any).rule_type === 'silver_pct_change') {
         silverPctRules.push(rule);
@@ -759,22 +791,12 @@ export async function GET(request: NextRequest) {
       errors: [] as string[],
     };
 
-    // Evaluate local % change rules (per-user local market)
-    for (const rule of localPctRules) {
-      results.evaluated++;
-      try {
-        const r = await maybeSendLocalPctChange(rule);
-        if (r.triggered) results.triggered++;
-        if (r.sent) results.sent++;
-        if (r.triggered && !r.sent && r.error) {
-          results.failed++;
-          results.errors.push(`Rule ${rule.id}: ${r.error}`);
-        }
-      } catch (e) {
-        results.failed++;
-        results.errors.push(`Rule ${rule.id}: ${e instanceof Error ? e.message : 'Unknown error'}`);
-      }
-    }
+    // Merge local_pct_change cycle results
+    results.evaluated += localPctCount;
+    results.triggered += cycle.triggered;
+    results.sent += cycle.sent;
+    results.failed += cycle.failed;
+    for (const e of cycle.errors) results.errors.push(`cycle: ${e}`);
 
     // Evaluate SILVER rules (premium-only)
     for (const rule of silverPctRules) {
@@ -810,22 +832,17 @@ export async function GET(request: NextRequest) {
           .select('id, email')
           .in('id', userIds);
 
-        const userEmailMap = new Map(
-          users?.map((u) => [u.id, u.email]) || []
-        );
+        const userEmailMap = new Map(users?.map((u) => [u.id, u.email]) || []);
 
         // Evaluate each rule
         for (const rule of countryRules) {
           results.evaluated++;
-
           try {
             // Get current price for this karat and side
             const priceKey = `market${rule.karat}${rule.side === 'buy' ? 'Buy' : 'Sell'}` as keyof typeof marketData.prices;
             const priceCanonical = marketData.prices[priceKey] as number | null;
 
-            if (!priceCanonical) {
-              continue; // No price data available
-            }
+            if (!priceCanonical) continue; // No price data available
 
             // Convert to rule's currency if needed
             const currentPrice =
@@ -845,16 +862,12 @@ export async function GET(request: NextRequest) {
             }
 
             const evalResult = await evaluateRule(rule, currentPrice, userEmail, siteUrl);
-
             if (evalResult.triggered) {
               results.triggered++;
-              if (evalResult.deliveryId) {
-                results.sent++;
-              } else {
+              if (evalResult.deliveryId) results.sent++;
+              else {
                 results.failed++;
-                if (evalResult.error) {
-                  results.errors.push(`Rule ${rule.id}: ${evalResult.error}`);
-                }
+                if (evalResult.error) results.errors.push(`Rule ${rule.id}: ${evalResult.error}`);
               }
             }
           } catch (ruleError) {
@@ -871,18 +884,40 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      ...results,
-      silver: silverWrite,
-      timestamp: new Date().toISOString(),
+    console.log('[notifications-eval] summary', {
+      arrivedAt,
+      evaluated: results.evaluated,
+      triggered: results.triggered,
+      sent: results.sent,
+      failed: results.failed,
+      localPctCount,
+      localPctSent: cycle.sent,
+      localPctFailed: cycle.failed,
+      topSkipReasons: cycle.topSkipReasons,
+      errorsCount: results.errors.length,
     });
+
+    return withNoStoreHeaders(
+      NextResponse.json({
+        ok: true,
+        success: true,
+        ...results,
+        silver: silverWrite,
+        localPctCycle: cycle,
+        timestamp: new Date().toISOString(),
+        arrivedAt,
+      })
+    );
   } catch (error) {
     console.error('Notification evaluation error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+    return withNoStoreHeaders(
+      NextResponse.json(
+        { ok: false, error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error', arrivedAt },
+        { status: 500 }
+      )
     );
+  } finally {
+    await advisoryUnlock(supabaseAdmin, NOTIFICATIONS_LOCK_KEY);
   }
 }
 
