@@ -79,8 +79,10 @@ export async function GET(req: NextRequest) {
     .map((r) => {
       const scrapedAtIso = String(r.scraped_at || '');
       const pageUpdatedAtIso = r.page_updated_at ? String(r.page_updated_at) : null;
-      const tIso = pageUpdatedAtIso || scrapedAtIso || null;
-      const tMs = tIso ? Date.parse(tIso) : NaN;
+      // IMPORTANT: Use scraped_at for staleness because page_updated_at is local-time and may be hard to parse reliably.
+      const staleBaseIso = scrapedAtIso || null;
+      const tMs = staleBaseIso ? Date.parse(staleBaseIso) : NaN;
+      const displayIso = pageUpdatedAtIso || scrapedAtIso || null;
       const ageMin = isFinite(tMs) ? (nowMs - tMs) / 60000 : 9999;
       const stale = ageMin > 30;
       return {
@@ -91,7 +93,7 @@ export async function GET(req: NextRequest) {
         change_pct: asNum(r.change_pct),
         source: String(r.source || ''),
         trusted: Boolean(r.trusted),
-        lastUpdatedAt: tIso,
+        lastUpdatedAt: displayIso,
         stale,
         confidence: confidenceFromAgeMinutes(ageMin),
       };
