@@ -83,10 +83,35 @@ function parsePageUpdatedAt($: cheerio.CheerioAPI): string | null {
     let h24 = hour % 12;
     if (ampm === 'م') h24 += 12;
 
-    // NOTE: We intentionally do NOT use this value for staleness calculations (we use scraped_at),
-    // because site timestamps are local-time and DST varies; we keep it for display only.
-    const approxUtcMs = Date.UTC(year, month - 1, day, h24, minute, 0, 0);
-    return new Date(approxUtcMs).toISOString();
+    // Convert Cairo-local wall-clock to a UTC ISO timestamp.
+    // We keep staleness based on scraped_at, but the displayed "Last updated" should match the site.
+    const localMs = Date.UTC(year, month - 1, day, h24, minute, 0, 0);
+
+    function cairoOffsetMinutesAt(utcMs: number): number {
+      try {
+        // Example output: "GMT+2" / "GMT+03:00"
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Africa/Cairo',
+          timeZoneName: 'shortOffset',
+        }).formatToParts(new Date(utcMs));
+        const tz = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
+        const m = tz.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
+        if (!m) return 120; // fallback to +02:00
+        const sign = m[1] === '-' ? -1 : 1;
+        const hh = Number(m[2]);
+        const mm = Number(m[3] ?? '0');
+        return sign * (hh * 60 + mm);
+      } catch {
+        return 120; // fallback to +02:00
+      }
+    }
+
+    // Iteratively solve: utc = local - offset(utc)
+    let utcMs = localMs - cairoOffsetMinutesAt(localMs) * 60_000;
+    const offset2 = cairoOffsetMinutesAt(utcMs);
+    utcMs = localMs - offset2 * 60_000;
+
+    return new Date(utcMs).toISOString();
   }
 
   return null;
