@@ -21,6 +21,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/silver-local-eg",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/alpaca-paper-run",
       "schedule": "* * * * *"
     }
