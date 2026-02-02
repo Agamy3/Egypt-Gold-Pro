@@ -1,7 +1,7 @@
 // PWA Service Worker for EgyptGold Pro
 // Caches static assets but NEVER caches realtime APIs
 
-const SW_VERSION = 'v1.0.1'; // Bump on changes to force cache refresh
+const SW_VERSION = 'v1.0.2'; // Bump on changes to force cache refresh
 const CACHE_NAME = `egp-cache-${SW_VERSION}`;
 const OFFLINE_PAGE = '/offline.html';
 
