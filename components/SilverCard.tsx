@@ -106,6 +106,24 @@ export default function SilverCard(props: { isPremium: boolean; lang: 'en' | 'ar
         ? 'border-red-700 text-red-200 bg-red-900/20'
         : 'border-gray-700 text-gray-200 bg-gray-900/40';
 
+  // NOTE: These hooks must run regardless of premium status to avoid hooks-order mismatches
+  // when premium status flips after a client fetch.
+  const selectedLocal = useMemo(() => {
+    if (!localRows || localRows.length === 0) return null;
+    return localRows.find((r) => r.karat === karat) ?? localRows[0] ?? null;
+  }, [localRows, karat]);
+
+  const localCurrencyLabel = country === 'EG' ? 'EGP' : (data?.currency ?? '—');
+
+  const localDirection: Direction = useMemo(() => {
+    if (!selectedLocal || selectedLocal.stale) return 'STALE';
+    const pct = selectedLocal.change_pct;
+    if (typeof pct !== 'number' || !isFinite(pct)) return 'STALE';
+    if (pct > 0) return 'UP';
+    if (pct < 0) return 'DOWN';
+    return 'STALE';
+  }, [selectedLocal]);
+
   if (!isPremium) {
     const monthly = `${PREMIUM_PRICING_RECOMMENDED.monthly.egp} EGP / ${lang === 'ar' ? 'شهر' : 'month'} (${PREMIUM_PRICING_RECOMMENDED.monthly.usd} USD)`;
     const yearly = `${PREMIUM_PRICING_RECOMMENDED.yearly.egp} EGP / ${lang === 'ar' ? 'سنة' : 'year'} (${PREMIUM_PRICING_RECOMMENDED.yearly.usd} USD)`;
@@ -172,22 +190,6 @@ export default function SilverCard(props: { isPremium: boolean; lang: 'en' | 'ar
       </div>
     );
   }
-
-  const selectedLocal = useMemo(() => {
-    if (!localRows || localRows.length === 0) return null;
-    return localRows.find((r) => r.karat === karat) ?? localRows[0] ?? null;
-  }, [localRows, karat]);
-
-  const localCurrencyLabel = country === 'EG' ? 'EGP' : (data?.currency ?? '—');
-
-  const localDirection: Direction = useMemo(() => {
-    if (!selectedLocal || selectedLocal.stale) return 'STALE';
-    const pct = selectedLocal.change_pct;
-    if (typeof pct !== 'number' || !isFinite(pct)) return 'STALE';
-    if (pct > 0) return 'UP';
-    if (pct < 0) return 'DOWN';
-    return 'STALE';
-  }, [selectedLocal]);
 
   return (
     <div className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-slate-400`}>
