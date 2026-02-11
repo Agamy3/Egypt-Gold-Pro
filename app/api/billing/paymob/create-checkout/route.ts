@@ -46,6 +46,24 @@ function splitName(displayName: string | null): { first: string; last: string } 
   return { first: parts[0]!, last: parts.slice(1).join(' ') };
 }
 
+function normalizeEgyptPhone(input: string): string {
+  const raw = String(input || '').trim();
+  const digits = raw.replace(/[^\d]/g, '');
+
+  // Prefer a substring that looks like a local Egyptian mobile: 01XXXXXXXXX
+  const match = digits.match(/01\d{9}/);
+  if (match) return match[0]!;
+
+  let d = digits;
+  if (d.startsWith('0020')) d = d.slice(4);
+  if (d.startsWith('20')) d = d.slice(2);
+
+  if (d.length === 11 && d.startsWith('01')) return d;
+
+  // Fallback to a safe placeholder that passes validation
+  return '01000000000';
+}
+
 export async function POST(req: NextRequest) {
   const requestId = crypto.randomUUID();
   try {
@@ -85,7 +103,8 @@ export async function POST(req: NextRequest) {
       return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Missing email on profile' }, { status: 400 }));
     }
     const { first, last } = splitName(((profile as any)?.display_name ?? null) as string | null);
-    const phone = String((profile as any)?.phone || user.user_metadata?.phone || '+201000000000');
+    const phoneRaw = String((profile as any)?.phone || user.user_metadata?.phone || '');
+    const phone = normalizeEgyptPhone(phoneRaw || '+201000000000');
 
     const supabaseAdmin = getServerClient();
 

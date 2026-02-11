@@ -68,13 +68,13 @@ export async function createOrder(args: {
   const body = {
     auth_token: args.authToken,
     delivery_needed: false,
-    amount_cents: args.amountCents,
+    amount_cents: String(args.amountCents),
     currency: args.currency,
     merchant_order_id: args.merchantOrderId,
     items: [
       {
         name: 'EgyptGold Pro Premium',
-        amount_cents: args.amountCents,
+        amount_cents: String(args.amountCents),
         description: args.planLabel,
         quantity: 1,
       },
@@ -104,7 +104,7 @@ export async function createPaymentKey(args: {
   const b = args.billingData;
   const body: any = {
     auth_token: args.authToken,
-    amount_cents: args.amountCents,
+    amount_cents: String(args.amountCents),
     expiration: 3600,
     order_id: args.paymobOrderId,
     billing_data: {
