@@ -11,7 +11,8 @@ export const revalidate = 0;
 
 function paymobPostUrl(): string {
   // Paymob's /pay endpoint appears to reject GET in production; use POST.
-  return 'https://accept.paymob.com/api/acceptance/payments/pay';
+  // In some Paymob setups, `source` is required and validated from the query string.
+  return 'https://accept.paymob.com/api/acceptance/payments/pay?source=iframe';
 }
 
 export default async function PremiumProcessingPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
