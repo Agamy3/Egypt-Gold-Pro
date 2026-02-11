@@ -112,32 +112,66 @@ export async function POST(req: NextRequest) {
       return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Billing not configured' }, { status: 500 }));
     }
 
-    const token = await authToken({ apiKey, requestId });
-    const order = await createOrder({
-      authToken: token,
-      merchantOrderId,
-      amountCents,
-      currency: 'EGP',
-      planLabel: plan,
-      requestId,
-    });
-    const paymentKey = await createPaymentKey({
-      authToken: token,
-      paymobOrderId: order.id,
-      amountCents,
-      currency: 'EGP',
-      billingData: { email, firstName: first, lastName: last, phone },
-      integrationIdCard,
-      requestId,
-      redirectUrl,
-      merchantOrderId,
-    });
+    let paymobOrderId: number | null = null;
+    let paymentKey: string | null = null;
+    try {
+      const token = await authToken({ apiKey, requestId });
+      const order = await createOrder({
+        authToken: token,
+        merchantOrderId,
+        amountCents,
+        currency: 'EGP',
+        planLabel: plan,
+        requestId,
+      });
+      paymobOrderId = order.id;
+      paymentKey = await createPaymentKey({
+        authToken: token,
+        paymobOrderId: order.id,
+        amountCents,
+        currency: 'EGP',
+        billingData: { email, firstName: first, lastName: last, phone },
+        integrationIdCard,
+        requestId,
+        redirectUrl,
+        merchantOrderId,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[paymob:create-checkout] paymob flow failed', {
+        requestId,
+        merchantOrderId,
+        paymobOrderId,
+        error: msg,
+      });
+
+      // mark order failed for observability (do not store secrets)
+      await supabaseAdmin
+        .from('paymob_orders')
+        .update({
+          status: 'failed',
+          paymob_order_id: paymobOrderId ? String(paymobOrderId) : null,
+        })
+        .eq('merchant_order_id', merchantOrderId);
+
+      return withNoStoreHeaders(
+        NextResponse.json(
+          { ok: false, error: `Payment provider error (requestId: ${requestId})` },
+          { status: 502 }
+        )
+      );
+    }
+
+    if (!paymentKey || !paymobOrderId) {
+      await supabaseAdmin.from('paymob_orders').update({ status: 'failed' }).eq('merchant_order_id', merchantOrderId);
+      return withNoStoreHeaders(NextResponse.json({ ok: false, error: `Payment provider error (requestId: ${requestId})` }, { status: 502 }));
+    }
 
     // 3) Persist Paymob ids (paymentKey stored server-side only)
     const { error: updErr } = await supabaseAdmin
       .from('paymob_orders')
       .update({
-        paymob_order_id: String(order.id),
+        paymob_order_id: String(paymobOrderId),
         paymob_payment_key: paymentKey,
         status: 'pending',
       })
@@ -156,13 +190,15 @@ export async function POST(req: NextRequest) {
       plan,
       amountEgp,
       merchantOrderId,
-      paymobOrderId: order.id,
+      paymobOrderId,
     });
 
     return withNoStoreHeaders(NextResponse.json({ ok: true, merchant_order_id: merchantOrderId, checkout_url: checkoutUrl }));
   } catch (e) {
     console.error('[paymob:create-checkout] error', { requestId, message: e instanceof Error ? e.message : String(e) });
-    return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 }));
+    return withNoStoreHeaders(
+      NextResponse.json({ ok: false, error: `Internal server error (requestId: ${requestId})` }, { status: 500 })
+    );
   }
 }
 
