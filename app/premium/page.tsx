@@ -74,7 +74,8 @@ export default function PremiumPage() {
           // ignore
         }
       }
-      window.location.href = String(json.checkout_url);
+      // Route to local pending page first (lets users reopen the payment page if they come back)
+      router.push(`/premium/pending?merchant_order_id=${encodeURIComponent(String(json.merchant_order_id))}`);
     } catch (e) {
       setPayError(e instanceof Error ? e.message : 'Checkout failed');
       setPaying(null);

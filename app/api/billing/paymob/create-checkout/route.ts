@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 import { getServerUser, createServerSupabaseClient } from '@/lib/supabase/server-auth';
 import { getServerClient } from '@/lib/supabase/server';
-import { authToken, createOrder, createPaymentKey, isPaymobHttpError } from '@/lib/paymob/client';
+import { authToken, createOrder, createPaymentKey, buildHostedPaymentUrl, isPaymobHttpError } from '@/lib/paymob/client';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
     const supabaseAdmin = getServerClient();
 
     // 1) Insert initiated order
+    let step: string = 'db_insert_order';
     const { error: insErr } = await supabaseAdmin.from('paymob_orders').insert({
       user_id: user.id,
       plan,
@@ -119,22 +120,25 @@ export async function POST(req: NextRequest) {
     });
     if (insErr) {
       console.error('[paymob:create-checkout] insert order failed', { requestId, code: insErr.code, message: insErr.message });
-      return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Failed to create order' }, { status: 500 }));
+      return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Failed to create order', step }, { status: 500 }));
     }
 
     // 2) Paymob flow
+    step = 'env_validation';
     const apiKey = process.env.PAYMOB_API_KEY || '';
     const integrationIdCard = Number(process.env.PAYMOB_INTEGRATION_ID_CARD || '');
     // PAYMOB_IFRAME_ID is optional/unused (we use hosted payment page redirect, not iframe)
     if (!apiKey || !integrationIdCard) {
       console.error('[paymob:create-checkout] missing env', { requestId, hasApiKey: Boolean(apiKey), integrationIdCard });
-      return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Billing not configured' }, { status: 500 }));
+      return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Billing not configured', step }, { status: 500 }));
     }
 
     let paymobOrderId: number | null = null;
     let paymentKey: string | null = null;
     try {
+      step = 'paymob_auth';
       const token = await authToken({ apiKey, requestId });
+      step = 'paymob_create_order';
       const order = await createOrder({
         authToken: token,
         merchantOrderId,
@@ -144,6 +148,7 @@ export async function POST(req: NextRequest) {
         requestId,
       });
       paymobOrderId = order.id;
+      step = 'paymob_payment_key';
       paymentKey = await createPaymentKey({
         authToken: token,
         paymobOrderId: order.id,
@@ -171,6 +176,7 @@ export async function POST(req: NextRequest) {
         merchantOrderId,
         paymobOrderId,
         integrationIdCard,
+        step,
         error: msg,
         ...(paymobMeta || {}),
       });
@@ -191,6 +197,7 @@ export async function POST(req: NextRequest) {
             {
               ok: false,
               error: `Billing misconfigured (invalid Paymob integration). Check PAYMOB_INTEGRATION_ID_CARD is the LIVE Online Card integration_id for this PAYMOB_API_KEY. integration_id=${integrationIdCard}. (requestId: ${requestId})`,
+              step,
             },
             { status: 500 }
           )
@@ -199,18 +206,22 @@ export async function POST(req: NextRequest) {
 
       return withNoStoreHeaders(
         NextResponse.json(
-          { ok: false, error: `Payment provider error (requestId: ${requestId})` },
+          { ok: false, error: `Payment provider error (requestId: ${requestId})`, step },
           { status: 502 }
         )
       );
     }
 
     if (!paymentKey || !paymobOrderId) {
+      step = 'paymob_missing_payment_key';
       await supabaseAdmin.from('paymob_orders').update({ status: 'failed' }).eq('merchant_order_id', merchantOrderId);
-      return withNoStoreHeaders(NextResponse.json({ ok: false, error: `Payment provider error (requestId: ${requestId})` }, { status: 502 }));
+      return withNoStoreHeaders(
+        NextResponse.json({ ok: false, error: `Payment provider error (requestId: ${requestId})`, step }, { status: 502 })
+      );
     }
 
     // 3) Persist Paymob ids (paymentKey stored server-side only)
+    step = 'db_update_order';
     const { error: updErr } = await supabaseAdmin
       .from('paymob_orders')
       .update({
@@ -225,8 +236,8 @@ export async function POST(req: NextRequest) {
       // We can still return checkout url; webhook will resolve status via merchant_order_id.
     }
 
-    // Paymob /pay endpoint rejects GET in some environments; use our processing page to POST the token.
-    const checkoutUrl = `${appUrl.replace(/\/+$/, '')}/premium/processing?merchant_order_id=${encodeURIComponent(merchantOrderId)}`;
+    // Hosted Paymob payment page (no iframe id required)
+    const checkoutUrl = buildHostedPaymentUrl({ paymentKey });
 
     console.log('[paymob:create-checkout] created', {
       requestId,
@@ -241,7 +252,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     console.error('[paymob:create-checkout] error', { requestId, message: e instanceof Error ? e.message : String(e) });
     return withNoStoreHeaders(
-      NextResponse.json({ ok: false, error: `Internal server error (requestId: ${requestId})` }, { status: 500 })
+      NextResponse.json({ ok: false, error: `Internal server error (requestId: ${requestId})`, step: 'unknown' }, { status: 500 })
     );
   }
 }

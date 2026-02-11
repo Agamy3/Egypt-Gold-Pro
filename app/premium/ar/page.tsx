@@ -50,7 +50,7 @@ export default function PremiumArPage() {
           // ignore
         }
       }
-      window.location.href = String(json.checkout_url);
+      router.push(`/premium/pending?merchant_order_id=${encodeURIComponent(String(json.merchant_order_id))}`);
     } catch (e) {
       setPayError(e instanceof Error ? e.message : 'فشل فتح الدفع');
       setPaying(null);
