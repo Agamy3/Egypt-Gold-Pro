@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation';
 import AccountMenu from '@/components/AccountMenu';
 import { getServerUser } from '@/lib/supabase/server-auth';
 import { getServerClient } from '@/lib/supabase/server';
-import { buildHostedPaymentUrl } from '@/lib/paymob/client';
 import PendingClient from './pending-client';
 
 export const dynamic = 'force-dynamic';
@@ -51,16 +50,8 @@ export default async function PremiumPendingPage(props: { searchParams: Promise<
   if (status === 'paid') redirect(`/premium/success?merchant_order_id=${encodeURIComponent(merchantOrderId)}`);
   if (status === 'failed' || status === 'canceled') redirect(`/premium/failed?merchant_order_id=${encodeURIComponent(merchantOrderId)}`);
 
-  const paymentKey = String((order as any).paymob_payment_key || '');
-  if (!paymentKey) {
-    return (
-      <div className="min-h-screen bg-black text-gray-200 p-10">
-        Missing payment token. <Link className="text-gold-400" href="/premium">Back</Link>
-      </div>
-    );
-  }
-
-  const checkoutUrl = buildHostedPaymentUrl({ paymentKey });
+  // Route through the processing page (auto-POST) to support Paymob setups where `/pay` is POST-only.
+  const checkoutUrl = `/premium/processing?merchant_order_id=${encodeURIComponent(merchantOrderId)}`;
 
   return (
     <div className="min-h-screen bg-black">

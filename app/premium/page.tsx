@@ -66,7 +66,6 @@ export default function PremiumPage() {
       });
       const json = (await res.json().catch(() => null)) as any;
       if (!res.ok || !json?.ok) throw new Error(json?.error || `Checkout failed (${res.status})`);
-      if (!json?.checkout_url) throw new Error('Checkout URL missing from server response');
       if (json?.merchant_order_id) {
         try {
           window.localStorage.setItem('egp_last_merchant_order_id', String(json.merchant_order_id));
@@ -74,8 +73,8 @@ export default function PremiumPage() {
           // ignore
         }
       }
-      // Redirect to Paymob hosted payment page (no iframe IDs).
-      window.location.href = String(json.checkout_url);
+      // Paymob `/pay` is POST-only in some setups. Route through our processing page which auto-POSTs the token.
+      window.location.href = `/premium/processing?merchant_order_id=${encodeURIComponent(String(json.merchant_order_id))}`;
     } catch (e) {
       setPayError(e instanceof Error ? e.message : 'Checkout failed');
       setPaying(null);
