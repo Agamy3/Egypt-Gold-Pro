@@ -69,6 +69,7 @@ export default function MobileDrawer() {
       { href: '/admin/premium-requests', labelEn: 'Premium Requests', labelAr: 'طلبات المميز' },
       { href: '/admin/forecast-only', labelEn: 'Forecast Only', labelAr: 'توقع فقط' },
       { href: '/admin/alpaca-paper', labelEn: 'Alpaca Paper', labelAr: 'ألباكا (تجريبي)' },
+      { href: '/admin/billing', labelEn: 'Billing', labelAr: 'الفوترة' },
     );
   }
 

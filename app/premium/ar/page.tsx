@@ -18,6 +18,8 @@ export default function PremiumArPage() {
   const [redeeming, setRedeeming] = useState(false);
   const [redeemMessage, setRedeemMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isPremium, setIsPremium] = useState<boolean | null>(null);
+  const [paying, setPaying] = useState<null | 'premium_monthly' | 'premium_yearly'>(null);
+  const [payError, setPayError] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if user is premium
@@ -28,6 +30,32 @@ export default function PremiumArPage() {
       })
       .catch(() => setIsPremium(false));
   }, []);
+
+  const startPaymobCheckout = async (plan: 'premium_monthly' | 'premium_yearly') => {
+    setPaying(plan);
+    setPayError(null);
+    try {
+      const res = await fetch('/api/billing/paymob/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+        cache: 'no-store',
+      });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `فشل فتح الدفع (${res.status})`);
+      if (json?.merchant_order_id) {
+        try {
+          window.localStorage.setItem('egp_last_merchant_order_id', String(json.merchant_order_id));
+        } catch {
+          // ignore
+        }
+      }
+      window.location.href = String(json.checkout_url);
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : 'فشل فتح الدفع');
+      setPaying(null);
+    }
+  };
 
   const handleRedeemCoupon = async () => {
     if (!couponCode.trim()) {
@@ -184,6 +212,36 @@ export default function PremiumArPage() {
             )}
           </div>
         </div>
+
+        {/* Paymob checkout */}
+        {isPremium === false && (
+          <div className="max-w-3xl mx-auto mb-10 rounded-xl border border-gray-800 bg-gray-950 p-6">
+            <h2 className="text-xl font-semibold text-white">اشترك بريميوم</h2>
+            <p className="mt-1 text-sm text-gray-400">ادفع بالبطاقة عبر Paymob وسيتم تفعيل بريميوم تلقائياً.</p>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                onClick={() => void startPaymobCheckout('premium_monthly')}
+                disabled={paying !== null}
+                className="rounded-lg border border-gold-600 bg-gold-600/10 px-4 py-3 text-right text-white hover:bg-gold-600/20 disabled:opacity-60"
+              >
+                <div className="text-sm font-semibold">شهري</div>
+                <div className="mt-1 text-2xl font-bold">99 EGP</div>
+              </button>
+              <button
+                onClick={() => void startPaymobCheckout('premium_yearly')}
+                disabled={paying !== null}
+                className="rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3 text-right text-white hover:bg-gray-900 disabled:opacity-60"
+              >
+                <div className="text-sm font-semibold">سنوي</div>
+                <div className="mt-1 text-2xl font-bold">899 EGP</div>
+              </button>
+            </div>
+
+            {payError && <div className="mt-3 text-sm text-red-300">{payError}</div>}
+            {paying && <div className="mt-3 text-xs text-gray-500">جارٍ فتح صفحة الدفع…</div>}
+          </div>
+        )}
 
         {/* Coupon Redemption */}
         <div className="max-w-2xl mx-auto bg-gray-900 rounded-lg shadow-md p-8 border border-gray-800">

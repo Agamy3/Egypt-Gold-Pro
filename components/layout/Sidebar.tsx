@@ -171,6 +171,12 @@ export default function Sidebar() {
           labelAr: 'الإشعارات',
           icon: <span>🔔</span>,
         },
+        {
+          href: '/admin/billing',
+          labelEn: 'Billing',
+          labelAr: 'الفوترة',
+          icon: <span>💳</span>,
+        },
       ]
     : [];
 

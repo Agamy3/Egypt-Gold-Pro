@@ -21,6 +21,8 @@ export default function PremiumPage() {
   const [redeemMessage, setRedeemMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isPremium, setIsPremium] = useState<boolean | null>(null);
   const [premiumExpiresAt, setPremiumExpiresAt] = useState<string | null>(null);
+  const [paying, setPaying] = useState<null | 'premium_monthly' | 'premium_yearly'>(null);
+  const [payError, setPayError] = useState<string | null>(null);
   
   // Request access form
   const [requestEmail, setRequestEmail] = useState('');
@@ -52,6 +54,32 @@ export default function PremiumPage() {
       })
       .catch(() => {});
   }, []);
+
+  const startPaymobCheckout = async (plan: 'premium_monthly' | 'premium_yearly') => {
+    setPaying(plan);
+    setPayError(null);
+    try {
+      const res = await fetch('/api/billing/paymob/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+        cache: 'no-store',
+      });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Checkout failed (${res.status})`);
+      if (json?.merchant_order_id) {
+        try {
+          window.localStorage.setItem('egp_last_merchant_order_id', String(json.merchant_order_id));
+        } catch {
+          // ignore
+        }
+      }
+      window.location.href = String(json.checkout_url);
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : 'Checkout failed');
+      setPaying(null);
+    }
+  };
 
   const handleRedeemCoupon = async () => {
     if (!couponCode.trim()) {
@@ -161,6 +189,50 @@ export default function PremiumPage() {
                 </span>
               )}
             </p>
+          </div>
+        )}
+
+        {/* Paymob checkout (EGP) */}
+        {!isPremium && (
+          <div className="max-w-3xl mx-auto mb-10 rounded-xl border border-gray-800 bg-gray-950 p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-white">{lang === 'ar' ? 'اشترك بريميوم' : 'Subscribe to Premium'}</h2>
+                <p className="mt-1 text-sm text-gray-400">
+                  {lang === 'ar'
+                    ? 'ادفع بالبطاقة عبر Paymob وسيتم تفعيل بريميوم تلقائياً.'
+                    : 'Pay by card via Paymob. Premium activates automatically after payment confirmation.'}
+                </p>
+              </div>
+              <Link
+                href="/premium/ar"
+                className={`text-sm text-gold-400 hover:text-gold-300 ${lang === 'ar' ? 'hidden' : ''}`}
+              >
+                العربية
+              </Link>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                onClick={() => void startPaymobCheckout('premium_monthly')}
+                disabled={paying !== null}
+                className="rounded-lg border border-gold-600 bg-gold-600/10 px-4 py-3 text-left text-white hover:bg-gold-600/20 disabled:opacity-60"
+              >
+                <div className="text-sm font-semibold">{lang === 'ar' ? 'شهري' : 'Monthly'}</div>
+                <div className="mt-1 text-2xl font-bold">99 EGP</div>
+              </button>
+              <button
+                onClick={() => void startPaymobCheckout('premium_yearly')}
+                disabled={paying !== null}
+                className="rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3 text-left text-white hover:bg-gray-900 disabled:opacity-60"
+              >
+                <div className="text-sm font-semibold">{lang === 'ar' ? 'سنوي' : 'Yearly'}</div>
+                <div className="mt-1 text-2xl font-bold">899 EGP</div>
+              </button>
+            </div>
+
+            {payError && <div className="mt-3 text-sm text-red-300">{payError}</div>}
+            {paying && <div className="mt-3 text-xs text-gray-500">{lang === 'ar' ? 'جارٍ فتح صفحة الدفع…' : 'Opening checkout…'}</div>}
           </div>
         )}
 
