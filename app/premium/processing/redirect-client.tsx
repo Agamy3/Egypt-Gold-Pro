@@ -15,7 +15,7 @@ export default function PaymobRedirectClient(props: { actionUrl: string; payment
   }, []);
 
   return (
-    <form ref={ref} action={props.actionUrl} method="POST">
+    <form ref={ref} action={props.actionUrl} method="POST" encType="multipart/form-data" acceptCharset="utf-8">
       <input type="hidden" name="payment_token" value={props.paymentToken} />
       {/* Paymob requires a "source" field for this endpoint. */}
       <input type="hidden" name="source" value="iframe" />
