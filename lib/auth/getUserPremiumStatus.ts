@@ -33,20 +33,59 @@ export async function getUserPremiumStatus(): Promise<UserPremiumStatus | null> 
 
     const entitlements = (profile.entitlements as Record<string, any>) || {};
     const isPremium = profile.is_premium ?? false;
-    const isAdFree = entitlements.ad_free === true || isPremium;
+    let isAdFree = entitlements.ad_free === true || isPremium;
     
     // Check if premium has expired
     const premiumExpired = profile.premium_expires_at 
       ? new Date(profile.premium_expires_at) < new Date()
       : false;
     
-    const effectivePremium = isPremium && !premiumExpired;
+    let effectivePremium = isPremium && !premiumExpired;
+    let premiumExpiresAt: string | null = profile.premium_expires_at || null;
+
+    // If `user_entitlements` exists, merge it with legacy `user_profiles` (max expiry wins; lifetime wins).
+    const { data: entRow } = await supabase
+      .from('user_entitlements')
+      .select('is_premium, premium_until')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const now = new Date();
+    const legacyLifetime = Boolean(profile.is_premium) && profile.premium_expires_at === null;
+
+    if (legacyLifetime) {
+      effectivePremium = true;
+      premiumExpiresAt = null;
+    }
+
+    if (entRow) {
+      const entIsPremium = Boolean((entRow as any).is_premium);
+      const entUntil = ((entRow as any).premium_until ?? null) as string | null;
+      const entLifetime = entIsPremium && entUntil === null;
+
+      if (entLifetime) {
+        effectivePremium = true;
+        premiumExpiresAt = null;
+      } else if (entIsPremium && entUntil) {
+        const entMs = Date.parse(entUntil);
+        const legacyMs = profile.premium_expires_at ? Date.parse(String(profile.premium_expires_at)) : NaN;
+        const maxMs = Math.max(Number.isFinite(entMs) ? entMs : -Infinity, Number.isFinite(legacyMs) ? legacyMs : -Infinity);
+        if (Number.isFinite(maxMs) && maxMs > now.getTime()) {
+          effectivePremium = true;
+          // Pick the corresponding source string to preserve timezone/format.
+          premiumExpiresAt = maxMs === entMs ? entUntil : (profile.premium_expires_at || null);
+        }
+      }
+    }
+
+    // Recompute ad-free after final premium resolution.
+    isAdFree = entitlements.ad_free === true || effectivePremium;
 
     return {
       isPremium: effectivePremium,
       isAdFree,
       entitlements,
-      premiumExpiresAt: profile.premium_expires_at || null,
+      premiumExpiresAt,
     };
   } catch (error) {
     console.error('[getUserPremiumStatus] Error:', error);

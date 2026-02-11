@@ -40,12 +40,25 @@ export function isPaymobHttpError(e: unknown): e is PaymobHttpError {
 
 async function paymobFetch<T>(path: string, body: unknown, requestId: string): Promise<T> {
   const url = `${getBaseUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  });
+  const timeoutMs = 15_000;
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: ac.signal,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[paymob] request failed', { requestId, url, error: msg });
+    throw new Error('paymob_network_error');
+  } finally {
+    clearTimeout(t);
+  }
   const text = await res.text();
   if (!res.ok) {
     // never include secrets in logs

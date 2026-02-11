@@ -15,22 +15,6 @@ const PRICES_EGP: Record<Plan, number> = {
   premium_yearly: 899,
 };
 
-// In-memory rate limit: max 3 requests/minute per user (best-effort; per-instance)
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-function checkRateLimit(userId: string): { allowed: boolean; resetInSec?: number } {
-  const now = Date.now();
-  const windowMs = 60_000;
-  const max = 3;
-  const rec = rateLimitMap.get(userId);
-  if (!rec || now > rec.resetAt) {
-    rateLimitMap.set(userId, { count: 1, resetAt: now + windowMs });
-    return { allowed: true };
-  }
-  if (rec.count >= max) return { allowed: false, resetInSec: Math.ceil((rec.resetAt - now) / 1000) };
-  rec.count++;
-  return { allowed: true };
-}
-
 function withNoStoreHeaders(res: NextResponse) {
   res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.headers.set('Pragma', 'no-cache');
@@ -70,10 +54,23 @@ export async function POST(req: NextRequest) {
     const user = await getServerUser();
     if (!user) return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }));
 
-    const rl = checkRateLimit(user.id);
-    if (!rl.allowed) {
+    const supabaseAdmin = getServerClient();
+
+    // Basic per-user rate limiting: max 3 create-checkout/minute (DB-backed; works across instances).
+    const windowStart = new Date(Date.now() - 60_000).toISOString();
+    const { count: recentCount, error: rlErr } = await supabaseAdmin
+      .from('paymob_orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .gte('created_at', windowStart);
+
+    if (rlErr) {
+      console.error('[paymob:create-checkout] rate limit query failed', { requestId, message: rlErr.message });
+      return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Please try again' }, { status: 503 }));
+    }
+    if ((recentCount ?? 0) >= 3) {
       return withNoStoreHeaders(
-        NextResponse.json({ ok: false, error: `Rate limited. Try again in ${rl.resetInSec}s.` }, { status: 429 })
+        NextResponse.json({ ok: false, error: 'Too many checkout attempts. Please wait 1 minute and try again.' }, { status: 429 })
       );
     }
 
@@ -105,8 +102,6 @@ export async function POST(req: NextRequest) {
     const { first, last } = splitName(((profile as any)?.display_name ?? null) as string | null);
     const phoneRaw = String((profile as any)?.phone || user.user_metadata?.phone || '');
     const phone = normalizeEgyptPhone(phoneRaw || '+201000000000');
-
-    const supabaseAdmin = getServerClient();
 
     // 1) Insert initiated order
     let step: string = 'db_insert_order';

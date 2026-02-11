@@ -7,7 +7,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useLang } from '@/components/LanguageProvider';
 import AccountMenu from '@/components/AccountMenu';
@@ -15,7 +14,7 @@ import Footer from '@/components/Footer';
 
 export default function PremiumPage() {
   const { lang } = useLang();
-  const router = useRouter();
+  const appUrlConfigured = Boolean(process.env.NEXT_PUBLIC_APP_URL);
   const [couponCode, setCouponCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [redeemMessage, setRedeemMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -67,6 +66,7 @@ export default function PremiumPage() {
       });
       const json = (await res.json().catch(() => null)) as any;
       if (!res.ok || !json?.ok) throw new Error(json?.error || `Checkout failed (${res.status})`);
+      if (!json?.checkout_url) throw new Error('Checkout URL missing from server response');
       if (json?.merchant_order_id) {
         try {
           window.localStorage.setItem('egp_last_merchant_order_id', String(json.merchant_order_id));
@@ -74,8 +74,8 @@ export default function PremiumPage() {
           // ignore
         }
       }
-      // Route to local pending page first (lets users reopen the payment page if they come back)
-      router.push(`/premium/pending?merchant_order_id=${encodeURIComponent(String(json.merchant_order_id))}`);
+      // Redirect to Paymob hosted payment page (no iframe IDs).
+      window.location.href = String(json.checkout_url);
     } catch (e) {
       setPayError(e instanceof Error ? e.message : 'Checkout failed');
       setPaying(null);
@@ -204,6 +204,13 @@ export default function PremiumPage() {
                     ? 'ادفع بالبطاقة عبر Paymob وسيتم تفعيل بريميوم تلقائياً.'
                     : 'Pay by card via Paymob. Premium activates automatically after payment confirmation.'}
                 </p>
+                {!appUrlConfigured && (
+                  <div className="mt-2 text-xs text-yellow-200/90">
+                    {lang === 'ar'
+                      ? 'تنبيه: إعدادات إعادة التوجيه قد تكون غير مكتملة (NEXT_PUBLIC_APP_URL غير مضبوط). إذا واجهت مشكلة بعد الدفع، تواصل معنا.'
+                      : 'Warning: billing redirect may be misconfigured (NEXT_PUBLIC_APP_URL is not set). If you run into issues after payment, contact support.'}
+                  </div>
+                )}
               </div>
               <Link
                 href="/premium/ar"

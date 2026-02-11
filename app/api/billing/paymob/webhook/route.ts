@@ -3,6 +3,7 @@ import crypto from 'crypto';
 
 import { getServerClient } from '@/lib/supabase/server';
 import { verifyPaymobHmac } from '@/lib/paymob/verifyHmac';
+import { applyPremiumEntitlementForUser } from '@/lib/billing/applyPremiumEntitlement';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -27,35 +28,6 @@ function asText(x: any): string | null {
   if (x === null || x === undefined) return null;
   const s = String(x).trim();
   return s ? s : null;
-}
-
-function addDaysFrom(base: Date, days: number): Date {
-  return new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
-}
-
-async function upsertPremiumForUser(args: { userId: string; plan: 'premium_monthly' | 'premium_yearly'; now: Date }) {
-  const supabase = getServerClient();
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('premium_expires_at')
-    .eq('id', args.userId)
-    .maybeSingle();
-
-  const currentUntilMs = profile?.premium_expires_at ? Date.parse(String(profile.premium_expires_at)) : NaN;
-  const base = Number.isFinite(currentUntilMs) && currentUntilMs > args.now.getTime() ? new Date(currentUntilMs) : args.now;
-  const days = args.plan === 'premium_yearly' ? 365 : 30;
-  const newUntil = addDaysFrom(base, days);
-
-  const { error } = await supabase
-    .from('user_profiles')
-    .update({
-      is_premium: true,
-      premium_expires_at: newUntil.toISOString(),
-    })
-    .eq('id', args.userId);
-
-  if (error) throw new Error(error.message);
-  return { premiumUntil: newUntil.toISOString() };
 }
 
 export async function POST(req: NextRequest) {
@@ -149,16 +121,20 @@ export async function POST(req: NextRequest) {
   const { data: orderRow } = await (merchantOrderId
     ? supabase
         .from('paymob_orders')
-        .select('id, user_id, plan, status, merchant_order_id, paymob_order_id')
+        .select('id, user_id, plan, status, merchant_order_id, paymob_order_id, entitlement_applied_at, entitlement_applied_until')
         .eq('merchant_order_id', merchantOrderId)
         .maybeSingle()
     : paymobOrderId
       ? supabase
           .from('paymob_orders')
-          .select('id, user_id, plan, status, merchant_order_id, paymob_order_id')
+          .select('id, user_id, plan, status, merchant_order_id, paymob_order_id, entitlement_applied_at, entitlement_applied_until')
           .eq('paymob_order_id', paymobOrderId)
           .maybeSingle()
-      : supabase.from('paymob_orders').select('id, user_id, plan, status, merchant_order_id, paymob_order_id').limit(1).maybeSingle());
+      : supabase
+          .from('paymob_orders')
+          .select('id, user_id, plan, status, merchant_order_id, paymob_order_id, entitlement_applied_at, entitlement_applied_until')
+          .limit(1)
+          .maybeSingle());
 
   if (!orderRow) {
     console.warn('[paymob:webhook] order not found', { requestId, txnId, paymobOrderId, merchantOrderId });
@@ -168,12 +144,31 @@ export async function POST(req: NextRequest) {
     return withNoStoreHeaders(NextResponse.json({ ok: true }, { status: 200 }));
   }
 
-  const success = Boolean(obj?.success);
-  const pending = Boolean(obj?.pending);
+  const success = obj?.success === true;
+  const pending = obj?.pending === true;
+  const isAuth = obj?.is_auth === true;
+  const isCapture = obj?.is_capture === true;
+  const isVoided = obj?.is_voided === true;
+  const isRefunded = obj?.is_refunded === true;
+
+  // If we've already applied entitlement for this order, treat retries/duplicates as idempotent.
+  if ((orderRow as any).status === 'paid' && (orderRow as any).entitlement_applied_at) {
+    if (eventId) {
+      await supabase.from('paymob_webhook_events').update({ processed: true }).eq('id', eventId);
+    }
+    return withNoStoreHeaders(NextResponse.json({ ok: true, deduped: true }, { status: 200 }));
+  }
 
   let newStatus: 'paid' | 'failed' | 'pending' = 'pending';
-  if (success && !pending) newStatus = 'paid';
-  else if (!success && !pending) newStatus = 'failed';
+  // Treat a transaction as paid only when it is successful AND fully authorized+captured.
+  if (success && isAuth && isCapture && !pending && !isVoided && !isRefunded) newStatus = 'paid';
+  else if ((!success && !pending) || isVoided || isRefunded) newStatus = 'failed';
+
+  // Never downgrade a paid order to pending/failed unless we received an explicit void/refund signal.
+  const currentStatus = String((orderRow as any).status || '');
+  if (currentStatus === 'paid' && !isVoided && !isRefunded) {
+    newStatus = 'paid';
+  }
 
   // Update paymob order status + paymob_order_id if missing
   await supabase
@@ -187,9 +182,33 @@ export async function POST(req: NextRequest) {
   // Activate premium (idempotent)
   if (newStatus === 'paid') {
     try {
-      await upsertPremiumForUser({ userId: (orderRow as any).user_id, plan: (orderRow as any).plan, now: new Date() });
+      // If we've already applied entitlement for this merchant_order_id, don't extend again.
+      if ((orderRow as any).entitlement_applied_at) {
+        if (eventId) {
+          await supabase.from('paymob_webhook_events').update({ processed: true }).eq('id', eventId);
+        }
+        return withNoStoreHeaders(NextResponse.json({ ok: true, deduped: true }, { status: 200 }));
+      }
+
+      const now = new Date();
+      const { premiumUntil } = await applyPremiumEntitlementForUser({
+        userId: String((orderRow as any).user_id),
+        plan: (orderRow as any).plan,
+        merchantOrderId: String((orderRow as any).merchant_order_id),
+        now,
+      });
+
+      await supabase
+        .from('paymob_orders')
+        .update({
+          entitlement_applied_at: now.toISOString(),
+          entitlement_applied_until: premiumUntil,
+        })
+        .eq('id', (orderRow as any).id);
     } catch (e) {
       console.error('[paymob:webhook] premium update failed', { requestId, error: e instanceof Error ? e.message : String(e) });
+      // Return non-2xx so Paymob retries. Webhook insert is idempotent.
+      return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'entitlement_update_failed' }, { status: 500 }));
     }
   }
 

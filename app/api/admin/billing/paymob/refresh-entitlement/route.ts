@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAdmin, adminErrorToResponse } from '@/lib/auth/admin';
 import { getServerClient } from '@/lib/supabase/server';
+import { applyPremiumEntitlementForUser } from '@/lib/billing/applyPremiumEntitlement';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -11,26 +12,6 @@ function withNoStoreHeaders(res: NextResponse) {
   res.headers.set('Pragma', 'no-cache');
   res.headers.set('Expires', '0');
   return res;
-}
-
-function addDaysFrom(base: Date, days: number): Date {
-  return new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
-}
-
-async function applyPremiumFromOrder(args: { userId: string; plan: 'premium_monthly' | 'premium_yearly'; now: Date }) {
-  const supabase = getServerClient();
-  const { data: profile } = await supabase.from('user_profiles').select('premium_expires_at').eq('id', args.userId).maybeSingle();
-  const currentUntilMs = profile?.premium_expires_at ? Date.parse(String(profile.premium_expires_at)) : NaN;
-  const base = Number.isFinite(currentUntilMs) && currentUntilMs > args.now.getTime() ? new Date(currentUntilMs) : args.now;
-  const days = args.plan === 'premium_yearly' ? 365 : 30;
-  const newUntil = addDaysFrom(base, days);
-
-  const { error } = await supabase
-    .from('user_profiles')
-    .update({ is_premium: true, premium_expires_at: newUntil.toISOString() })
-    .eq('id', args.userId);
-  if (error) throw new Error(error.message);
-  return newUntil.toISOString();
 }
 
 export async function POST(req: NextRequest) {
@@ -45,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     const { data: order, error } = await supabase
       .from('paymob_orders')
-      .select('id, user_id, plan, status, paymob_order_id, merchant_order_id')
+      .select('id, user_id, plan, status, paymob_order_id, merchant_order_id, entitlement_applied_at, entitlement_applied_until')
       .eq('merchant_order_id', merchantOrderId)
       .maybeSingle();
     if (error) return withNoStoreHeaders(NextResponse.json({ ok: false, error: error.message }, { status: 500 }));
@@ -53,6 +34,15 @@ export async function POST(req: NextRequest) {
 
     if (String((order as any).status) !== 'paid') {
       return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Order is not paid' }, { status: 409 }));
+    }
+
+    if ((order as any).entitlement_applied_at) {
+      return withNoStoreHeaders(
+        NextResponse.json(
+          { ok: true, deduped: true, premiumUntil: (order as any).entitlement_applied_until ?? null },
+          { status: 200 }
+        )
+      );
     }
 
     // Idempotency guard: create a synthetic unique transaction id for manual refresh.
@@ -76,11 +66,21 @@ export async function POST(req: NextRequest) {
       throw e;
     }
 
-    const premiumUntil = await applyPremiumFromOrder({
-      userId: (order as any).user_id,
+    const now = new Date();
+    const { premiumUntil } = await applyPremiumEntitlementForUser({
+      userId: String((order as any).user_id),
       plan: (order as any).plan,
-      now: new Date(),
+      merchantOrderId,
+      now,
     });
+
+    await supabase
+      .from('paymob_orders')
+      .update({
+        entitlement_applied_at: now.toISOString(),
+        entitlement_applied_until: premiumUntil,
+      })
+      .eq('id', (order as any).id);
 
     await supabase.from('paymob_webhook_events').update({ processed: true }).eq('paymob_transaction_id', syntheticTxnId);
     return withNoStoreHeaders(NextResponse.json({ ok: true, premiumUntil }, { status: 200 }));

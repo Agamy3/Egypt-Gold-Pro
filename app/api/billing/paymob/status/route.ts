@@ -37,6 +37,12 @@ export async function GET(req: NextRequest) {
     return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 }));
   }
 
+  const { data: ent } = await supabase
+    .from('user_entitlements')
+    .select('is_premium, premium_until, plan, updated_at')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
   const status = await getUserPremiumStatus();
 
   // Never return payment key.
@@ -51,6 +57,17 @@ export async function GET(req: NextRequest) {
     updated_at: (order as any).updated_at,
   };
 
-  return withNoStoreHeaders(NextResponse.json({ ok: true, order: safeOrder, premium: status }, { status: 200 }));
+  const safeEntitlement = ent
+    ? {
+        is_premium: Boolean((ent as any).is_premium),
+        premium_until: ((ent as any).premium_until ?? null) as string | null,
+        plan: ((ent as any).plan ?? null) as string | null,
+        updated_at: (ent as any).updated_at ?? null,
+      }
+    : null;
+
+  return withNoStoreHeaders(
+    NextResponse.json({ ok: true, order: safeOrder, user_entitlements: safeEntitlement, premium: status }, { status: 200 })
+  );
 }
 
