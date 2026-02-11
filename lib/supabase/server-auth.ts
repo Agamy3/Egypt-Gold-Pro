@@ -60,7 +60,10 @@ export async function getServerSession() {
  * Get the current user
  */
 export async function getServerUser() {
-  const session = await getServerSession();
-  return session?.user ?? null;
+  // SECURITY: prefer getUser() which verifies session with Supabase Auth server.
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase.auth.getUser();
+  if (error) return null;
+  return data.user ?? null;
 }
 

@@ -22,6 +22,22 @@ function getBaseUrl(): string {
   return b.replace(/\/+$/, '');
 }
 
+export class PaymobHttpError extends Error {
+  status: number;
+  url: string;
+  responsePreview: string;
+  constructor(args: { status: number; url: string; responsePreview: string }) {
+    super(`paymob_http_${args.status}`);
+    this.status = args.status;
+    this.url = args.url;
+    this.responsePreview = args.responsePreview;
+  }
+}
+
+export function isPaymobHttpError(e: unknown): e is PaymobHttpError {
+  return e instanceof PaymobHttpError;
+}
+
 async function paymobFetch<T>(path: string, body: unknown, requestId: string): Promise<T> {
   const url = `${getBaseUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
   const res = await fetch(url, {
@@ -40,7 +56,7 @@ async function paymobFetch<T>(path: string, body: unknown, requestId: string): P
       bodyPreview: typeof body === 'object' ? Object.keys(body as any) : typeof body,
       response: text.slice(0, 500),
     });
-    throw new Error(`paymob_http_${res.status}`);
+    throw new PaymobHttpError({ status: res.status, url, responsePreview: text.slice(0, 500) });
   }
   try {
     return JSON.parse(text) as T;

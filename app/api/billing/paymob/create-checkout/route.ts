@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 import { getServerUser, createServerSupabaseClient } from '@/lib/supabase/server-auth';
 import { getServerClient } from '@/lib/supabase/server';
-import { authToken, buildHostedPaymentUrl, createOrder, createPaymentKey } from '@/lib/paymob/client';
+import { authToken, buildHostedPaymentUrl, createOrder, createPaymentKey, isPaymobHttpError } from '@/lib/paymob/client';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -157,11 +157,21 @@ export async function POST(req: NextRequest) {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      const paymobMeta =
+        isPaymobHttpError(e)
+          ? {
+              paymobStatus: e.status,
+              paymobUrl: e.url,
+              paymobResponsePreview: e.responsePreview,
+            }
+          : null;
+
       console.error('[paymob:create-checkout] paymob flow failed', {
         requestId,
         merchantOrderId,
         paymobOrderId,
         error: msg,
+        ...(paymobMeta || {}),
       });
 
       // mark order failed for observability (do not store secrets)
@@ -172,6 +182,19 @@ export async function POST(req: NextRequest) {
           paymob_order_id: paymobOrderId ? String(paymobOrderId) : null,
         })
         .eq('merchant_order_id', merchantOrderId);
+
+      // Surface a clearer configuration error for the common Paymob integration mismatch.
+      if (isPaymobHttpError(e) && e.status === 400 && e.responsePreview.includes('Invalid Payment method integration')) {
+        return withNoStoreHeaders(
+          NextResponse.json(
+            {
+              ok: false,
+              error: `Billing misconfigured (invalid Paymob integration). Check PAYMOB_INTEGRATION_ID_CARD is the LIVE Online Card integration_id for this PAYMOB_API_KEY. (requestId: ${requestId})`,
+            },
+            { status: 500 }
+          )
+        );
+      }
 
       return withNoStoreHeaders(
         NextResponse.json(
