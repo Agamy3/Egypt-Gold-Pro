@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 import { getServerUser, createServerSupabaseClient } from '@/lib/supabase/server-auth';
 import { getServerClient } from '@/lib/supabase/server';
-import { authToken, buildHostedPaymentUrl, createOrder, createPaymentKey, isPaymobHttpError } from '@/lib/paymob/client';
+import { authToken, createOrder, createPaymentKey, isPaymobHttpError } from '@/lib/paymob/client';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -225,7 +225,8 @@ export async function POST(req: NextRequest) {
       // We can still return checkout url; webhook will resolve status via merchant_order_id.
     }
 
-    const checkoutUrl = buildHostedPaymentUrl({ paymentKey });
+    // Paymob /pay endpoint rejects GET in some environments; use our processing page to POST the token.
+    const checkoutUrl = `${appUrl.replace(/\/+$/, '')}/premium/processing?merchant_order_id=${encodeURIComponent(merchantOrderId)}`;
 
     console.log('[paymob:create-checkout] created', {
       requestId,
