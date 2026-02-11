@@ -170,6 +170,7 @@ export async function POST(req: NextRequest) {
         requestId,
         merchantOrderId,
         paymobOrderId,
+        integrationIdCard,
         error: msg,
         ...(paymobMeta || {}),
       });
@@ -189,7 +190,7 @@ export async function POST(req: NextRequest) {
           NextResponse.json(
             {
               ok: false,
-              error: `Billing misconfigured (invalid Paymob integration). Check PAYMOB_INTEGRATION_ID_CARD is the LIVE Online Card integration_id for this PAYMOB_API_KEY. (requestId: ${requestId})`,
+              error: `Billing misconfigured (invalid Paymob integration). Check PAYMOB_INTEGRATION_ID_CARD is the LIVE Online Card integration_id for this PAYMOB_API_KEY. integration_id=${integrationIdCard}. (requestId: ${requestId})`,
             },
             { status: 500 }
           )
