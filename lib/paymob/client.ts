@@ -22,11 +22,6 @@ function getBaseUrl(): string {
   return b.replace(/\/+$/, '');
 }
 
-function mask(s: string): string {
-  if (s.length <= 8) return '***';
-  return `${s.slice(0, 4)}…${s.slice(-4)}`;
-}
-
 async function paymobFetch<T>(path: string, body: unknown, requestId: string): Promise<T> {
   const url = `${getBaseUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
   const res = await fetch(url, {
@@ -140,15 +135,11 @@ export async function createPaymentKey(args: {
   const out = await paymobFetch<PaymobPaymentKeyResponse>('/acceptance/payment_keys', body, args.requestId);
   if (!out?.token) throw new Error('paymob_missing_payment_key');
 
-  // only log masked token
-  console.log('[paymob] payment_key_created', { requestId: args.requestId, token: mask(out.token) });
+  // NEVER log the payment key (even masked) in production logs.
   return out.token;
 }
 
-export function buildIframeCheckoutUrl(args: { iframeId: string | number; paymentKey: string }): string {
-  const iframeId = String(args.iframeId);
-  return `https://accept.paymob.com/api/acceptance/iframes/${encodeURIComponent(iframeId)}?payment_token=${encodeURIComponent(
-    args.paymentKey
-  )}`;
+export function buildHostedPaymentUrl(args: { paymentKey: string }): string {
+  return `https://accept.paymob.com/api/acceptance/payments/pay?payment_token=${encodeURIComponent(args.paymentKey)}`;
 }
 

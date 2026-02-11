@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 import { getServerUser, createServerSupabaseClient } from '@/lib/supabase/server-auth';
 import { getServerClient } from '@/lib/supabase/server';
-import { authToken, buildIframeCheckoutUrl, createOrder, createPaymentKey } from '@/lib/paymob/client';
+import { authToken, buildHostedPaymentUrl, createOrder, createPaymentKey } from '@/lib/paymob/client';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -106,9 +106,9 @@ export async function POST(req: NextRequest) {
     // 2) Paymob flow
     const apiKey = process.env.PAYMOB_API_KEY || '';
     const integrationIdCard = Number(process.env.PAYMOB_INTEGRATION_ID_CARD || '');
-    const iframeId = process.env.PAYMOB_IFRAME_ID || '';
-    if (!apiKey || !integrationIdCard || !iframeId) {
-      console.error('[paymob:create-checkout] missing env', { requestId, hasApiKey: Boolean(apiKey), integrationIdCard, hasIframeId: Boolean(iframeId) });
+    // PAYMOB_IFRAME_ID is optional/unused (we use hosted payment page redirect, not iframe)
+    if (!apiKey || !integrationIdCard) {
+      console.error('[paymob:create-checkout] missing env', { requestId, hasApiKey: Boolean(apiKey), integrationIdCard });
       return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Billing not configured' }, { status: 500 }));
     }
 
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       // We can still return checkout url; webhook will resolve status via merchant_order_id.
     }
 
-    const checkoutUrl = buildIframeCheckoutUrl({ iframeId, paymentKey });
+    const checkoutUrl = buildHostedPaymentUrl({ paymentKey });
 
     console.log('[paymob:create-checkout] created', {
       requestId,
