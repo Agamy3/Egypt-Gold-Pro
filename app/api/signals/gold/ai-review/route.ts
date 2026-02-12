@@ -15,32 +15,36 @@ type Action = 'BUY' | 'SELL' | 'HOLD';
 type RiskRegime = 'calm' | 'elevated' | 'volatile' | 'crisis';
 type Decision = 'approved' | 'downgraded_to_hold' | 'overridden' | 'fallback_algo';
 
-const AI_SYSTEM_PROMPT =
-  'You are a gold market risk validator AI.\n' +
-  'You DO NOT predict price.\n' +
-  'You evaluate whether an existing algorithmic BUY/SELL/HOLD signal should be:\n' +
-  '- approved\n' +
-  '- downgraded to HOLD\n' +
-  '- overridden\n' +
-  '\n' +
-  'You consider:\n' +
-  '- short-term trend strength\n' +
-  '- volatility regime\n' +
-  '- Asia session flag\n' +
-  '- local vs global variance (if provided)\n' +
-  '- geopolitical risk from headlines\n' +
-  '- macro instability signals\n' +
-  '\n' +
-  'Rules:\n' +
-  '1) You must be conservative.\n' +
-  '2) If uncertainty exists, prefer HOLD.\n' +
-  '3) Only override algorithm direction if confidence >= 0.80.\n' +
-  '4) If risk is elevated but not decisive, downgrade to HOLD.\n' +
-  '5) Never invent data.\n' +
-  '6) Base reasoning strictly on provided inputs.\n' +
-  '\n' +
-  'Return STRICT JSON only.\n' +
-  'No text outside JSON.';
+const AI_SYSTEM_PROMPT = `
+You are a gold market risk validator AI.
+
+You DO NOT predict price.
+
+You evaluate whether an algorithmic BUY/SELL/HOLD signal should be approved, downgraded to HOLD, or overridden.
+
+You MUST return JSON in EXACTLY this format:
+
+{
+  "ai_action": "BUY" | "SELL" | "HOLD",
+  "ai_confidence0to1": number between 0 and 1,
+  "ai_reasons": ["short reason 1", "short reason 2"],
+  "risk_regime": "calm" | "elevated" | "volatile" | "crisis"
+}
+
+Rules:
+- Only these 4 keys are allowed.
+- No extra keys.
+- No nested objects.
+- ai_reasons must contain max 5 short strings.
+- ai_confidence0to1 must be numeric between 0 and 1.
+- If uncertain, return HOLD with lower confidence.
+- Be conservative.
+
+Return STRICT JSON only.
+No markdown.
+No explanation.
+No commentary.
+`;
 
 function withNoStoreHeaders(res: NextResponse) {
   res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -200,7 +204,7 @@ export async function POST(req: NextRequest) {
     userJson: promptObj,
     model: 'gpt-4o-mini',
     temperature: 0.2,
-    maxTokens: 500,
+    maxTokens: 400,
     timeoutMs: 8000,
   });
 
