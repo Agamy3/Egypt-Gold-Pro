@@ -61,9 +61,10 @@ export async function callOpenAiStrictJson<T>(args: {
     }
 
     try {
-      const obj = JSON.parse(content) as unknown;
-      if (!isRecord(obj)) return { ok: false, error: 'openai_content_not_object', rawText: content };
-      return { ok: true, json: obj as T, rawText: content };
+      const clean = content.replace(/```json/g, '').replace(/```/g, '').trim();
+      const obj = JSON.parse(clean) as unknown;
+      if (!isRecord(obj)) return { ok: false, error: 'openai_content_not_object', rawText: clean };
+      return { ok: true, json: obj as T, rawText: clean };
     } catch {
       return { ok: false, error: 'openai_content_not_json', rawText: content };
     }

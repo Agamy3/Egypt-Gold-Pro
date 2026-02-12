@@ -7,7 +7,8 @@ import { callOpenAiStrictJson } from '@/lib/ai/openaiStrictJson';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-export const maxDuration = 15;
+export const maxDuration = 60;
+export const runtime = 'nodejs';
 
 type Country = 'GLOBAL' | 'EG';
 type Action = 'BUY' | 'SELL' | 'HOLD';
@@ -80,22 +81,20 @@ function decide(args: { algoAction: Action; aiAction: Action; aiConfidence: numb
   return 'approved';
 }
 
-function isExactAiContract(obj: any): obj is {
-  ai_action: Action;
+function isValidAiContract(obj: any): obj is {
+  ai_action: 'BUY' | 'SELL' | 'HOLD';
   ai_confidence0to1: number;
   ai_reasons: string[];
-  risk_regime: RiskRegime;
+  risk_regime: 'calm' | 'elevated' | 'volatile' | 'crisis';
 } {
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
-  const keys = Object.keys(obj).sort();
-  const expected = ['ai_action', 'ai_confidence0to1', 'ai_reasons', 'risk_regime'].sort();
-  if (keys.length !== expected.length) return false;
-  for (let i = 0; i < keys.length; i++) if (keys[i] !== expected[i]) return false;
-  if (!isAction(obj.ai_action)) return false;
-  if (!isFinite01(obj.ai_confidence0to1)) return false;
-  if (!Array.isArray(obj.ai_reasons) || obj.ai_reasons.length > 5) return false;
-  if (!obj.ai_reasons.every((s: any) => typeof s === 'string' && s.trim().length > 0 && s.length <= 200)) return false;
-  if (!isRiskRegime(obj.risk_regime)) return false;
+  if (!obj || typeof obj !== 'object') return false;
+
+  if (!['BUY', 'SELL', 'HOLD'].includes((obj as any).ai_action)) return false;
+  if (typeof (obj as any).ai_confidence0to1 !== 'number' || (obj as any).ai_confidence0to1 < 0 || (obj as any).ai_confidence0to1 > 1)
+    return false;
+  if (!Array.isArray((obj as any).ai_reasons)) return false;
+  if (!['calm', 'elevated', 'volatile', 'crisis'].includes((obj as any).risk_regime)) return false;
+
   return true;
 }
 
@@ -205,11 +204,16 @@ export async function POST(req: NextRequest) {
     timeoutMs: 8000,
   });
 
+  console.log('[AI RAW RESULT]', ai);
+  if (!ai.ok) {
+    console.error('[AI ERROR]', ai.error, ai.rawText);
+  }
+
   const algoAction = promptObj.algo_action as Action;
   const algoConfidence = Number(promptObj.algo_confidence);
 
   let record: any;
-  if (ai.ok && isExactAiContract(ai.json)) {
+  if (ai.ok && isValidAiContract(ai.json)) {
     const decision = decide({ algoAction, aiAction: ai.json.ai_action, aiConfidence: ai.json.ai_confidence0to1 });
     record = {
       cycle_key: effectiveCycleKey,
@@ -253,6 +257,8 @@ export async function POST(req: NextRequest) {
     )
     .single();
 
+  const isFallback = String(record?.decision || '') === 'fallback_algo';
+
   if (insErr) {
     // If another request won the race, return cached row.
     const { data: raced } = await supabase
@@ -263,10 +269,23 @@ export async function POST(req: NextRequest) {
       .eq('cycle_key', effectiveCycleKey)
       .eq('country', effectiveCountry)
       .maybeSingle();
-    if (raced) return withNoStoreHeaders(NextResponse.json({ ok: true, cached: true, review: raced }, { status: 200 }));
+    if (raced) {
+      const racedFallback = String((raced as any).decision || '') === 'fallback_algo';
+      if (racedFallback) {
+        return withNoStoreHeaders(
+          NextResponse.json({ ok: true, cached: true, fallback: true, reason: 'ai_unavailable', review: raced }, { status: 200 })
+        );
+      }
+      return withNoStoreHeaders(NextResponse.json({ ok: true, cached: true, fallback: false, review: raced }, { status: 200 }));
+    }
     return withNoStoreHeaders(NextResponse.json({ ok: false, error: insErr.message }, { status: 500 }));
   }
 
-  return withNoStoreHeaders(NextResponse.json({ ok: true, cached: false, review: inserted }, { status: 200 }));
+  if (isFallback) {
+    return withNoStoreHeaders(
+      NextResponse.json({ ok: true, cached: false, fallback: true, reason: 'ai_unavailable', review: inserted }, { status: 200 })
+    );
+  }
+  return withNoStoreHeaders(NextResponse.json({ ok: true, cached: false, fallback: false, review: inserted }, { status: 200 }));
 }
 
