@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import Dashboard from '@/components/Dashboard';
-import ForecastCard from '@/components/ForecastCard';
+import GoldSignalCard from '@/components/GoldSignalCard';
 import MoneyToGoldCalculator from '@/components/MoneyToGoldCalculator';
 import Footer from '@/components/Footer';
 import AdGateClient from '@/components/ads/AdGateClient';
@@ -93,7 +93,6 @@ function HomeContent() {
   const { lang } = useLang();
   const searchParams = useSearchParams();
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
-  const [forecast, setForecast] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -123,30 +122,13 @@ function HomeContent() {
     }
   }, [country, currency, loading]);
 
-  const fetchForecast = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/forecast?country=${country}`, {
-        cache: 'no-store', // Ensure fresh data on every fetch
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setForecast(data);
-      }
-    } catch (err) {
-      // Forecast errors are non-critical, don't set error state
-      console.error('Forecast fetch error:', err);
-    }
-  }, [country]);
-
   useEffect(() => {
     fetchSnapshot();
-    fetchForecast();
     const interval = setInterval(() => {
       fetchSnapshot();
-      fetchForecast();
     }, 30000); // Poll every 30 seconds
     return () => clearInterval(interval);
-  }, [fetchSnapshot, fetchForecast]); // Re-fetch when country/currency changes
+  }, [fetchSnapshot]); // Re-fetch when country/currency changes
 
   if (loading) {
     return (
@@ -220,15 +202,9 @@ function HomeContent() {
                 snapshot={snapshot}
               />
             </div>
-            {forecast && (
-              <div className="mt-4 sm:mt-6">
-                <ForecastCard 
-                  forecast={forecast.forecast} 
-                  insufficientData={forecast.insufficientData}
-                  country={country}
-                />
-              </div>
-            )}
+            <div className="mt-4 sm:mt-6">
+              <GoldSignalCard country={country === 'EG' ? 'EG' : 'GLOBAL'} />
+            </div>
             <section className="mt-6 sm:mt-8 rounded-lg border border-gray-800 bg-gray-900 p-4 sm:p-5">
               <h2 className="text-base sm:text-lg font-semibold text-gold-400">
                 {lang === 'ar' ? 'كيف نستخدم هذه الصفحة؟' : 'How to use this dashboard'}

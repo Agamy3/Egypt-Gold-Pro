@@ -9,6 +9,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/gold-signals",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/notify",
       "schedule": "*/5 * * * *"
     },
