@@ -1,185 +1,159 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 import { useLang } from '@/components/LanguageProvider';
 
-type SpotResp =
-  | { ok: true; price_usd_per_oz: number; fetched_at_ms: number; ageSeconds: number; stale_data: boolean; source: string; serverAsOf: string }
-  | { ok: false; error: string; serverAsOf?: string };
+type Karat = 24 | 22 | 21 | 18 | 14;
 
-type LocalResp =
-  | {
-      ok: true;
-      country: 'EG' | 'AE' | 'SA' | 'US';
-      karat: number;
-      unit: 'per_gram';
-      price: number;
-      currency: string;
-      created_at: string;
-      source: string;
-      serverAsOf: string;
-    }
-  | { ok: false; error: string };
-
-function fmtLocal(isoOrMs: string | number): string {
-  const d = typeof isoOrMs === 'number' ? new Date(isoOrMs) : new Date(isoOrMs);
-  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(d);
-}
+const KARAT_PURITY: Record<Karat, number> = {
+  24: 1.0,   // 100% pure
+  22: 22 / 24, // 91.67%
+  21: 21 / 24, // 87.5%
+  18: 18 / 24, // 75%
+  14: 14 / 24, // 58.33%
+};
 
 function clampNum(x: string): number {
   const n = Number(x);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function convertKarat(grams: number, fromKarat: Karat, toKarat: Karat): number {
+  if (grams <= 0 || fromKarat === toKarat) return grams;
+  // Pure gold content = grams * purity
+  // To get equivalent in different karat: result = (pure gold) / (target purity)
+  const pureGold = grams * KARAT_PURITY[fromKarat];
+  return pureGold / KARAT_PURITY[toKarat];
 }
 
 export default function GoldConverter(props: {
   country: 'EG' | 'AE' | 'SA' | 'US';
-  defaultKarat?: 24 | 21 | 18 | 14 | 22;
-  availableKarats?: Array<24 | 21 | 18 | 14 | 22>;
+  defaultKarat?: Karat;
+  availableKarats?: Karat[];
 }) {
   const { lang } = useLang();
-  const [spot, setSpot] = useState<SpotResp | null>(null);
-  const [local, setLocal] = useState<LocalResp | null>(null);
-  const [karat, setKarat] = useState<number>(props.defaultKarat ?? 24);
-  const [oz, setOz] = useState<string>('1');
-  const [grams, setGrams] = useState<string>('10');
+  const [inputKarat, setInputKarat] = useState<Karat>(props.defaultKarat ?? 24);
+  const [outputKarat, setOutputKarat] = useState<Karat>(21);
+  const [inputGrams, setInputGrams] = useState<string>('10');
 
-  const karats = useMemo(() => {
-    const base = props.availableKarats && props.availableKarats.length > 0 ? props.availableKarats : ([24, 21, 18, 14] as const);
-    // Ensure uniqueness and stable order
-    return Array.from(new Set(base)).sort((a, b) => b - a);
+  const availableKarats = useMemo(() => {
+    const base: Karat[] = props.availableKarats && props.availableKarats.length > 0 
+      ? props.availableKarats 
+      : [24, 22, 21, 18, 14];
+    return Array.from(new Set(base)).sort((a, b) => b - a) as Karat[];
   }, [props.availableKarats]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadSpot = async () => {
-      const res = await fetch('/api/market/spot/xauusd', { cache: 'no-store' });
-      const json = (await res.json().catch(() => null)) as SpotResp | null;
-      if (cancelled) return;
-      if (!json) return setSpot({ ok: false, error: 'spot_unavailable' });
-      setSpot(json);
-    };
-    void loadSpot();
-    const t = setInterval(() => void loadSpot(), 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadLocal = async () => {
-      const res = await fetch(`/api/market/local-latest?country=${encodeURIComponent(props.country)}&karat=${encodeURIComponent(String(karat))}`, {
-        cache: 'no-store',
-      });
-      const json = (await res.json().catch(() => null)) as LocalResp | null;
-      if (cancelled) return;
-      if (!json) return setLocal({ ok: false, error: 'local_unavailable' });
-      setLocal(json);
-    };
-    void loadLocal();
-    const t = setInterval(() => void loadLocal(), 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [props.country, karat]);
-
-  const ozN = clampNum(oz);
-  const gramsN = clampNum(grams);
-  const usdValue = spot && spot.ok && typeof spot.price_usd_per_oz === 'number' ? ozN * spot.price_usd_per_oz : null;
-  const localValue = local && local.ok && typeof local.price === 'number' ? gramsN * local.price : null;
+  const inputGramsNum = clampNum(inputGrams);
+  const outputGrams = useMemo(() => {
+    if (inputGramsNum <= 0) return 0;
+    return convertKarat(inputGramsNum, inputKarat, outputKarat);
+  }, [inputGramsNum, inputKarat, outputKarat]);
 
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-950 p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 mb-4">
         <div>
-          <div className="text-base font-semibold text-gray-100">{lang === 'ar' ? 'محول ذهب-إلى-ذهب' : 'Gold-to-Gold Converter'}</div>
+          <div className="text-base font-semibold text-gray-100">
+            {lang === 'ar' ? 'محول ذهب-إلى-ذهب' : 'Gold-to-Gold Converter'}
+          </div>
           <div className="text-xs text-gray-400 mt-1">
             {lang === 'ar'
-              ? 'تحويل إرشادي بين الأونصة العالمية والسعر المحلي (بالجرام).'
-              : 'Indicative conversion between global ounce and local per-gram prices.'}
-          </div>
-        </div>
-        <div className="text-xs text-gray-300">
-          <label className="mr-2">{lang === 'ar' ? 'عيار' : 'Karat'}</label>
-          <select
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1"
-            value={karat}
-            onChange={(e) => setKarat(Number(e.target.value))}
-          >
-            {karats.map((k) => (
-              <option key={k} value={k}>
-                {k}K
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <div className="rounded-md border border-gray-800 bg-gray-900/30 p-3">
-          <div className="text-xs text-gray-400">{lang === 'ar' ? 'العالمي (XAU/USD)' : 'Global (XAU/USD)'}</div>
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              className="w-24 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100"
-              value={oz}
-              onChange={(e) => setOz(e.target.value)}
-              inputMode="decimal"
-            />
-            <span className="text-sm text-gray-300">{lang === 'ar' ? 'أونصة' : 'oz'}</span>
-            <span className="text-sm text-gray-500">→</span>
-            <span className="text-sm text-gray-100 font-mono">{usdValue !== null ? `$${usdValue.toFixed(2)}` : '—'}</span>
-          </div>
-          <div className="mt-2 text-[11px] text-gray-500">
-            {spot && spot.ok ? (
-              <>
-                {lang === 'ar' ? 'سعر الأونصة:' : 'Ounce price:'} <span className="font-mono">${spot.price_usd_per_oz.toFixed(2)}</span>
-                {' · '}
-                {lang === 'ar' ? 'وقت:' : 'As-of:'} {fmtLocal(spot.fetched_at_ms)}
-              </>
-            ) : (
-              <span className="text-red-300">{lang === 'ar' ? 'غير متاح' : 'Unavailable'}</span>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-md border border-gray-800 bg-gray-900/30 p-3">
-          <div className="text-xs text-gray-400">{lang === 'ar' ? 'المحلي (بالجرام)' : 'Local (per gram)'}</div>
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              className="w-24 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100"
-              value={grams}
-              onChange={(e) => setGrams(e.target.value)}
-              inputMode="decimal"
-            />
-            <span className="text-sm text-gray-300">{lang === 'ar' ? 'جرام' : 'g'}</span>
-            <span className="text-sm text-gray-500">→</span>
-            <span className="text-sm text-gray-100 font-mono">
-              {localValue !== null && local && local.ok ? `${localValue.toFixed(2)} ${local.currency}` : '—'}
-            </span>
-          </div>
-          <div className="mt-2 text-[11px] text-gray-500">
-            {local && local.ok ? (
-              <>
-                {lang === 'ar' ? 'سعر/جرام:' : 'Per gram:'} <span className="font-mono">{local.price.toFixed(2)}</span> {local.currency}
-                {' · '}
-                {lang === 'ar' ? 'وقت:' : 'As-of:'} {fmtLocal(local.created_at)}
-              </>
-            ) : (
-              <span className="text-red-300">{lang === 'ar' ? 'غير متاح' : 'Unavailable'}</span>
-            )}
+              ? 'تحويل بين العيارات المختلفة بناءً على نقاء الذهب.'
+              : 'Convert between different karats based on gold purity.'}
           </div>
         </div>
       </div>
 
-      <div className="mt-3 text-[11px] text-gray-500">
+      <div className="space-y-4">
+        {/* Input Section */}
+        <div className="rounded-md border border-gray-800 bg-gray-900/30 p-4">
+          <div className="text-xs text-gray-400 mb-2">{lang === 'ar' ? 'المدخل' : 'Input'}</div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <input
+              className="flex-1 min-w-[120px] bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-gold-500"
+              type="number"
+              inputMode="decimal"
+              value={inputGrams}
+              onChange={(e) => setInputGrams(e.target.value)}
+              placeholder="0"
+              min="0"
+              step="0.01"
+            />
+            <span className="text-sm text-gray-300 whitespace-nowrap">{lang === 'ar' ? 'جرام' : 'grams'}</span>
+            <span className="text-sm text-gray-500">of</span>
+            <select
+              className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-gold-500"
+              value={inputKarat}
+              onChange={(e) => setInputKarat(Number(e.target.value) as Karat)}
+            >
+              {availableKarats.map((k) => (
+                <option key={k} value={k}>
+                  {k}K
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-2 text-xs text-gray-500">
+            {lang === 'ar' 
+              ? `نقاء ${inputKarat}K: ${(KARAT_PURITY[inputKarat] * 100).toFixed(2)}%`
+              : `${inputKarat}K purity: ${(KARAT_PURITY[inputKarat] * 100).toFixed(2)}%`}
+          </div>
+        </div>
+
+        {/* Conversion Arrow */}
+        <div className="flex items-center justify-center">
+          <div className="text-2xl text-gray-500">↓</div>
+        </div>
+
+        {/* Output Section */}
+        <div className="rounded-md border border-gray-800 bg-gray-900/30 p-4">
+          <div className="text-xs text-gray-400 mb-2">{lang === 'ar' ? 'المخرج' : 'Output'}</div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex-1 min-w-[120px] bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 font-mono">
+              {outputGrams > 0 ? outputGrams.toFixed(4) : '0.0000'}
+            </div>
+            <span className="text-sm text-gray-300 whitespace-nowrap">{lang === 'ar' ? 'جرام' : 'grams'}</span>
+            <span className="text-sm text-gray-500">of</span>
+            <select
+              className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-gold-500"
+              value={outputKarat}
+              onChange={(e) => setOutputKarat(Number(e.target.value) as Karat)}
+            >
+              {availableKarats.map((k) => (
+                <option key={k} value={k}>
+                  {k}K
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-2 text-xs text-gray-500">
+            {lang === 'ar' 
+              ? `نقاء ${outputKarat}K: ${(KARAT_PURITY[outputKarat] * 100).toFixed(2)}%`
+              : `${outputKarat}K purity: ${(KARAT_PURITY[outputKarat] * 100).toFixed(2)}%`}
+          </div>
+        </div>
+
+        {/* Conversion Formula Display */}
+        {inputGramsNum > 0 && inputKarat !== outputKarat && (
+          <div className="mt-3 p-3 bg-gray-900/50 border border-gray-800 rounded text-xs text-gray-400">
+            <div className="font-mono">
+              {inputGramsNum.toFixed(4)}g × {inputKarat}/24 ÷ {outputKarat}/24 = {outputGrams.toFixed(4)}g
+            </div>
+            <div className="mt-1">
+              {lang === 'ar'
+                ? `يعادل ${inputGramsNum.toFixed(2)} جرام من ${inputKarat}K نفس كمية الذهب الخالص في ${outputGrams.toFixed(2)} جرام من ${outputKarat}K`
+                : `${inputGramsNum.toFixed(2)}g of ${inputKarat}K contains the same pure gold as ${outputGrams.toFixed(2)}g of ${outputKarat}K`}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 text-[11px] text-gray-500">
         {lang === 'ar'
-          ? 'تنبيه: المحول إرشادي فقط. فروقات السعر والرسوم تختلف حسب السوق.'
-          : 'Note: Converter is indicative only. Spreads/fees vary by market.'}
+          ? 'تنبيه: هذا المحول يحسب فقط نقاء الذهب. الأسعار الفعلية قد تختلف حسب السوق والرسوم.'
+          : 'Note: This converter calculates gold purity only. Actual prices may vary by market and fees.'}
       </div>
     </div>
   );
 }
-

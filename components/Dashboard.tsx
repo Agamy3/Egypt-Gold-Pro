@@ -235,7 +235,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
 
       {/* Main Dashboard Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Global Spot Gold Price */}
+        {/* 1. Global Spot Gold Price */}
         <div 
           className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gold-600`}
         >
@@ -272,100 +272,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           )}
         </div>
 
-        {/* Silver (Premium-only) */}
-        <SilverCard isPremium={isPremium} lang={lang} country={country as any} />
-
-        {/* Market 21k */}
-        <div 
-          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600`}
-        >
-          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-            {getCountryMarketLabel(snapshot.country, '21', lang)}
-            <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 21k المتاحة من المصادر النشطة.' : "Median of available 21k buy prices from active sources."}>
-              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-            </HoverTip>
-          </h2>
-          {snapshot.market.median.market21Buy !== null ? (
-            <>
-              <HoverTip 
-                text={(() => {
-                  const sourceCount = snapshot.market.activeSourceCount || 0;
-                  const lastSource = snapshot.market.sources?.find(s => s.status === 'OK') || snapshot.market.sources?.[0];
-                  const lastUpdated = lastSource?.fetchedAt 
-                    ? formatTimestamp(lastSource.fetchedAt)
-                    : formatTimestamp(snapshot.timestamp);
-                  const minutesAgo = lastSource?.fetchedAt 
-                    ? Math.floor((Date.now() - lastSource.fetchedAt) / 60000)
-                    : Math.floor((Date.now() - snapshot.timestamp) / 60000);
-                  const timeAgo = minutesAgo < 1 
-                    ? (lang === 'ar' ? 'الآن' : 'just now')
-                    : minutesAgo < 60
-                    ? `${minutesAgo} ${lang === 'ar' ? 'دقيقة' : minutesAgo === 1 ? 'minute' : 'minutes'} ${lang === 'ar' ? 'مضت' : 'ago'}`
-                    : `${Math.floor(minutesAgo / 60)} ${lang === 'ar' ? 'ساعة' : Math.floor(minutesAgo / 60) === 1 ? 'hour' : 'hours'} ${lang === 'ar' ? 'مضت' : 'ago'}`;
-                  return `${lang === 'ar' ? 'سعر الوسيط المستند على' : 'Median price based on'} ${sourceCount} ${lang === 'ar' ? 'مصدر نشط' : sourceCount === 1 ? 'active source' : 'active sources'}. ${lang === 'ar' ? 'آخر تحديث' : 'Updated'} ${timeAgo}.`;
-                })()}
-              >
-                <div className="text-2xl sm:text-3xl font-bold text-blue-700 mb-2 cursor-help touch-manipulation">
-                  {formatNumber(snapshot.market.median.market21Buy, 0)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
-                </div>
-              </HoverTip>
-              <div className="text-sm text-gray-600 mb-4">
-                {t(lang, 'buyPrice')} ({snapshot.currency || snapshot.canonicalCurrency || 'EGP'})
-              </div>
-            </>
-          ) : (
-            <div className="text-red-400 font-semibold">{t(lang, 'referenceUnavailable')}</div>
-          )}
-        </div>
-
-        {/* Market 18k */}
-        <div 
-          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-cyan-600`}
-        >
-          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
-            {getCountryMarketLabel(snapshot.country, '18', lang)}
-            <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 18k المتاحة من المصادر النشطة.' : "Median of available 18k buy prices from active sources."}>
-              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-            </HoverTip>
-          </h2>
-          {snapshot.market.median.market18Buy !== null && snapshot.market.median.market18Buy !== undefined ? (
-            <>
-              <HoverTip 
-                text={(() => {
-                  const sourceCount = snapshot.market.activeSourceCount || 0;
-                  const lastSource = snapshot.market.sources?.find(s => s.status === 'OK') || snapshot.market.sources?.[0];
-                  const lastUpdated = lastSource?.fetchedAt 
-                    ? formatTimestamp(lastSource.fetchedAt)
-                    : formatTimestamp(snapshot.timestamp);
-                  const minutesAgo = lastSource?.fetchedAt 
-                    ? Math.floor((Date.now() - lastSource.fetchedAt) / 60000)
-                    : Math.floor((Date.now() - snapshot.timestamp) / 60000);
-                  const timeAgo = minutesAgo < 1 
-                    ? (lang === 'ar' ? 'الآن' : 'just now')
-                    : minutesAgo < 60
-                    ? `${minutesAgo} ${lang === 'ar' ? 'دقيقة' : minutesAgo === 1 ? 'minute' : 'minutes'} ${lang === 'ar' ? 'مضت' : 'ago'}`
-                    : `${Math.floor(minutesAgo / 60)} ${lang === 'ar' ? 'ساعة' : Math.floor(minutesAgo / 60) === 1 ? 'hour' : 'hours'} ${lang === 'ar' ? 'مضت' : 'ago'}`;
-                  return `${lang === 'ar' ? 'سعر الوسيط المستند على' : 'Median price based on'} ${sourceCount} ${lang === 'ar' ? 'مصدر نشط' : sourceCount === 1 ? 'active source' : 'active sources'}. ${lang === 'ar' ? 'آخر تحديث' : 'Updated'} ${timeAgo}.`;
-                })()}
-              >
-                <div className="text-2xl sm:text-3xl font-bold text-cyan-700 mb-2 cursor-help touch-manipulation">
-                  {formatNumber(snapshot.market.median.market18Buy, 0)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
-                </div>
-              </HoverTip>
-              <div className="text-sm text-gray-600 mb-4">
-                {t(lang, 'buyPrice')} ({snapshot.currency || snapshot.canonicalCurrency || 'EGP'})
-              </div>
-            </>
-          ) : (
-            <div className="text-red-400 font-semibold">{t(lang, 'referenceUnavailable')}</div>
-          )}
-        </div>
-
-        {/* Market 24k */}
+        {/* 2. Market 24k */}
         <div 
           className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-purple-600`}
         >
@@ -410,7 +317,97 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           )}
         </div>
 
-        {/* USD Exchange Rate */}
+        {/* 3. Market 21k */}
+        <div 
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-blue-600`}
+        >
+          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {getCountryMarketLabel(snapshot.country, '21', lang)}
+            <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 21k المتاحة من المصادر النشطة.' : "Median of available 21k buy prices from active sources."}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            </HoverTip>
+          </h2>
+          {snapshot.market.median.market21Buy !== null ? (
+            <>
+              <HoverTip 
+                text={(() => {
+                  const sourceCount = snapshot.market.activeSourceCount || 0;
+                  const lastSource = snapshot.market.sources?.find(s => s.status === 'OK') || snapshot.market.sources?.[0];
+                  const lastUpdated = lastSource?.fetchedAt 
+                    ? formatTimestamp(lastSource.fetchedAt)
+                    : formatTimestamp(snapshot.timestamp);
+                  const minutesAgo = lastSource?.fetchedAt 
+                    ? Math.floor((Date.now() - lastSource.fetchedAt) / 60000)
+                    : Math.floor((Date.now() - snapshot.timestamp) / 60000);
+                  const timeAgo = minutesAgo < 1 
+                    ? (lang === 'ar' ? 'الآن' : 'just now')
+                    : minutesAgo < 60
+                    ? `${minutesAgo} ${lang === 'ar' ? 'دقيقة' : minutesAgo === 1 ? 'minute' : 'minutes'} ${lang === 'ar' ? 'مضت' : 'ago'}`
+                    : `${Math.floor(minutesAgo / 60)} ${lang === 'ar' ? 'ساعة' : Math.floor(minutesAgo / 60) === 1 ? 'hour' : 'hours'} ${lang === 'ar' ? 'مضت' : 'ago'}`;
+                  return `${lang === 'ar' ? 'سعر الوسيط المستند على' : 'Median price based on'} ${sourceCount} ${lang === 'ar' ? 'مصدر نشط' : sourceCount === 1 ? 'active source' : 'active sources'}. ${lang === 'ar' ? 'آخر تحديث' : 'Updated'} ${timeAgo}.`;
+                })()}
+              >
+                <div className="text-2xl sm:text-3xl font-bold text-blue-700 mb-2 cursor-help touch-manipulation">
+                  {formatNumber(snapshot.market.median.market21Buy, 0)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
+                </div>
+              </HoverTip>
+              <div className="text-sm text-gray-600 mb-4">
+                {t(lang, 'buyPrice')} ({snapshot.currency || snapshot.canonicalCurrency || 'EGP'})
+              </div>
+            </>
+          ) : (
+            <div className="text-red-400 font-semibold">{t(lang, 'referenceUnavailable')}</div>
+          )}
+        </div>
+
+        {/* 4. Market 18k */}
+        <div 
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-cyan-600`}
+        >
+          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {getCountryMarketLabel(snapshot.country, '18', lang)}
+            <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 18k المتاحة من المصادر النشطة.' : "Median of available 18k buy prices from active sources."}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            </HoverTip>
+          </h2>
+          {snapshot.market.median.market18Buy !== null && snapshot.market.median.market18Buy !== undefined ? (
+            <>
+              <HoverTip 
+                text={(() => {
+                  const sourceCount = snapshot.market.activeSourceCount || 0;
+                  const lastSource = snapshot.market.sources?.find(s => s.status === 'OK') || snapshot.market.sources?.[0];
+                  const lastUpdated = lastSource?.fetchedAt 
+                    ? formatTimestamp(lastSource.fetchedAt)
+                    : formatTimestamp(snapshot.timestamp);
+                  const minutesAgo = lastSource?.fetchedAt 
+                    ? Math.floor((Date.now() - lastSource.fetchedAt) / 60000)
+                    : Math.floor((Date.now() - snapshot.timestamp) / 60000);
+                  const timeAgo = minutesAgo < 1 
+                    ? (lang === 'ar' ? 'الآن' : 'just now')
+                    : minutesAgo < 60
+                    ? `${minutesAgo} ${lang === 'ar' ? 'دقيقة' : minutesAgo === 1 ? 'minute' : 'minutes'} ${lang === 'ar' ? 'مضت' : 'ago'}`
+                    : `${Math.floor(minutesAgo / 60)} ${lang === 'ar' ? 'ساعة' : Math.floor(minutesAgo / 60) === 1 ? 'hour' : 'hours'} ${lang === 'ar' ? 'مضت' : 'ago'}`;
+                  return `${lang === 'ar' ? 'سعر الوسيط المستند على' : 'Median price based on'} ${sourceCount} ${lang === 'ar' ? 'مصدر نشط' : sourceCount === 1 ? 'active source' : 'active sources'}. ${lang === 'ar' ? 'آخر تحديث' : 'Updated'} ${timeAgo}.`;
+                })()}
+              >
+                <div className="text-2xl sm:text-3xl font-bold text-cyan-700 mb-2 cursor-help touch-manipulation">
+                  {formatNumber(snapshot.market.median.market18Buy, 0)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
+                </div>
+              </HoverTip>
+              <div className="text-sm text-gray-600 mb-4">
+                {t(lang, 'buyPrice')} ({snapshot.currency || snapshot.canonicalCurrency || 'EGP'})
+              </div>
+            </>
+          ) : (
+            <div className="text-red-400 font-semibold">{t(lang, 'referenceUnavailable')}</div>
+          )}
+        </div>
+
+        {/* 5. USD Exchange Rate */}
         <div 
           className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-green-600`}
         >
@@ -495,7 +492,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           })()}
         </div>
 
-        {/* Over/Under Pricing */}
+        {/* 6. Over/Under Pricing (Market Variance) */}
         <div 
           className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-indigo-600`}
         >
@@ -579,7 +576,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
           <PremiumMacroPanel isPremium={true} lang={lang} />
         )}
 
-        {/* Pricing Details */}
+        {/* 7. Pricing Details */}
         <div 
           className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-gray-600`}
         >
@@ -689,6 +686,9 @@ export default function Dashboard({ snapshot }: DashboardProps) {
             </div>
           </div>
         </div>
+
+        {/* 8. Silver (Premium-only) */}
+        <SilverCard isPremium={isPremium} lang={lang} country={country as any} />
       </div>
       {/* Dashboard Ad - only when enough content is available and user is non-premium */}
     </div>
