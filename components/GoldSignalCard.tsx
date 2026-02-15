@@ -15,14 +15,21 @@ type LatestSignal = {
   cycle_key: string;
   cycle_started_at: string;
   country: Country;
-  action: Action;
-  confidence: number;
+  action: Action; // raw (legacy)
+  confidence: number; // raw (legacy)
+  raw_action?: Action | null;
+  raw_confidence0to1?: number | null;
+  final_action?: Action | null;
+  final_confidence0to1?: number | null;
+  final_changed_at?: string | null;
+  final_change_reason?: string | null;
   pct_change_5m: number;
   volatility_proxy: number;
   asia_session: boolean;
   variance_pct: number | null;
   xau_usd: number;
   xau_timestamp_ms?: number | null;
+  meta?: Record<string, unknown> | null;
   updated_at: string;
 };
 
@@ -122,9 +129,9 @@ export default function GoldSignalCard(props: { country: Country; isPremium?: bo
   }, []);
 
   const latest = data?.latest ?? null;
-  const action = (latest?.action ?? 'HOLD') as Action;
-  const conf = latest?.confidence ?? 0;
-  const style = actionStyle(action);
+  const finalAction = (latest?.final_action ?? latest?.action ?? 'HOLD') as Action;
+  const finalConf = Number(latest?.final_confidence0to1 ?? latest?.confidence ?? 0);
+  const style = actionStyle(finalAction);
 
   const subtitle = useMemo(() => {
     const c = props.country === 'EG' ? (lang === 'ar' ? 'مصر (EG)' : 'Egypt (EG)') : (lang === 'ar' ? 'عالمي' : 'Global');
@@ -150,7 +157,7 @@ export default function GoldSignalCard(props: { country: Country; isPremium?: bo
       ) : (
         <>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
-            <ConfidenceRing value0to1={conf} />
+            <ConfidenceRing value0to1={finalConf} />
 
             <div className="text-sm text-gray-300">
               <div>
@@ -171,17 +178,45 @@ export default function GoldSignalCard(props: { country: Country; isPremium?: bo
             </div>
           )}
 
+          {props.country === 'EG' && latest.meta && (latest.meta as any).eg_local_24_latest ? (
+            <div className="mt-3 text-xs text-gray-400 space-y-1">
+              <div>
+                <span className="text-gray-400">{lang === 'ar' ? 'محلي ٢٤K:' : 'Local 24K:'}</span>{' '}
+                <span className="font-mono">{Number((latest.meta as any).eg_local_24_latest).toFixed(2)}</span> EGP/g
+              </div>
+              {typeof (latest.meta as any).eg_local_18_latest === 'number' ? (
+                <div>
+                  <span className="text-gray-400">{lang === 'ar' ? 'محلي ١٨K:' : 'Local 18K:'}</span>{' '}
+                  <span className="font-mono">{Number((latest.meta as any).eg_local_18_latest).toFixed(2)}</span> EGP/g
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="mt-4 text-xs text-gray-500">
-            <span title={lang === 'ar' ? 'وقت الدورة (UTC) + وقت الجهاز (محلي)' : 'Cycle time (UTC) + device time (local)'}>
-              {lang === 'ar' ? 'الدورة:' : 'Cycle:'} <span className="font-mono">{latest.cycle_key}</span> (UTC)
+            <span title={lang === 'ar' ? 'إشارة نهائية فعالة حتى تتغير' : 'Final signal is active until changed'}>
+              {lang === 'ar' ? 'الحالة النهائية:' : 'Final:'}{' '}
+              <span className="font-semibold text-gray-200">{finalAction}</span>
             </span>
+            {latest.final_changed_at ? (
+              <>
+                {' · '}
+                <span title={`${lang === 'ar' ? 'محلي/UTC' : 'Local/UTC'}: ${fmtLocal(latest.final_changed_at)} / ${fmtUtcHm(latest.final_changed_at)} UTC`}>
+                  {lang === 'ar' ? 'فعالة منذ:' : 'Active since:'} {fmtLocal(latest.final_changed_at)}
+                </span>
+              </>
+            ) : null}
             {' · '}
-            <span title={`${lang === 'ar' ? 'محلي' : 'Local'}: ${fmtLocal(latest.cycle_started_at)} · UTC: ${fmtUtcHm(latest.cycle_started_at)}:${String(new Date(latest.cycle_started_at).getUTCMinutes()).padStart(2, '0')}`}>
-              {lang === 'ar' ? 'تم الحساب:' : 'Computed:'} {fmtLocal(latest.cycle_started_at)}
+            <span title={`${lang === 'ar' ? 'محلي/UTC' : 'Local/UTC'}: ${fmtLocal(latest.cycle_started_at)} / ${fmtUtcHm(latest.cycle_started_at)} UTC`}>
+              {lang === 'ar' ? 'آخر تقييم:' : 'Last evaluated:'} {fmtLocal(latest.cycle_started_at)}
             </span>
             {' · '}
             <span title={lang === 'ar' ? 'جلسة آسيا: 00:00–08:59 UTC' : 'Asia session: 00:00–08:59 UTC'}>
               {latest.asia_session ? (lang === 'ar' ? 'جلسة آسيا' : 'Asia session') : (lang === 'ar' ? 'خارج جلسة آسيا' : 'Non-Asia')}
+            </span>
+            {' · '}
+            <span title={lang === 'ar' ? 'مفتاح الدورة (UTC)' : 'Cycle key (UTC)'}>
+              {lang === 'ar' ? 'الدورة:' : 'Cycle:'} <span className="font-mono">{latest.cycle_key}</span> (UTC)
             </span>
             {typeof latest.xau_timestamp_ms === 'number' ? (
               <>
@@ -192,6 +227,28 @@ export default function GoldSignalCard(props: { country: Country; isPremium?: bo
               </>
             ) : null}
           </div>
+
+          {latest.final_change_reason || (latest.meta && Array.isArray((latest.meta as any).final_guards)) ? (
+            <details className="mt-3 text-xs text-gray-300">
+              <summary className="cursor-pointer text-gray-400">
+                {lang === 'ar' ? 'لماذا هذه الحالة؟' : 'Why this state?'}
+              </summary>
+              <div className="mt-2 space-y-1">
+                {latest.final_change_reason ? (
+                  <div>
+                    <span className="text-gray-400">{lang === 'ar' ? 'سبب التغيير:' : 'Change reason:'}</span>{' '}
+                    <span className="font-mono">{String(latest.final_change_reason)}</span>
+                  </div>
+                ) : null}
+                {latest.meta && Array.isArray((latest.meta as any).final_guards) ? (
+                  <div>
+                    <span className="text-gray-400">{lang === 'ar' ? 'حواجز:' : 'Guards:'}</span>{' '}
+                    <span className="font-mono">{(latest.meta as any).final_guards.join(', ')}</span>
+                  </div>
+                ) : null}
+              </div>
+            </details>
+          ) : null}
 
           <div className="mt-5 rounded-lg border border-gray-800 bg-gray-950 p-4">
             <div className="flex items-center justify-between gap-3">

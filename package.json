@@ -40,11 +40,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "jest": {
-    "testMatch": [
-      "**/*.test.ts",
-      "**/*.test.tsx"
-    ]
   }
 }

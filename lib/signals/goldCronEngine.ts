@@ -4,13 +4,21 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { cycleKeyUtc, isAsiaSessionUtc } from '@/lib/signals/cycle';
 import { computeGoldAlgoSignal, median, type GoldSignalAction } from '@/lib/signals/goldAlgo';
-import { computeEgVariancePct } from '@/lib/signals/egVariance';
 import { getImpliedOunceWithCache } from '@/lib/goldapi';
+import { deriveFinalSignal, type FinalAction, type RawHistoryPoint, type Regime } from '@/lib/signals/deriveFinalSignal';
+import { getMultiCurrencyRates } from '@/lib/fx-multi';
 
 type Country = 'GLOBAL' | 'EG';
 
 const CYCLE_MINUTES = 5;
 const HORIZON_MINUTES = 30;
+
+type FinalStateRow = {
+  final_action: FinalAction;
+  final_confidence0to1: number;
+  final_changed_at: string;
+  last_cycle_key: string;
+};
 
 function addMinutes(d: Date, minutes: number): Date {
   return new Date(d.getTime() + minutes * 60_000);
@@ -111,6 +119,132 @@ async function getPrevCyclePrice(supabase: SupabaseClient): Promise<number | nul
   return Number.isFinite(p) && p > 0 ? p : null;
 }
 
+function clamp01(x: number): number {
+  if (!Number.isFinite(x)) return 0;
+  return Math.max(0, Math.min(1, x));
+}
+
+function classifyRegime(args: {
+  volatilityProxy: number;
+  rawActionsLatestToOlder: FinalAction[]; // include current raw at [0]
+  pctChangesLatestToOlder: number[]; // include current at [0]
+}): { regime: Regime; chopDetected: boolean; flipCount6: number } {
+  const actions6 = args.rawActionsLatestToOlder.slice(0, 6);
+  const pct6 = args.pctChangesLatestToOlder.slice(0, 6);
+
+  let flipCount = 0;
+  let prev: FinalAction | null = null;
+  for (const a of actions6) {
+    if (a === 'HOLD') continue;
+    if (prev && prev !== 'HOLD' && a !== prev) flipCount += 1;
+    prev = a;
+  }
+
+  const absMean =
+    pct6.length > 0 ? pct6.map((x) => Math.abs(Number.isFinite(x) ? x : 0)).reduce((s, v) => s + v, 0) / pct6.length : 0;
+
+  const vol = Math.max(0, Number.isFinite(args.volatilityProxy) ? args.volatilityProxy : 0);
+  const chopDetected = flipCount >= 3;
+
+  if (chopDetected) return { regime: 'choppy', chopDetected, flipCount6: flipCount };
+  if (vol >= 0.0012 || absMean >= 0.001) return { regime: 'volatile', chopDetected, flipCount6: flipCount };
+  if (vol >= 0.00025 && flipCount <= 1) return { regime: 'trending', chopDetected, flipCount6: flipCount };
+  return { regime: 'calm', chopDetected, flipCount6: flipCount };
+}
+
+async function getPrevFinalState(supabase: SupabaseClient, country: Country): Promise<FinalStateRow | null> {
+  const { data } = await supabase
+    .from('gold_signal_state')
+    .select('final_action, final_confidence0to1, final_changed_at, last_cycle_key')
+    .eq('country', country)
+    .eq('asset', 'XAUUSD')
+    .maybeSingle();
+  if (data?.final_action && data.final_changed_at) {
+    return {
+      final_action: String((data as any).final_action) as FinalAction,
+      final_confidence0to1: Number((data as any).final_confidence0to1),
+      final_changed_at: String((data as any).final_changed_at),
+      last_cycle_key: String((data as any).last_cycle_key),
+    };
+  }
+
+  // fallback: last gold_signals row (if any)
+  const { data: last } = await supabase
+    .from('gold_signals')
+    .select('final_action, final_confidence0to1, final_changed_at, cycle_key, action, confidence, created_at')
+    .eq('country', country)
+    .order('cycle_started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!last) return null;
+  const final_action = (last as any).final_action ? (String((last as any).final_action) as FinalAction) : (String((last as any).action) as FinalAction);
+  const final_changed_at =
+    (last as any).final_changed_at ? String((last as any).final_changed_at) : String((last as any).created_at ?? new Date().toISOString());
+  return {
+    final_action,
+    final_confidence0to1: Number((last as any).final_confidence0to1 ?? (last as any).confidence ?? 0),
+    final_changed_at,
+    last_cycle_key: String((last as any).cycle_key ?? ''),
+  };
+}
+
+async function getRawHistory(supabase: SupabaseClient, country: Country, limit: number): Promise<RawHistoryPoint[]> {
+  const { data } = await supabase
+    .from('gold_signals')
+    .select('cycle_key, raw_action, raw_confidence0to1, action, confidence')
+    .eq('country', country)
+    .order('cycle_started_at', { ascending: false })
+    .limit(limit);
+
+  return (data ?? []).map((r: any) => {
+    const a = (r.raw_action ?? r.action ?? 'HOLD') as FinalAction;
+    const c = Number(r.raw_confidence0to1 ?? r.confidence ?? 0);
+    return { cycle_key: String(r.cycle_key), rawAction: a, rawConfidence: clamp01(c) };
+  });
+}
+
+async function getEgLocalKaratSeries(supabase: SupabaseClient, karat: 24 | 18): Promise<{
+  latestPrice: number | null;
+  latestAt: string | null;
+  prevPrice: number | null;
+  prevAt: string | null;
+  pct: number | null;
+}> {
+  const { data: latest } = await supabase
+    .from('market_snapshots_norm')
+    .select('price, created_at')
+    .eq('country', 'EG')
+    .eq('karat', karat)
+    .eq('trusted', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const latestPrice = latest ? Number((latest as any).price) : null;
+  const latestAt = latest ? String((latest as any).created_at) : null;
+  if (!latestAt || !Number.isFinite(Number(latestPrice)) || (latestPrice as number) <= 0) {
+    return { latestPrice: null, latestAt: null, prevPrice: null, prevAt: null, pct: null };
+  }
+
+  const prevTargetIso = new Date(Date.parse(latestAt) - 300_000).toISOString();
+  const { data: prev } = await supabase
+    .from('market_snapshots_norm')
+    .select('price, created_at')
+    .eq('country', 'EG')
+    .eq('karat', karat)
+    .eq('trusted', true)
+    .lte('created_at', prevTargetIso)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const prevPrice = prev ? Number((prev as any).price) : null;
+  const prevAt = prev ? String((prev as any).created_at) : null;
+  const pct = prevPrice && Number.isFinite(prevPrice) && prevPrice > 0 ? ((latestPrice as number) - prevPrice) / prevPrice : null;
+  return { latestPrice: latestPrice as number, latestAt, prevPrice: prevPrice ?? null, prevAt, pct };
+}
+
 export type GoldSignalsCronRun = {
   ok: true;
   serverAsOf: string;
@@ -171,8 +305,10 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
   const baseRow = {
     cycle_key: cycleKey,
     cycle_started_at: cycleStartedAt.toISOString(),
-    action: algo.action,
-    confidence: algo.confidence,
+    action: algo.action, // raw (backward-compatible)
+    confidence: algo.confidence, // raw (backward-compatible)
+    raw_action: algo.action,
+    raw_confidence0to1: algo.confidence,
     xau_usd: xauUsd,
     xau_timestamp_ms: xauTimestampMs,
     pct_change_5m: pctChange5m,
@@ -189,15 +325,159 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
 
   // GLOBAL
   if (!existingCountries.has('GLOBAL')) {
-    const { error } = await supabase.from('gold_signals').insert({ ...baseRow, country: 'GLOBAL', variance_pct: null });
-    if (!error) created.push({ country: 'GLOBAL', action: algo.action, confidence: algo.confidence });
+    const prevState = await getPrevFinalState(supabase, 'GLOBAL');
+    const historyRaw = await getRawHistory(supabase, 'GLOBAL', 12);
+    const regimeInfo = classifyRegime({
+      volatilityProxy,
+      rawActionsLatestToOlder: [algo.action, ...historyRaw.map((h) => h.rawAction)],
+      pctChangesLatestToOlder: [pctChange5m, ...historyRaw.map((_) => 0)],
+    });
+
+    const derived = deriveFinalSignal({
+      prevFinalAction: prevState?.final_action ?? 'HOLD',
+      prevFinalChangedAt: prevState?.final_changed_at ?? null,
+      rawActionNow: algo.action,
+      rawConfidenceNow: algo.confidence,
+      regimeNow: regimeInfo.regime,
+      chopDetectedNow: regimeInfo.chopDetected,
+      varianceConflictNow: false,
+      ai: null,
+      historyRaw,
+    });
+
+    const finalChangedAtIso = derived.changed ? cycleStartedAt.toISOString() : (prevState?.final_changed_at ?? cycleStartedAt.toISOString());
+
+    const { error } = await supabase.from('gold_signals').insert({
+      ...baseRow,
+      country: 'GLOBAL',
+      variance_pct: null,
+      final_action: derived.finalAction,
+      final_confidence0to1: derived.finalConfidence0to1,
+      final_changed_at: finalChangedAtIso,
+      final_change_reason: derived.changeReason,
+      meta: {
+        ...(baseRow as any).meta,
+        regime: regimeInfo.regime,
+        chopDetected: regimeInfo.chopDetected,
+        final_guards: derived.guards,
+      },
+    });
+    if (!error) created.push({ country: 'GLOBAL', action: derived.finalAction, confidence: derived.finalConfidence0to1 });
+
+    if (!error) {
+      await supabase.from('gold_signal_state').upsert(
+        {
+          country: 'GLOBAL',
+          asset: 'XAUUSD',
+          final_action: derived.finalAction,
+          final_confidence0to1: derived.finalConfidence0to1,
+          final_changed_at: finalChangedAtIso,
+          last_cycle_key: cycleKey,
+          updated_at: nowIso,
+        },
+        { onConflict: 'country,asset' }
+      );
+    }
   }
 
   // EG (variance_pct only; action is the same algorithmically, but AI can downgrade/override)
   if (!existingCountries.has('EG')) {
-    const variancePct = await computeEgVariancePct({ supabase, xauUsdPerOz: xauUsd }).catch(() => null);
-    const { error } = await supabase.from('gold_signals').insert({ ...baseRow, country: 'EG', variance_pct: variancePct });
-    if (!error) created.push({ country: 'EG', action: algo.action, confidence: algo.confidence });
+    const [eg24, eg18] = await Promise.all([getEgLocalKaratSeries(supabase, 24), getEgLocalKaratSeries(supabase, 18)]);
+
+    const fx = await getMultiCurrencyRates().catch(() => null);
+    const usdEgp = fx?.usd_egp ?? null;
+    const usdPerGram24 = xauUsd / 31.1034768;
+    const fair24Egp = usdEgp && Number.isFinite(usdEgp) && usdEgp > 0 ? usdPerGram24 * usdEgp : null;
+    const variance24 =
+      fair24Egp && eg24.latestPrice && Number.isFinite(eg24.latestPrice) && eg24.latestPrice > 0
+        ? (eg24.latestPrice - fair24Egp) / fair24Egp
+        : null;
+    const fair18Egp = fair24Egp !== null ? fair24Egp * (18 / 24) : null;
+    const variance18 =
+      fair18Egp && eg18.latestPrice && Number.isFinite(eg18.latestPrice) && eg18.latestPrice > 0
+        ? (eg18.latestPrice - fair18Egp) / fair18Egp
+        : null;
+
+    const divergence18vs24 =
+      eg24.latestPrice && eg18.latestPrice
+        ? (eg18.latestPrice - eg24.latestPrice * (18 / 24)) / (eg24.latestPrice * (18 / 24))
+        : null;
+
+    const varianceConflictNow =
+      (variance24 !== null && Math.abs(variance24) >= 0.01) ||
+      (divergence18vs24 !== null && Math.abs(divergence18vs24) >= 0.0005);
+
+    const prevState = await getPrevFinalState(supabase, 'EG');
+    const historyRaw = await getRawHistory(supabase, 'EG', 12);
+    const regimeInfo = classifyRegime({
+      volatilityProxy,
+      rawActionsLatestToOlder: [algo.action, ...historyRaw.map((h) => h.rawAction)],
+      pctChangesLatestToOlder: [pctChange5m, ...historyRaw.map((_) => 0)],
+    });
+
+    const derived = deriveFinalSignal({
+      prevFinalAction: prevState?.final_action ?? 'HOLD',
+      prevFinalChangedAt: prevState?.final_changed_at ?? null,
+      rawActionNow: algo.action,
+      rawConfidenceNow: algo.confidence,
+      regimeNow: regimeInfo.regime,
+      chopDetectedNow: regimeInfo.chopDetected,
+      varianceConflictNow,
+      ai: null,
+      historyRaw,
+    });
+
+    let finalConfidence = derived.finalConfidence0to1;
+    if (divergence18vs24 !== null && Math.abs(divergence18vs24) >= 0.0005) {
+      finalConfidence = Math.max(0, finalConfidence - 0.05);
+    }
+
+    const finalChangedAtIso = derived.changed ? cycleStartedAt.toISOString() : (prevState?.final_changed_at ?? cycleStartedAt.toISOString());
+
+    const { error } = await supabase.from('gold_signals').insert({
+      ...baseRow,
+      country: 'EG',
+      variance_pct: variance24,
+      final_action: derived.finalAction,
+      final_confidence0to1: finalConfidence,
+      final_changed_at: finalChangedAtIso,
+      final_change_reason: derived.changeReason,
+      meta: {
+        ...(baseRow as any).meta,
+        regime: regimeInfo.regime,
+        chopDetected: regimeInfo.chopDetected,
+        varianceConflictNow,
+        eg_local_24_latest: eg24.latestPrice,
+        eg_local_24_latest_at: eg24.latestAt,
+        eg_local_24_prev: eg24.prevPrice,
+        eg_local_24_prev_at: eg24.prevAt,
+        eg_local_24_pct: eg24.pct,
+        eg_local_18_latest: eg18.latestPrice,
+        eg_local_18_latest_at: eg18.latestAt,
+        eg_local_18_prev: eg18.prevPrice,
+        eg_local_18_prev_at: eg18.prevAt,
+        eg_local_18_pct: eg18.pct,
+        eg_variance18: variance18,
+        eg_divergence18vs24: divergence18vs24,
+        final_guards: derived.guards,
+      },
+    });
+    if (!error) created.push({ country: 'EG', action: derived.finalAction, confidence: finalConfidence });
+
+    if (!error) {
+      await supabase.from('gold_signal_state').upsert(
+        {
+          country: 'EG',
+          asset: 'XAUUSD',
+          final_action: derived.finalAction,
+          final_confidence0to1: finalConfidence,
+          final_changed_at: finalChangedAtIso,
+          last_cycle_key: cycleKey,
+          updated_at: nowIso,
+        },
+        { onConflict: 'country,asset' }
+      );
+    }
   }
 
   return {

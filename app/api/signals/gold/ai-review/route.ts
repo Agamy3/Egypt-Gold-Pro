@@ -4,6 +4,7 @@ import { getServerClient } from '@/lib/supabase/server';
 import { getServerUser } from '@/lib/supabase/server-auth';
 import { getUserPremiumStatus } from '@/lib/auth/getUserPremiumStatus';
 import { callOpenAiStrictJson } from '@/lib/ai/openaiStrictJson';
+import { deriveFinalSignal, type FinalAction, type Regime } from '@/lib/signals/deriveFinalSignal';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -125,7 +126,7 @@ export async function POST(req: NextRequest) {
     ? supabase
         .from('gold_signals')
         .select(
-          'cycle_key, country, action, confidence, pct_change_5m, volatility_proxy, asia_session, variance_pct, updated_at'
+          'cycle_key, cycle_started_at, country, action, confidence, raw_action, raw_confidence0to1, final_action, final_confidence0to1, final_changed_at, pct_change_5m, volatility_proxy, asia_session, variance_pct, meta, updated_at'
         )
         .eq('cycle_key', cycleKey)
         .eq('country', country ?? 'GLOBAL')
@@ -133,7 +134,7 @@ export async function POST(req: NextRequest) {
     : supabase
         .from('gold_signals')
         .select(
-          'cycle_key, country, action, confidence, pct_change_5m, volatility_proxy, asia_session, variance_pct, updated_at'
+          'cycle_key, cycle_started_at, country, action, confidence, raw_action, raw_confidence0to1, final_action, final_confidence0to1, final_changed_at, pct_change_5m, volatility_proxy, asia_session, variance_pct, meta, updated_at'
         )
         .eq('country', country ?? 'GLOBAL')
         .order('cycle_started_at', { ascending: false })
@@ -283,6 +284,81 @@ export async function POST(req: NextRequest) {
       return withNoStoreHeaders(NextResponse.json({ ok: true, cached: true, fallback: false, review: raced }, { status: 200 }));
     }
     return withNoStoreHeaders(NextResponse.json({ ok: false, error: insErr.message }, { status: 500 }));
+  }
+
+  // If AI is available (not fallback), optionally apply state-machine final update globally.
+  if (!isFallback && inserted) {
+    const sigMeta = (signal as any).meta as any;
+    const regimeNow: Regime =
+      sigMeta && typeof sigMeta.regime === 'string' && ['calm', 'trending', 'volatile', 'choppy'].includes(String(sigMeta.regime))
+        ? (String(sigMeta.regime) as Regime)
+        : 'calm';
+    const chopDetectedNow = Boolean(sigMeta?.chopDetected);
+    const varianceConflictNow = Boolean(sigMeta?.varianceConflictNow);
+
+    const { data: prevState } = await supabase
+      .from('gold_signal_state')
+      .select('final_action, final_confidence0to1, final_changed_at')
+      .eq('country', effectiveCountry)
+      .eq('asset', 'XAUUSD')
+      .maybeSingle();
+
+    const prevFinalAction = (prevState?.final_action ? String((prevState as any).final_action) : String((signal as any).final_action ?? 'HOLD')) as FinalAction;
+    const prevFinalChangedAt = prevState?.final_changed_at ? String((prevState as any).final_changed_at) : (signal as any).final_changed_at ?? null;
+
+    const { data: histRows } = await supabase
+      .from('gold_signals')
+      .select('cycle_key, raw_action, raw_confidence0to1, action, confidence')
+      .eq('country', effectiveCountry)
+      .order('cycle_started_at', { ascending: false })
+      .limit(12);
+
+    const historyRaw = (histRows ?? [])
+      .filter((r: any) => String(r.cycle_key) !== effectiveCycleKey)
+      .map((r: any) => ({
+        cycle_key: String(r.cycle_key),
+        rawAction: String(r.raw_action ?? r.action ?? 'HOLD') as FinalAction,
+        rawConfidence: Number(r.raw_confidence0to1 ?? r.confidence ?? 0),
+      }));
+
+    const derived = deriveFinalSignal({
+      prevFinalAction,
+      prevFinalChangedAt,
+      rawActionNow: algoAction,
+      rawConfidenceNow: algoConfidence,
+      regimeNow,
+      chopDetectedNow,
+      varianceConflictNow,
+      ai: { enabled: true, action: String((inserted as any).ai_action) as FinalAction, confidence0to1: Number((inserted as any).ai_confidence0to1) },
+      historyRaw,
+    });
+
+    const finalChangedAtIso = derived.changed ? new Date().toISOString() : (prevFinalChangedAt ?? new Date().toISOString());
+
+    await supabase
+      .from('gold_signals')
+      .update({
+        final_action: derived.finalAction,
+        final_confidence0to1: derived.finalConfidence0to1,
+        final_changed_at: finalChangedAtIso,
+        final_change_reason: derived.changeReason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('cycle_key', effectiveCycleKey)
+      .eq('country', effectiveCountry);
+
+    await supabase.from('gold_signal_state').upsert(
+      {
+        country: effectiveCountry,
+        asset: 'XAUUSD',
+        final_action: derived.finalAction,
+        final_confidence0to1: derived.finalConfidence0to1,
+        final_changed_at: finalChangedAtIso,
+        last_cycle_key: effectiveCycleKey,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'country,asset' }
+    );
   }
 
   if (isFallback) {

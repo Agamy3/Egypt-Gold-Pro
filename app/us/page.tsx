@@ -7,6 +7,7 @@ import Header from '@/components/layout/Header';
 import { useLang } from '@/components/LanguageProvider';
 import { useSearchParams } from 'next/navigation';
 import SilverCard from '@/components/SilverCard';
+import GoldConverter from '@/components/GoldConverter';
 
 // Constants for US retail premium estimates
 const RETAIL_PREMIUM_PCT = 0.03; // 3% default
@@ -201,6 +202,10 @@ function USPageContent() {
               ) : (
                 <div className="text-red-400 font-semibold">N/A</div>
               )}
+            </div>
+
+            <div className="mt-4">
+              <GoldConverter country="US" availableKarats={[24, 21, 18, 14]} />
             </div>
 
             {/* Silver (Premium-only) */}

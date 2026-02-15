@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest) {
       supabase
         .from('gold_signals')
         .select(
-          'id, cycle_key, cycle_started_at, country, action, confidence, xau_usd, pct_change_5m, volatility_proxy, asia_session, variance_pct, due_at, validated_at, outcome, pnl_bp, created_at, updated_at'
+          'id, cycle_key, cycle_started_at, country, action, confidence, raw_action, raw_confidence0to1, final_action, final_confidence0to1, final_changed_at, final_change_reason, xau_usd, pct_change_5m, volatility_proxy, asia_session, variance_pct, due_at, validated_at, outcome, pnl_bp, created_at, updated_at'
         )
         .order('cycle_started_at', { ascending: false })
         .limit(100),

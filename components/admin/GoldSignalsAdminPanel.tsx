@@ -113,8 +113,8 @@ export default function GoldSignalsAdminPanel() {
                 <tr>
                   <th className="text-left py-2 pr-3">cycle</th>
                   <th className="text-left py-2 pr-3">country</th>
-                  <th className="text-left py-2 pr-3">action</th>
-                  <th className="text-left py-2 pr-3">conf</th>
+                  <th className="text-left py-2 pr-3">raw</th>
+                  <th className="text-left py-2 pr-3">final</th>
                   <th className="text-left py-2 pr-3">outcome</th>
                   <th className="text-left py-2 pr-3">updated</th>
                 </tr>
@@ -124,8 +124,12 @@ export default function GoldSignalsAdminPanel() {
                   <tr key={String(r.id)} className="border-t border-gray-900">
                     <td className="py-2 pr-3 font-mono">{String(r.cycle_key)}</td>
                     <td className="py-2 pr-3">{String(r.country)}</td>
-                    <td className="py-2 pr-3">{String(r.action)}</td>
-                    <td className="py-2 pr-3">{Number(r.confidence).toFixed(2)}</td>
+                    <td className="py-2 pr-3">
+                      {String(r.raw_action ?? r.action)} ({Number(r.raw_confidence0to1 ?? r.confidence).toFixed(2)})
+                    </td>
+                    <td className="py-2 pr-3">
+                      {String(r.final_action ?? 'HOLD')} ({Number(r.final_confidence0to1 ?? 0).toFixed(2)})
+                    </td>
                     <td className="py-2 pr-3">{r.outcome ?? '—'}</td>
                     <td className="py-2 pr-3">{r.updated_at ? new Date(String(r.updated_at)).toLocaleString() : '—'}</td>
                   </tr>

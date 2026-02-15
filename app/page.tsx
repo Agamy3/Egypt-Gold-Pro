@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import Dashboard from '@/components/Dashboard';
 import GoldSignalCard from '@/components/GoldSignalCard';
+import GoldConverter from '@/components/GoldConverter';
 import MoneyToGoldCalculator from '@/components/MoneyToGoldCalculator';
 import Footer from '@/components/Footer';
 import AdGateClient from '@/components/ads/AdGateClient';
@@ -204,6 +205,18 @@ function HomeContent() {
             </div>
             <div className="mt-4 sm:mt-6">
               <GoldSignalCard country={country === 'EG' ? 'EG' : 'GLOBAL'} />
+            </div>
+            <div className="mt-4 sm:mt-6">
+              <GoldConverter
+                country={country}
+                availableKarats={(() => {
+                  const ks: Array<24 | 21 | 18 | 14> = [24];
+                  if (snapshot?.market?.median?.market21Buy !== null) ks.push(21);
+                  if (snapshot?.market?.median?.market18Buy !== null) ks.push(18);
+                  if (snapshot?.market?.median?.market14Buy !== null) ks.push(14);
+                  return Array.from(new Set(ks));
+                })()}
+              />
             </div>
             <section className="mt-6 sm:mt-8 rounded-lg border border-gray-800 bg-gray-900 p-4 sm:p-5">
               <h2 className="text-base sm:text-lg font-semibold text-gold-400">
