@@ -2,10 +2,10 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { fetchGoldApiQuote } from '@/lib/priceFeed/goldapi';
 import { cycleKeyUtc, isAsiaSessionUtc } from '@/lib/signals/cycle';
 import { computeGoldAlgoSignal, median, type GoldSignalAction } from '@/lib/signals/goldAlgo';
 import { computeEgVariancePct } from '@/lib/signals/egVariance';
+import { getImpliedOunceWithCache } from '@/lib/goldapi';
 
 type Country = 'GLOBAL' | 'EG';
 
@@ -50,9 +50,10 @@ async function validateDueSignals(supabase: SupabaseClient, now: Date) {
   if (error) return { ok: false as const, error: error.message };
   if (!due || due.length === 0) return { ok: true as const, validated: 0 };
 
-  // Single exit quote for all due rows (global, same source of truth).
-  const exitQuote = await fetchGoldApiQuote();
-  const exitPrice = exitQuote.price;
+  // Single exit price for all due rows: use the same gold-api.com pipeline as dashboard (cached).
+  const exitOunce = await getImpliedOunceWithCache();
+  const exitPrice = exitOunce.data?.impliedOunceUsd ?? null;
+  if (exitPrice === null) return { ok: false as const, error: exitOunce.error?.message ?? 'missing_exit_spot' };
 
   let validated = 0;
   for (const row of due as any[]) {
@@ -150,8 +151,13 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
     };
   }
 
-  const quote = await fetchGoldApiQuote();
-  const xauUsd = quote.price;
+  // Use the same gold-api.com ounce price as dashboard, via cached pipeline.
+  const spot = await getImpliedOunceWithCache();
+  const xauUsd = spot.data?.impliedOunceUsd ?? null;
+  const xauTimestampMs = spot.data?.timestamp ?? null;
+  if (xauUsd === null) {
+    return { ok: false, error: spot.error?.message ?? 'missing_spot', status: 502 };
+  }
   const prev = await getPrevCyclePrice(supabase);
   const pctChange5m = prev ? (xauUsd - prev) / prev : 0;
   const volatilityProxy = await computeVolatilityProxy(supabase);
@@ -168,7 +174,7 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
     action: algo.action,
     confidence: algo.confidence,
     xau_usd: xauUsd,
-    xau_timestamp_ms: quote.timestampMs ?? null,
+    xau_timestamp_ms: xauTimestampMs,
     pct_change_5m: pctChange5m,
     volatility_proxy: volatilityProxy,
     asia_session: asiaSession,
@@ -176,7 +182,7 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
     due_at: dueAt.toISOString(),
     meta: {
       threshold: algo.threshold,
-      provider: 'goldapi',
+      provider: 'gold-api.com',
     },
     updated_at: nowIso,
   };

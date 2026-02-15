@@ -14,6 +14,13 @@ import { getMarketMedians, getActiveSourceCountNorm } from '@/lib/supabase/queri
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+function withNoStoreHeaders(res: NextResponse) {
+  res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.headers.set('Pragma', 'no-cache');
+  res.headers.set('Expires', '0');
+  return res;
+}
+
 export async function GET(request: Request) {
   const errors: Array<{ source: string; message: string }> = [];
   
@@ -289,7 +296,7 @@ export async function GET(request: Request) {
     const activeUnderlyingSources = Array.from(allUnderlyingSources).sort();
 
     // Build response with both canonical and converted prices
-    return NextResponse.json({
+    return withNoStoreHeaders(NextResponse.json({
       timestamp: Date.now(),
       country,
       currency,
@@ -377,12 +384,12 @@ export async function GET(request: Request) {
         buyOnlyVariance: !hasSellData && hasVarianceData,
       },
       errors: errors.length > 0 ? errors : undefined,
-    });
+    }));
   } catch (error) {
     // Final catch-all to ensure handler never throws
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Market snapshot error: Unexpected error -', errorMessage);
-    return NextResponse.json(
+    return withNoStoreHeaders(NextResponse.json(
       {
         error: 'Failed to fetch market snapshot',
         errors: errors.length > 0 ? errors : [{ source: 'Unexpected', message: errorMessage }],
@@ -425,7 +432,7 @@ export async function GET(request: Request) {
         },
       },
       { status: 200 } // Always return 200, never 500
-    );
+    ));
   }
 }
 

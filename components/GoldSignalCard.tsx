@@ -22,6 +22,7 @@ type LatestSignal = {
   asia_session: boolean;
   variance_pct: number | null;
   xau_usd: number;
+  xau_timestamp_ms?: number | null;
   updated_at: string;
 };
 
@@ -62,6 +63,16 @@ function formatPct(x: number): string {
   const pct = x * 100;
   const s = pct >= 0 ? `+${pct.toFixed(2)}%` : `${pct.toFixed(2)}%`;
   return s;
+}
+
+function fmtLocal(isoOrMs: string | number): string {
+  const d = typeof isoOrMs === 'number' ? new Date(isoOrMs) : new Date(isoOrMs);
+  return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(d);
+}
+
+function fmtUtcHm(isoOrMs: string | number): string {
+  const d = typeof isoOrMs === 'number' ? new Date(isoOrMs) : new Date(isoOrMs);
+  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }).format(d);
 }
 
 export default function GoldSignalCard(props: { country: Country; isPremium?: boolean }) {
@@ -161,9 +172,25 @@ export default function GoldSignalCard(props: { country: Country; isPremium?: bo
           )}
 
           <div className="mt-4 text-xs text-gray-500">
-            {lang === 'ar' ? 'آخر تحديث:' : 'Updated:'} {new Date(latest.updated_at).toLocaleString()}
+            <span title={lang === 'ar' ? 'وقت الدورة (UTC) + وقت الجهاز (محلي)' : 'Cycle time (UTC) + device time (local)'}>
+              {lang === 'ar' ? 'الدورة:' : 'Cycle:'} <span className="font-mono">{latest.cycle_key}</span> (UTC)
+            </span>
             {' · '}
-            {latest.asia_session ? (lang === 'ar' ? 'جلسة آسيا' : 'Asia session') : (lang === 'ar' ? 'خارج جلسة آسيا' : 'Non-Asia')}
+            <span title={`${lang === 'ar' ? 'محلي' : 'Local'}: ${fmtLocal(latest.cycle_started_at)} · UTC: ${fmtUtcHm(latest.cycle_started_at)}:${String(new Date(latest.cycle_started_at).getUTCMinutes()).padStart(2, '0')}`}>
+              {lang === 'ar' ? 'تم الحساب:' : 'Computed:'} {fmtLocal(latest.cycle_started_at)}
+            </span>
+            {' · '}
+            <span title={lang === 'ar' ? 'جلسة آسيا: 00:00–08:59 UTC' : 'Asia session: 00:00–08:59 UTC'}>
+              {latest.asia_session ? (lang === 'ar' ? 'جلسة آسيا' : 'Asia session') : (lang === 'ar' ? 'خارج جلسة آسيا' : 'Non-Asia')}
+            </span>
+            {typeof latest.xau_timestamp_ms === 'number' ? (
+              <>
+                {' · '}
+                <span title={lang === 'ar' ? 'وقت لقطة السعر (UTC)' : 'Spot tick time (UTC)'}>
+                  {lang === 'ar' ? 'لقطة السعر:' : 'Spot tick:'} {fmtLocal(latest.xau_timestamp_ms)} (UTC {fmtUtcHm(latest.xau_timestamp_ms)})
+                </span>
+              </>
+            ) : null}
           </div>
 
           <div className="mt-5 rounded-lg border border-gray-800 bg-gray-950 p-4">

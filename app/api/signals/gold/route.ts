@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     supabase
       .from('gold_signals')
       .select(
-        'cycle_key, cycle_started_at, country, action, confidence, pct_change_5m, volatility_proxy, asia_session, variance_pct, xau_usd, created_at, updated_at'
+        'cycle_key, cycle_started_at, country, action, confidence, pct_change_5m, volatility_proxy, asia_session, variance_pct, xau_usd, xau_timestamp_ms, created_at, updated_at'
       )
       .eq('country', country)
       .order('cycle_started_at', { ascending: false })
