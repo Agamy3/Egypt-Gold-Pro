@@ -136,6 +136,39 @@ export async function POST(request: NextRequest) {
           console.error('Error creating default watchlist entry:', watchlistError);
           // Don't fail the signup if watchlist creation fails
         }
+
+        // Check if default premium is enabled for new users
+        const { data: defaultPremiumSetting } = await supabaseAdmin
+          .from('admin_settings')
+          .select('value')
+          .eq('key', 'default_new_users_premium')
+          .maybeSingle();
+
+        const shouldGrantPremium =
+          defaultPremiumSetting?.value === true ||
+          defaultPremiumSetting?.value === 'true' ||
+          (typeof defaultPremiumSetting?.value === 'string' && defaultPremiumSetting.value.toLowerCase() === 'true');
+
+        if (shouldGrantPremium) {
+          // Grant premium status (lifetime premium by setting premium_until to null or far future)
+          const premiumUntil = new Date();
+          premiumUntil.setFullYear(premiumUntil.getFullYear() + 100); // 100 years = effectively lifetime
+
+          const { error: entitlementError } = await supabaseAdmin.from('user_entitlements').upsert(
+            {
+              user_id: authData.user.id,
+              is_premium: true,
+              premium_until: premiumUntil.toISOString(),
+              plan: null, // No plan since it's admin-granted
+            },
+            { onConflict: 'user_id' }
+          );
+
+          if (entitlementError) {
+            console.error('Error granting default premium:', entitlementError);
+            // Don't fail the signup if premium grant fails
+          }
+        }
       }
     }
 
