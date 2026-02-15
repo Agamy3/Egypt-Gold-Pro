@@ -124,21 +124,25 @@ function getCountryName(country: string | undefined, lang: 'en' | 'ar'): string 
   return countryNames[country || 'EG']?.[lang] || countryNames.EG[lang];
 }
 
-function getCountryMarketLabel(country: string | undefined, karat: '21' | '24', lang: 'en' | 'ar'): string {
+function getCountryMarketLabel(country: string | undefined, karat: '18' | '21' | '24', lang: 'en' | 'ar'): string {
   const countryLabels: Record<string, Record<string, { en: string; ar: string }>> = {
     EG: {
+      '18': { en: 'Egypt Market 18k (Median)', ar: 'سوق مصر ١٨ (وسيط)' },
       '21': { en: 'Egypt Market 21k (Median)', ar: 'سوق مصر ٢١ (وسيط)' },
       '24': { en: 'Egypt Market 24k (Median)', ar: 'سوق مصر ٢٤ (وسيط)' },
     },
     AE: {
+      '18': { en: 'UAE Market 18k (Median)', ar: 'سوق الإمارات ١٨ (وسيط)' },
       '21': { en: 'UAE Market 21k (Median)', ar: 'سوق الإمارات ٢١ (وسيط)' },
       '24': { en: 'UAE Market 24k (Median)', ar: 'سوق الإمارات ٢٤ (وسيط)' },
     },
     SA: {
+      '18': { en: 'Saudi Market 18k (Median)', ar: 'سوق السعودية ١٨ (وسيط)' },
       '21': { en: 'Saudi Market 21k (Median)', ar: 'سوق السعودية ٢١ (وسيط)' },
       '24': { en: 'Saudi Market 24k (Median)', ar: 'سوق السعودية ٢٤ (وسيط)' },
     },
     US: {
+      '18': { en: 'USA Market 18k (Median)', ar: 'سوق الولايات المتحدة ١٨ (وسيط)' },
       '21': { en: 'USA Market 21k (Median)', ar: 'سوق الولايات المتحدة ٢١ (وسيط)' },
       '24': { en: 'USA Market 24k (Median)', ar: 'سوق الولايات المتحدة ٢٤ (وسيط)' },
     },
@@ -152,6 +156,7 @@ export default function Dashboard({ snapshot }: DashboardProps) {
   const country = snapshot.country || 'EG';
 
   const dashboardContentSignals = [
+    snapshot.market?.median?.market18Buy,
     snapshot.market?.median?.market21Buy,
     snapshot.market?.median?.market24Buy,
     snapshot.pricing?.usdPerGram24,
@@ -304,6 +309,51 @@ export default function Dashboard({ snapshot }: DashboardProps) {
               >
                 <div className="text-2xl sm:text-3xl font-bold text-blue-700 mb-2 cursor-help touch-manipulation">
                   {formatNumber(snapshot.market.median.market21Buy, 0)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
+                </div>
+              </HoverTip>
+              <div className="text-sm text-gray-600 mb-4">
+                {t(lang, 'buyPrice')} ({snapshot.currency || snapshot.canonicalCurrency || 'EGP'})
+              </div>
+            </>
+          ) : (
+            <div className="text-red-400 font-semibold">{t(lang, 'referenceUnavailable')}</div>
+          )}
+        </div>
+
+        {/* Market 18k */}
+        <div 
+          className={`bg-gray-900 rounded-lg shadow-md p-4 sm:p-6 ${lang === 'ar' ? 'border-r-4' : 'border-l-4'} border-cyan-600`}
+        >
+          <h2 className={`text-lg font-semibold text-gray-100 mb-4 inline-flex items-center gap-1 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+            {getCountryMarketLabel(snapshot.country, '18', lang)}
+            <HoverTip text={lang === 'ar' ? 'الوسيط لأسعار شراء 18k المتاحة من المصادر النشطة.' : "Median of available 18k buy prices from active sources."}>
+              <svg className="w-4 h-4 text-gray-400 hover:text-gray-300 transition-colors" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            </HoverTip>
+          </h2>
+          {snapshot.market.median.market18Buy !== null && snapshot.market.median.market18Buy !== undefined ? (
+            <>
+              <HoverTip 
+                text={(() => {
+                  const sourceCount = snapshot.market.activeSourceCount || 0;
+                  const lastSource = snapshot.market.sources?.find(s => s.status === 'OK') || snapshot.market.sources?.[0];
+                  const lastUpdated = lastSource?.fetchedAt 
+                    ? formatTimestamp(lastSource.fetchedAt)
+                    : formatTimestamp(snapshot.timestamp);
+                  const minutesAgo = lastSource?.fetchedAt 
+                    ? Math.floor((Date.now() - lastSource.fetchedAt) / 60000)
+                    : Math.floor((Date.now() - snapshot.timestamp) / 60000);
+                  const timeAgo = minutesAgo < 1 
+                    ? (lang === 'ar' ? 'الآن' : 'just now')
+                    : minutesAgo < 60
+                    ? `${minutesAgo} ${lang === 'ar' ? 'دقيقة' : minutesAgo === 1 ? 'minute' : 'minutes'} ${lang === 'ar' ? 'مضت' : 'ago'}`
+                    : `${Math.floor(minutesAgo / 60)} ${lang === 'ar' ? 'ساعة' : Math.floor(minutesAgo / 60) === 1 ? 'hour' : 'hours'} ${lang === 'ar' ? 'مضت' : 'ago'}`;
+                  return `${lang === 'ar' ? 'سعر الوسيط المستند على' : 'Median price based on'} ${sourceCount} ${lang === 'ar' ? 'مصدر نشط' : sourceCount === 1 ? 'active source' : 'active sources'}. ${lang === 'ar' ? 'آخر تحديث' : 'Updated'} ${timeAgo}.`;
+                })()}
+              >
+                <div className="text-2xl sm:text-3xl font-bold text-cyan-700 mb-2 cursor-help touch-manipulation">
+                  {formatNumber(snapshot.market.median.market18Buy, 0)} {snapshot.currency || snapshot.canonicalCurrency || 'EGP'}
                 </div>
               </HoverTip>
               <div className="text-sm text-gray-600 mb-4">
