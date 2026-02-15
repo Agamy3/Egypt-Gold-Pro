@@ -31,12 +31,14 @@ export async function GET() {
       }
       const ageSeconds = computeAgeSeconds(fetched.fetchedAtIso ?? null, now);
       const stale = ageSeconds === null ? true : ageSeconds > 10 * 60;
+      const fetchedAtMs = fetched.fetchedAtIso ? new Date(fetched.fetchedAtIso).getTime() : now.getTime();
       return withNoStoreHeaders(
         NextResponse.json(
           {
             ok: true,
             price_usd_per_oz: fetched.price,
             fetched_at: fetched.fetchedAtIso,
+            fetched_at_ms: fetchedAtMs,
             ageSeconds,
             stale_data: stale,
             source: 'goldapi',
@@ -61,12 +63,14 @@ export async function GET() {
         // If we couldn't store (e.g. missing table), still return the fetched value so UI doesn't break.
         const ageSeconds = computeAgeSeconds(fetched.fetchedAtIso ?? null, now);
         const stale = ageSeconds === null ? true : ageSeconds > 10 * 60;
+        const fetchedAtMs = fetched.fetchedAtIso ? new Date(fetched.fetchedAtIso).getTime() : now.getTime();
         return withNoStoreHeaders(
           NextResponse.json(
             {
               ok: true,
               price_usd_per_oz: fetched.price,
               fetched_at: fetched.fetchedAtIso,
+              fetched_at_ms: fetchedAtMs,
               ageSeconds,
               stale_data: stale,
               source: 'goldapi',
@@ -94,6 +98,7 @@ export async function GET() {
   }
 
   const fetchedAtIso = String((latest.row as any).fetched_at);
+  const fetchedAtMs = new Date(fetchedAtIso).getTime();
   const ageSeconds = computeAgeSeconds(fetchedAtIso, now);
   const stale = ageSeconds === null ? true : ageSeconds > 10 * 60;
 
@@ -103,6 +108,7 @@ export async function GET() {
         ok: true,
         price_usd_per_oz: Number((latest.row as any).price_usd_per_oz),
         fetched_at: fetchedAtIso,
+        fetched_at_ms: fetchedAtMs,
         ageSeconds,
         stale_data: stale,
         source: String((latest.row as any).source || 'goldapi'),

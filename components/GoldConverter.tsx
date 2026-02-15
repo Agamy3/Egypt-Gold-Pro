@@ -88,8 +88,8 @@ export default function GoldConverter(props: {
 
   const ozN = clampNum(oz);
   const gramsN = clampNum(grams);
-  const usdValue = spot && spot.ok ? ozN * spot.price_usd_per_oz : null;
-  const localValue = local && local.ok ? gramsN * local.price : null;
+  const usdValue = spot && spot.ok && typeof spot.price_usd_per_oz === 'number' ? ozN * spot.price_usd_per_oz : null;
+  const localValue = local && local.ok && typeof local.price === 'number' ? gramsN * local.price : null;
 
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-950 p-4 sm:p-5">
