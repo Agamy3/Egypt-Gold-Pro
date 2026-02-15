@@ -133,11 +133,11 @@ function classifyRegime(args: {
   const pct6 = args.pctChangesLatestToOlder.slice(0, 6);
 
   let flipCount = 0;
-  let prev: FinalAction | null = null;
+  let prev: 'BUY' | 'SELL' | null = null;
   for (const a of actions6) {
     if (a === 'HOLD') continue;
-    if (prev && prev !== 'HOLD' && a !== prev) flipCount += 1;
-    prev = a;
+    if (prev && a !== prev) flipCount += 1;
+    prev = a as 'BUY' | 'SELL';
   }
 
   const absMean =
