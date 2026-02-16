@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     const code = requestUrl.searchParams.get('code');
     const error = requestUrl.searchParams.get('error');
     const errorDescription = requestUrl.searchParams.get('error_description');
+    const type = requestUrl.searchParams.get('type'); // 'signup' for email confirmation
     const next = requestUrl.searchParams.get('next') || '/';
 
     // Check for OAuth errors first
@@ -108,6 +109,20 @@ export async function GET(request: NextRequest) {
       const errorUrl = new URL('/auth/auth-code-error', request.url);
       errorUrl.searchParams.set('error', 'no_session');
       return NextResponse.redirect(errorUrl);
+    }
+
+    // Check if this is an email confirmation
+    // Supabase sends type=signup for email confirmation links
+    const isEmailConfirmation = type === 'signup';
+    
+    // Also check if user just confirmed their email (email_confirmed_at is set)
+    if (session?.user && session.user.email_confirmed_at) {
+      // Check if this is likely a new confirmation by checking if we should redirect to confirmed page
+      // For email confirmations, redirect to confirmed page
+      if (isEmailConfirmation) {
+        const confirmedUrl = new URL('/auth/confirmed', request.url);
+        return NextResponse.redirect(confirmedUrl);
+      }
     }
     
     // Create profile if user was created (OAuth sign-in)

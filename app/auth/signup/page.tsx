@@ -13,7 +13,6 @@ export default function SignUpPage() {
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,11 +33,15 @@ export default function SignUpPage() {
         return;
       }
 
-      setSuccess(true);
-      setTimeout(() => {
-        router.push('/');
-        router.refresh();
-      }, 2000);
+      // Store email for confirm-email page
+      try {
+        localStorage.setItem('egp_signup_email', email);
+      } catch {
+        // ignore
+      }
+
+      // Redirect to confirm-email page
+      router.push(`/auth/confirm-email?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError('An error occurred. Please try again.');
     } finally {
@@ -68,24 +71,6 @@ export default function SignUpPage() {
       setError('An error occurred. Please try again.');
     }
   };
-
-  if (success) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center px-4">
-        <div className="w-full max-w-md">
-          <div className="bg-gray-900 rounded-lg shadow-lg p-8 border border-gray-800 text-center">
-            <div className="text-green-400 text-5xl mb-4">✓</div>
-            <h1 className={`text-2xl font-bold text-gray-100 mb-4 ${lang === 'ar' ? 'text-right' : ''}`}>
-              {lang === 'ar' ? 'تم إنشاء الحساب بنجاح!' : 'Account created successfully!'}
-            </h1>
-            <p className="text-gray-400">
-              {lang === 'ar' ? 'جاري التحويل...' : 'Redirecting...'}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-black flex items-center justify-center px-4">
