@@ -19,7 +19,7 @@ export default function AdsterraDashboardBanner() {
     }
   }, [isProd]);
 
-  // Respect cookie consent + user ad entitlement (premium / no-ads users).
+  // Respect user ad entitlement (premium / no-ads users), but do NOT gate on cookie consent.
   useEffect(() => {
     if (!isProd) {
       setCanShowAd(false);
@@ -30,19 +30,8 @@ export default function AdsterraDashboardBanner() {
 
     const checkAdEligibility = async () => {
       try {
-        // Check cookie consent (same logic as AdGateClient).
-        const cookieConsent = document.cookie
-          .split('; ')
-          .find((row) => row.startsWith('cookie_consent='))
-          ?.split('=')[1];
-        const localStorageConsent = window.localStorage.getItem('cookie_consent');
-        const consent = cookieConsent || localStorageConsent;
-
-        if (consent !== 'accepted') {
-          if (!cancelled) setCanShowAd(false);
-          return;
-        }
-
+        // Ask the central ads API whether this user is allowed to see ads
+        // (handles premium + "no ads" accounts).
         const res = await fetch('/api/ads/check');
         const data = await res.json();
 
