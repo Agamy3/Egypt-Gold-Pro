@@ -53,7 +53,7 @@ describe('Pricing Engine', () => {
 
       const usdPerGram24 = impliedOunceToUsdPerGram24(impliedOunceUsd);
       const usdPerGram21 = usdPerGram24To21(usdPerGram24!);
-      const result = computeImpliedGoldFx(market21Buy, usdPerGram21);
+      const result = computeImpliedGoldFx(market21Buy, null, usdPerGram21, null);
 
       // Expected: 6025 / (4500/31.1034768 * 0.875) ≈ 6025 / 126.6 ≈ 47.6
       expect(result).toBeCloseTo(47.6, 1);
@@ -62,15 +62,15 @@ describe('Pricing Engine', () => {
     });
 
     it('should return null if market21Buy is null', () => {
-      expect(computeImpliedGoldFx(null, 75.5)).toBeNull();
+      expect(computeImpliedGoldFx(null, null, 75.5, 80)).toBeNull();
     });
 
     it('should return null if usdPerGram21 is null', () => {
-      expect(computeImpliedGoldFx(6025, null)).toBeNull();
+      expect(computeImpliedGoldFx(6025, null, null, 80)).toBeNull();
     });
 
     it('should return null if both are null', () => {
-      expect(computeImpliedGoldFx(null, null)).toBeNull();
+      expect(computeImpliedGoldFx(null, null, null, null)).toBeNull();
     });
   });
 
@@ -105,8 +105,8 @@ describe('Pricing Engine', () => {
 
       // fair24 = 86.262 * 50 = 4313.1
       expect(result.fair24).toBeCloseTo(4313.1, 2);
-      // fair21 = 4313.1 * 0.875 = 3773.96
-      expect(result.fair21).toBeCloseTo(3773.96, 2);
+      // fair21 = usdPerGram21 * 50 = 75.479 * 50 = 3773.95
+      expect(result.fair21).toBeCloseTo(3773.95, 2);
     });
 
     it('should return nulls if usdEgpOfficial is null', () => {
@@ -122,11 +122,11 @@ describe('Pricing Engine', () => {
       const fair21 = 6000;
       // Variance: (6030 - 6000) / 6000 * 100 = 0.5% (within 1.5%)
 
-      const result = computeVariance(market21Buy, fair21);
+      const result = computeVariance(market21Buy, null, fair21, null);
 
       expect(result.classification).toBe('FAIR');
       expect(result.variancePct).toBeCloseTo(0.5, 2);
-      expect(result.premiumEGP).toBe(30);
+      expect(result.premiumLocal).toBeCloseTo(30, 5);
     });
 
     it('should classify as OVERPRICED when variance > 1.5%', () => {
@@ -134,11 +134,11 @@ describe('Pricing Engine', () => {
       const fair21 = 6000;
       // Variance: (6150 - 6000) / 6000 * 100 = 2.5% (> 1.5%)
 
-      const result = computeVariance(market21Buy, fair21);
+      const result = computeVariance(market21Buy, null, fair21, null);
 
-      expect(result.classification).toBe('OVERPRICED');
+      expect(result.classification).toBe('PREMIUM');
       expect(result.variancePct).toBeCloseTo(2.5, 2);
-      expect(result.premiumEGP).toBe(150);
+      expect(result.premiumLocal).toBeCloseTo(150, 5);
     });
 
     it('should classify as UNDERPRICED when variance < -1.5%', () => {
@@ -146,26 +146,26 @@ describe('Pricing Engine', () => {
       const fair21 = 6000;
       // Variance: (5910 - 6000) / 6000 * 100 = -1.5% (at threshold)
 
-      const result = computeVariance(market21Buy, fair21);
+      const result = computeVariance(market21Buy, null, fair21, null);
 
       // At exactly -1.5%, it should still be FAIR (threshold is > 1.5%)
       // Let's test with -1.6%
-      const result2 = computeVariance(5910 - 6, fair21);
-      expect(result2.classification).toBe('UNDERPRICED');
+      const result2 = computeVariance(5910 - 6, null, fair21, null);
+      expect(result2.classification).toBe('DISCOUNT');
     });
 
     it('should return N/A if market21Buy is null', () => {
-      const result = computeVariance(null, 6000);
+      const result = computeVariance(null, null, 6000, null);
       expect(result.classification).toBe('N/A');
       expect(result.variancePct).toBeNull();
-      expect(result.premiumEGP).toBeNull();
+      expect(result.premiumLocal).toBeNull();
     });
 
     it('should return N/A if fair21 is null', () => {
-      const result = computeVariance(6025, null);
+      const result = computeVariance(6025, null, null, null);
       expect(result.classification).toBe('N/A');
       expect(result.variancePct).toBeNull();
-      expect(result.premiumEGP).toBeNull();
+      expect(result.premiumLocal).toBeNull();
     });
   });
 
@@ -182,14 +182,10 @@ describe('Pricing Engine', () => {
         market24Sell: null,
       });
 
-      // Verify usdEgp_gold is computed
-      expect(result.usdEgpGold).not.toBeNull();
-      expect(result.usdEgpGold!).toBeGreaterThan(47);
-      expect(result.usdEgpGold!).toBeLessThan(48);
-
-      // Verify other computed values
+      // Verify core pipeline values computed
       expect(result.usdPerGram24).not.toBeNull();
       expect(result.usdPerGram21).not.toBeNull();
+      expect(result.fairValue.fair21).toBeNull(); // usdLocalRate not provided
     });
 
     it('should handle null market data gracefully', () => {
@@ -201,8 +197,8 @@ describe('Pricing Engine', () => {
         market24Sell: null,
       });
 
-      // usdEgpGold should be null when market21Buy is null
-      expect(result.usdEgpGold).toBeNull();
+      // With no market data and no FX, variance should be N/A and local parity null
+      expect(result.variance.classification).toBe('N/A');
       expect(result.localMarketParity.local24).toBeNull();
       expect(result.localMarketParity.local21).toBeNull();
     });
@@ -218,8 +214,8 @@ describe('Pricing Engine', () => {
         market24Sell: null,
       });
 
-      // usdEgpGold must be null (hard guard)
-      expect(result.usdEgpGold).toBeNull();
+      // Must not back-fill market prices from implied ounce; variance remains N/A
+      expect(result.variance.classification).toBe('N/A');
     });
   });
 });

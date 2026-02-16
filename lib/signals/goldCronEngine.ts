@@ -7,6 +7,7 @@ import { computeGoldAlgoSignal, median, type GoldSignalAction } from '@/lib/sign
 import { getImpliedOunceWithCache } from '@/lib/goldapi';
 import { deriveFinalSignal, type FinalAction, type RawHistoryPoint, type Regime } from '@/lib/signals/deriveFinalSignal';
 import { getMultiCurrencyRates } from '@/lib/fx-multi';
+import { applyEgVarianceGuard } from '@/lib/signals/egVarianceGuard';
 
 type Country = 'GLOBAL' | 'EG';
 
@@ -404,7 +405,7 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
         : null;
 
     const varianceConflictNow =
-      (variance24 !== null && Math.abs(variance24) >= 0.01) ||
+      (variance24 !== null && Math.abs(variance24) > 0.001) ||
       (divergence18vs24 !== null && Math.abs(divergence18vs24) >= 0.0005);
 
     const prevState = await getPrevFinalState(supabase, 'EG');
@@ -427,7 +428,22 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
       historyRaw,
     });
 
+    let finalAction = derived.finalAction;
     let finalConfidence = derived.finalConfidence0to1;
+    let finalGuards = [...derived.guards];
+
+    // Egypt-specific variance safety (C)
+    const egGuardResult = applyEgVarianceGuard({
+      rawConfidence: algo.confidence,
+      variancePct: variance24,
+      finalAction,
+      finalConfidence,
+      reasons: finalGuards,
+    });
+    finalAction = egGuardResult.finalAction;
+    finalConfidence = egGuardResult.finalConfidence;
+    finalGuards = egGuardResult.reasons;
+
     if (divergence18vs24 !== null && Math.abs(divergence18vs24) >= 0.0005) {
       finalConfidence = Math.max(0, finalConfidence - 0.05);
     }
@@ -438,7 +454,7 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
       ...baseRow,
       country: 'EG',
       variance_pct: variance24,
-      final_action: derived.finalAction,
+      final_action: finalAction,
       final_confidence0to1: finalConfidence,
       final_changed_at: finalChangedAtIso,
       final_change_reason: derived.changeReason,
@@ -459,17 +475,17 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
         eg_local_18_pct: eg18.pct,
         eg_variance18: variance18,
         eg_divergence18vs24: divergence18vs24,
-        final_guards: derived.guards,
+        final_guards: finalGuards,
       },
     });
-    if (!error) created.push({ country: 'EG', action: derived.finalAction, confidence: finalConfidence });
+    if (!error) created.push({ country: 'EG', action: finalAction, confidence: finalConfidence });
 
     if (!error) {
       await supabase.from('gold_signal_state').upsert(
         {
           country: 'EG',
           asset: 'XAUUSD',
-          final_action: derived.finalAction,
+          final_action: finalAction,
           final_confidence0to1: finalConfidence,
           final_changed_at: finalChangedAtIso,
           last_cycle_key: cycleKey,
