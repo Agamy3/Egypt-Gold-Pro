@@ -21,7 +21,7 @@ export function computeGoldAlgoSignal(input: {
   // Threshold scales up slightly with volatility so we don't over-trade noisy regimes.
   // Base threshold is 0.0002 (0.02%), with a small volatility-dependent uplift.
   const base = 0.0002; // 0.02%
-  const rawThreshold = Math.max(base, 2.5 * vol);
+  const rawThreshold = Math.max(base, 2.0 * vol);
 
   const absPct = Math.abs(pct);
 
@@ -37,15 +37,16 @@ export function computeGoldAlgoSignal(input: {
   }
 
   if (absPct < threshold) {
-    // HOLD confidence is higher when the move is small relative to threshold.
-    const conf = clamp01(1 - absPct / Math.max(threshold, 1e-9));
+    // HOLD confidence: high in quiet markets, falls off near the threshold.
+    const ratio = absPct / Math.max(threshold, 1e-9);
+    const conf = clamp01(0.35 + 0.65 * Math.pow(1 - ratio, 2));
     return { action: 'HOLD', confidence: conf, threshold };
   }
 
   const action: GoldSignalAction = pct > 0 ? 'BUY' : 'SELL';
-  // Confidence scales with signal strength relative to threshold (cap quickly).
+  // BUY/SELL confidence S-curve: quickly reaches high confidence for strong moves.
   const strength = absPct / Math.max(threshold, 1e-9);
-  const confidence = clamp01(strength / 3);
+  const confidence = clamp01(0.55 + 0.45 * Math.tanh((strength - 1) * 1.4));
   return { action, confidence, threshold };
 }
 
