@@ -6,6 +6,7 @@ import HoverTip from './ui/HoverTip';
 import { useLang } from './LanguageProvider';
 import { t } from '@/lib/i18n';
 import AdGateClient from './ads/AdGateClient';
+import AdsterraDashboardBanner from './ads/AdsterraDashboardBanner';
 import PremiumMacroPanel from './PremiumMacroPanel';
 import SilverCard from './SilverCard';
 
@@ -690,6 +691,10 @@ export default function Dashboard({ snapshot }: DashboardProps) {
         {/* 8. Silver (Premium-only) */}
         <SilverCard isPremium={isPremium} lang={lang} country={country as any} />
       </div>
+
+      {/* Adsterra banner (production only) */}
+      <AdsterraDashboardBanner />
+
       {/* Dashboard Ad - only when enough content is available and user is non-premium */}
     </div>
   );
