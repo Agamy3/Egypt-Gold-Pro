@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/gold-signals",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/notify",

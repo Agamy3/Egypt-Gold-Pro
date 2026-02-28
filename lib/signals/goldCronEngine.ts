@@ -11,8 +11,10 @@ import { applyEgVarianceGuard } from '@/lib/signals/egVarianceGuard';
 
 type Country = 'GLOBAL' | 'EG';
 
-const CYCLE_MINUTES = 5;
+const CYCLE_MINUTES = 10;
 const HORIZON_MINUTES = 30;
+const HISTORY_DAYS = 30;
+const HISTORY_POINTS = HISTORY_DAYS * 24 * 6; // 30 days * 24 hours * 6 intervals per hour (10-minute intervals)
 
 type FinalStateRow = {
   final_action: FinalAction;
@@ -85,13 +87,14 @@ async function validateDueSignals(supabase: SupabaseClient, now: Date) {
 }
 
 async function computeVolatilityProxy(supabase: SupabaseClient): Promise<number> {
-  // Use last ~8 cycles of GLOBAL signal quotes to compute median abs pct change between cycles.
+  // Use 30 days of historical GLOBAL signal quotes to compute median abs pct change between cycles.
+  // This provides a more robust volatility measure based on 4320 data points (30 days * 24 hours * 6 intervals).
   const { data, error } = await supabase
     .from('gold_signals')
-    .select('xau_usd')
+    .select('xau_usd, cycle_started_at')
     .eq('country', 'GLOBAL')
     .order('cycle_started_at', { ascending: false })
-    .limit(8);
+    .limit(HISTORY_POINTS);
   if (error || !data || data.length < 3) return 0;
 
   const prices = data
@@ -190,13 +193,15 @@ async function getPrevFinalState(supabase: SupabaseClient, country: Country): Pr
   };
 }
 
-async function getRawHistory(supabase: SupabaseClient, country: Country, limit: number): Promise<RawHistoryPoint[]> {
+async function getRawHistory(supabase: SupabaseClient, country: Country, limit?: number): Promise<RawHistoryPoint[]> {
+  // Default to 30 days of history (4320 points for 10-minute intervals)
+  const historyLimit = limit ?? HISTORY_POINTS;
   const { data } = await supabase
     .from('gold_signals')
     .select('cycle_key, raw_action, raw_confidence0to1, action, confidence')
     .eq('country', country)
     .order('cycle_started_at', { ascending: false })
-    .limit(limit);
+    .limit(historyLimit);
 
   return (data ?? []).map((r: any) => {
     const a = (r.raw_action ?? r.action ?? 'HOLD') as FinalAction;
@@ -228,7 +233,8 @@ async function getEgLocalKaratSeries(supabase: SupabaseClient, karat: 24 | 18): 
     return { latestPrice: null, latestAt: null, prevPrice: null, prevAt: null, pct: null };
   }
 
-  const prevTargetIso = new Date(Date.parse(latestAt) - 300_000).toISOString();
+  // Use cycle interval (10 minutes) for previous price lookup
+  const prevTargetIso = new Date(Date.parse(latestAt) - CYCLE_MINUTES * 60_000).toISOString();
   const { data: prev } = await supabase
     .from('market_snapshots_norm')
     .select('price, created_at')
@@ -294,6 +300,8 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
     return { ok: false, error: spot.error?.message ?? 'missing_spot', status: 502 };
   }
   const prev = await getPrevCyclePrice(supabase);
+  // Calculate percentage change over the cycle interval (now 10 minutes, was 5 minutes)
+  // Variable name kept as pctChange5m for backward compatibility with database schema
   const pctChange5m = prev ? (xauUsd - prev) / prev : 0;
   const volatilityProxy = await computeVolatilityProxy(supabase);
   const asiaSession = isAsiaSessionUtc(now);
@@ -327,7 +335,8 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
   // GLOBAL
   if (!existingCountries.has('GLOBAL')) {
     const prevState = await getPrevFinalState(supabase, 'GLOBAL');
-    const historyRaw = await getRawHistory(supabase, 'GLOBAL', 12);
+    // Fetch 30 days of historical data (4320 points) for comprehensive analysis
+    const historyRaw = await getRawHistory(supabase, 'GLOBAL', HISTORY_POINTS);
     const regimeInfo = classifyRegime({
       volatilityProxy,
       rawActionsLatestToOlder: [algo.action, ...historyRaw.map((h) => h.rawAction)],
@@ -409,7 +418,8 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
       (divergence18vs24 !== null && Math.abs(divergence18vs24) >= 0.0005);
 
     const prevState = await getPrevFinalState(supabase, 'EG');
-    const historyRaw = await getRawHistory(supabase, 'EG', 12);
+    // Fetch 30 days of historical data (4320 points) for comprehensive analysis
+    const historyRaw = await getRawHistory(supabase, 'EG', HISTORY_POINTS);
     const regimeInfo = classifyRegime({
       volatilityProxy,
       rawActionsLatestToOlder: [algo.action, ...historyRaw.map((h) => h.rawAction)],
