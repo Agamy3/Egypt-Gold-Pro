@@ -17,11 +17,66 @@ type RiskRegime = 'calm' | 'elevated' | 'volatile' | 'crisis';
 type Decision = 'approved' | 'downgraded_to_hold' | 'overridden' | 'fallback_algo';
 
 const AI_SYSTEM_PROMPT = `
-You are a gold market risk validator AI.
+You are a gold market risk validator AI specializing in detecting geopolitical and economic events that impact gold prices.
 
 You DO NOT predict price.
 
-You evaluate whether an algorithmic BUY/SELL/HOLD signal should be approved, downgraded to HOLD, or overridden.
+You evaluate whether an algorithmic BUY/SELL/HOLD signal should be approved, downgraded to HOLD, or overridden based on current events and market conditions.
+
+CRITICAL: You MUST check for and evaluate the following factors that significantly affect gold:
+
+1. WARS & CONFLICTS:
+   - Active wars, military conflicts, or escalations
+   - Geopolitical tensions (e.g., Russia-Ukraine, Middle East, Taiwan, North Korea)
+   - Military coups or regime changes
+   - Terrorist attacks or security threats
+   - Border disputes or territorial conflicts
+
+2. ECONOMIC CRISES:
+   - Banking crises or bank failures
+   - Currency crises or devaluations
+   - Sovereign debt defaults
+   - Stock market crashes or major corrections
+   - Recession indicators or economic downturns
+
+3. CENTRAL BANK ACTIONS:
+   - Interest rate changes (especially major cuts or hikes)
+   - Quantitative easing or tightening announcements
+   - Currency intervention or manipulation
+   - Gold reserve purchases or sales by central banks
+
+4. INFLATION & MONETARY POLICY:
+   - High inflation reports or hyperinflation
+   - Deflation concerns
+   - Monetary policy shifts
+   - Currency debasement concerns
+
+5. TRADE & SANCTIONS:
+   - Trade wars or tariff escalations
+   - Economic sanctions (especially on major economies)
+   - Supply chain disruptions affecting commodities
+
+6. NATURAL DISASTERS & PANDEMICS:
+   - Major natural disasters affecting major economies
+   - Pandemics or health crises
+   - Climate-related economic impacts
+
+7. POLITICAL INSTABILITY:
+   - Elections in major economies with uncertain outcomes
+   - Political crises or government instability
+   - Policy changes affecting markets
+
+8. MARKET DISRUPTIONS:
+   - Flash crashes or market manipulation
+   - Major exchange outages or technical failures
+   - Commodity supply disruptions
+
+EVALUATION RULES:
+- If you detect wars, major conflicts, or crisis-level events: Set risk_regime to "crisis" and consider downgrading to HOLD unless the signal is very strong.
+- If you detect elevated geopolitical tensions or economic instability: Set risk_regime to "volatile" or "elevated".
+- If markets are calm with no major events: Set risk_regime to "calm".
+- Be conservative: When in doubt, downgrade to HOLD with lower confidence.
+- Consider the timing: Recent events (last 24-48 hours) have more weight than older news.
 
 You MUST return JSON in EXACTLY this format:
 
@@ -36,10 +91,10 @@ Rules:
 - Only these 4 keys are allowed.
 - No extra keys.
 - No nested objects.
-- ai_reasons must contain max 5 short strings.
+- ai_reasons must contain max 5 short strings describing the key factors you found.
 - ai_confidence0to1 must be numeric between 0 and 1.
-- If uncertain, return HOLD with lower confidence.
-- Be conservative.
+- If uncertain or major events detected, return HOLD with lower confidence.
+- Be conservative and prioritize risk management.
 
 Return STRICT JSON only.
 No markdown.
@@ -177,13 +232,16 @@ export async function POST(req: NextRequest) {
     .limit(12);
 
   const newsCountry = effectiveCountry === 'EG' ? 'EG' : 'GLOBAL';
+  // Fetch more headlines to ensure comprehensive coverage of events affecting gold
+  // Priority: recent news (last 7 days) that may contain wars, conflicts, economic crises, etc.
   const { data: headlinesRows } = await supabase
     .from('news_items')
     .select('title, published_at, created_at')
     .eq('country', newsCountry)
+    .gte('published_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     .order('published_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(20); // Increased from 10 to 20 for better coverage
 
   const promptObj: any = {
     country: effectiveCountry,
@@ -193,7 +251,8 @@ export async function POST(req: NextRequest) {
     volatility_proxy: Number((signal as any).volatility_proxy),
     asia_session: Boolean((signal as any).asia_session),
     last_12_signals: (lastSignals ?? []).map((r: any) => ({ action: r.action, confidence: r.confidence })),
-    top_headlines: pickHeadlines(headlinesRows ?? [], 10),
+    top_headlines: pickHeadlines(headlinesRows ?? [], 20), // Increased to match query limit
+    instruction: 'Carefully analyze the headlines for wars, conflicts, economic crises, central bank actions, inflation data, trade wars, sanctions, political instability, or any events that typically drive gold prices. These factors should heavily influence your risk assessment and signal validation.',
   };
   if (effectiveCountry === 'EG') {
     promptObj.variance_pct = (signal as any).variance_pct ?? null;
