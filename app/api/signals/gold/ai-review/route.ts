@@ -5,6 +5,7 @@ import { getServerUser } from '@/lib/supabase/server-auth';
 import { getUserPremiumStatus } from '@/lib/auth/getUserPremiumStatus';
 import { callOpenAiStrictJson } from '@/lib/ai/openaiStrictJson';
 import { deriveFinalSignal, type FinalAction, type Regime } from '@/lib/signals/deriveFinalSignal';
+import { getGeopoliticalRisk, type GeopoliticalRiskLevel } from '@/lib/signals/geopoliticalRisk';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -71,10 +72,13 @@ CRITICAL: You MUST check for and evaluate the following factors that significant
    - Major exchange outages or technical failures
    - Commodity supply disruptions
 
-EVALUATION RULES:
+EVALUATION RULES (CRITICAL - EVENT-DRIVEN, NOT VOLATILITY-DRIVEN):
+- Risk regime MUST be based on ACTUAL EVENTS (wars, conflicts, crises), NOT price volatility.
 - If you detect wars, major conflicts, or crisis-level events: Set risk_regime to "crisis" and consider downgrading to HOLD unless the signal is very strong.
 - If you detect elevated geopolitical tensions or economic instability: Set risk_regime to "volatile" or "elevated".
 - If markets are calm with no major events: Set risk_regime to "calm".
+- IMPORTANT: If the geopolitical_risk data shows active conflicts, you MUST NOT classify as "calm" regardless of volatility.
+- The geopolitical_risk.level in the input is EVENT-DRIVEN and should heavily influence your risk_regime decision.
 - Be conservative: When in doubt, downgrade to HOLD with lower confidence.
 - Consider the timing: Recent events (last 24-48 hours) have more weight than older news.
 
@@ -243,6 +247,21 @@ export async function POST(req: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(20); // Increased from 10 to 20 for better coverage
 
+  // Get real-time geopolitical risk assessment (event-driven, not volatility-driven)
+  const geoRisk = await getGeopoliticalRisk(supabase, false);
+  
+  // Override risk regime if geopolitical events detected
+  // This ensures "calm" cannot remain when active conflicts are detected
+  const geoRiskLevel = geoRisk.riskLevel;
+  const hasActiveConflict = geoRisk.triggeredEvents.length > 0;
+  const geoRiskEvents = geoRisk.triggeredEvents.map(e => ({
+    title: e.title,
+    severity: e.severity,
+    type: e.type,
+    countries: e.countries,
+    publishedAt: e.publishedAt,
+  }));
+
   const promptObj: any = {
     country: effectiveCountry,
     algo_action: String((signal as any).action) as Action,
@@ -252,7 +271,13 @@ export async function POST(req: NextRequest) {
     asia_session: Boolean((signal as any).asia_session),
     last_12_signals: (lastSignals ?? []).map((r: any) => ({ action: r.action, confidence: r.confidence })),
     top_headlines: pickHeadlines(headlinesRows ?? [], 20), // Increased to match query limit
-    instruction: 'Carefully analyze the headlines for wars, conflicts, economic crises, central bank actions, inflation data, trade wars, sanctions, political instability, or any events that typically drive gold prices. These factors should heavily influence your risk assessment and signal validation.',
+    geopolitical_risk: {
+      level: geoRiskLevel,
+      has_active_conflict: hasActiveConflict,
+      events: geoRiskEvents,
+      reason: geoRisk.reason,
+    },
+    instruction: `CRITICAL: Real-time geopolitical risk assessment shows ${geoRiskLevel} risk level. ${hasActiveConflict ? `ACTIVE CONFLICT DETECTED: ${geoRisk.triggeredEvents.length} high-severity event(s) found. You MUST NOT classify this as "calm".` : ''} Carefully analyze the headlines and geopolitical events for wars, conflicts, economic crises, central bank actions, inflation data, trade wars, sanctions, political instability, or any events that typically drive gold prices. These factors should heavily influence your risk assessment and signal validation. The geopolitical risk level is EVENT-DRIVEN, not volatility-driven.`,
   };
   if (effectiveCountry === 'EG') {
     promptObj.variance_pct = (signal as any).variance_pct ?? null;
@@ -278,21 +303,55 @@ export async function POST(req: NextRequest) {
 
   let record: any;
   if (ai.ok && isValidAiContract(ai.json)) {
-    const decision = decide({ algoAction, aiAction: ai.json.ai_action, aiConfidence: ai.json.ai_confidence0to1 });
+    // Override risk_regime if geopolitical events detected (event-driven, not volatility-driven)
+    let finalRiskRegime = ai.json.risk_regime;
+    if (hasActiveConflict) {
+      // Force elevated risk level if active conflict detected
+      if (geoRiskLevel === 'crisis') {
+        finalRiskRegime = 'crisis';
+      } else if (geoRiskLevel === 'volatile') {
+        finalRiskRegime = 'volatile';
+      } else {
+        finalRiskRegime = 'elevated';
+      }
+      
+      // Log the triggered events
+      console.log(`[GeopoliticalRisk] Overriding risk_regime to ${finalRiskRegime} due to active conflict. Events:`, geoRiskEvents.map(e => e.title));
+    }
+    
+    // Adjust AI action/confidence if crisis-level events detected
+    let finalAiAction = ai.json.ai_action;
+    let finalAiConfidence = ai.json.ai_confidence0to1;
+    const finalAiReasons = [...ai.json.ai_reasons];
+    
+    if (geoRiskLevel === 'crisis' && hasActiveConflict) {
+      // During active war, reduce confidence or shift to HOLD
+      if (finalAiAction !== 'HOLD') {
+        finalAiConfidence = Math.max(0.3, finalAiConfidence * 0.7); // Reduce confidence by 30%
+        finalAiReasons.push(`Geopolitical crisis detected: ${geoRiskEvents[0]?.title || 'active conflict'}`);
+      }
+    }
+    
+    const decision = decide({ algoAction, aiAction: finalAiAction, aiConfidence: finalAiConfidence });
     record = {
       cycle_key: effectiveCycleKey,
       country: effectiveCountry,
       algo_action: algoAction,
       algo_confidence: algoConfidence,
-      ai_action: ai.json.ai_action,
-      ai_confidence0to1: ai.json.ai_confidence0to1,
-      ai_reasons: ai.json.ai_reasons,
-      risk_regime: ai.json.risk_regime,
+      ai_action: finalAiAction,
+      ai_confidence0to1: finalAiConfidence,
+      ai_reasons: finalAiReasons,
+      risk_regime: finalRiskRegime, // Use overridden risk regime
       decision,
       requested_count: 1,
       requested_by_user_id: user.id,
       raw_prompt: promptObj,
-      raw_response: ai.json,
+      raw_response: {
+        ...ai.json,
+        risk_regime: finalRiskRegime, // Store overridden value
+        geopolitical_risk_override: hasActiveConflict,
+        triggered_events: geoRiskEvents,
+      },
     };
   } else {
     // Fallback to algorithm if AI fails or returns invalid JSON.

@@ -55,6 +55,16 @@ type AiReview = {
   requested_count: number;
   created_at: string;
   updated_at: string;
+  raw_response?: {
+    geopolitical_risk_override?: boolean;
+    triggered_events?: Array<{
+      title: string;
+      severity: string;
+      type: string;
+      countries: string[];
+      publishedAt: string;
+    }>;
+  };
 };
 
 type AiReviewResponse = { ok: boolean; error?: string; cached?: boolean; review?: AiReview };
@@ -248,6 +258,42 @@ export default function GoldSignalCard(props: { country: Country; isPremium?: bo
                 ) : null}
               </div>
             </details>
+          ) : null}
+
+          {/* Geopolitical Risk Warning Banner */}
+          {aiReview?.raw_response?.geopolitical_risk_override && aiReview.raw_response.triggered_events && aiReview.raw_response.triggered_events.length > 0 ? (
+            <div className="mt-4 rounded-lg border-2 border-red-700 bg-red-950/40 p-4">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <div className="font-semibold text-red-300 mb-1">
+                    {lang === 'ar' ? '⚠️ تم اكتشاف تصعيد جيوسياسي – المخاطر مرتفعة' : '⚠️ Geopolitical escalation detected – risk elevated'}
+                  </div>
+                  <div className="text-sm text-red-200 mb-2">
+                    {lang === 'ar' 
+                      ? `تم اكتشاف ${aiReview.raw_response.triggered_events.length} حدث عالي الخطورة. تم تعديل نظام المخاطر بناءً على الأحداث الفعلية، وليس التقلبات السعرية.`
+                      : `${aiReview.raw_response.triggered_events.length} high-severity event(s) detected. Risk regime adjusted based on actual events, not price volatility.`}
+                  </div>
+                  <details className="text-xs text-red-300">
+                    <summary className="cursor-pointer font-semibold">
+                      {lang === 'ar' ? 'عرض الأحداث المسببة' : 'View triggered events'}
+                    </summary>
+                    <ul className="mt-2 space-y-1 list-disc list-inside">
+                      {aiReview.raw_response.triggered_events.slice(0, 5).map((event, idx) => (
+                        <li key={idx} className="text-red-200">
+                          <span className="font-semibold">{event.type}:</span> {event.title}
+                          {event.countries.length > 0 && (
+                            <span className="text-red-300"> ({event.countries.join(', ')})</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+              </div>
+            </div>
           ) : null}
 
           <div className="mt-5 rounded-lg border border-gray-800 bg-gray-950 p-4">

@@ -8,6 +8,7 @@ import { getImpliedOunceWithCache } from '@/lib/goldapi';
 import { deriveFinalSignal, type FinalAction, type RawHistoryPoint, type Regime } from '@/lib/signals/deriveFinalSignal';
 import { getMultiCurrencyRates } from '@/lib/fx-multi';
 import { applyEgVarianceGuard } from '@/lib/signals/egVarianceGuard';
+import { getGeopoliticalRisk } from '@/lib/signals/geopoliticalRisk';
 
 type Country = 'GLOBAL' | 'EG';
 
@@ -266,6 +267,19 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
   const supabase = input.supabase;
   const now = input.now ?? new Date();
   const nowIso = now.toISOString();
+
+  // Step 0) Run automatic geopolitical risk validation (event-driven)
+  // This runs every cycle to detect wars, conflicts, and geopolitical events
+  try {
+    const geoRisk = await getGeopoliticalRisk(supabase, true); // Force refresh
+    if (geoRisk.triggeredEvents.length > 0) {
+      console.log(`[GoldSignalsCron] Geopolitical risk detected: ${geoRisk.riskLevel} - ${geoRisk.triggeredEvents.length} event(s)`, 
+        geoRisk.triggeredEvents.map(e => `${e.type}: ${e.title}`).join('; '));
+    }
+  } catch (error) {
+    console.error('[GoldSignalsCron] Error in geopolitical risk validation:', error);
+    // Don't block signal creation if risk validation fails
+  }
 
   // Step 1) Validate due signals (best-effort; don't block creation)
   const validatedRes = await validateDueSignals(supabase, now);
