@@ -247,8 +247,9 @@ export async function POST(req: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(20); // Increased from 10 to 20 for better coverage
 
-  // Get real-time geopolitical risk assessment (event-driven, not volatility-driven)
-  const geoRisk = await getGeopoliticalRisk(supabase, false);
+  // Get real-time geopolitical risk assessment for the specific country (event-driven, not volatility-driven)
+  // Use local market risk assessment for local markets (EG, AE, SA), GLOBAL for GLOBAL
+  const geoRisk = await getGeopoliticalRisk(supabase, false, effectiveCountry);
   
   // Override risk regime if geopolitical events detected
   // This ensures "calm" cannot remain when active conflicts are detected

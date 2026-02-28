@@ -268,17 +268,20 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
   const now = input.now ?? new Date();
   const nowIso = now.toISOString();
 
-  // Step 0) Run automatic geopolitical risk validation (event-driven)
-  // This runs every cycle to detect wars, conflicts, and geopolitical events
-  try {
-    const geoRisk = await getGeopoliticalRisk(supabase, true); // Force refresh
-    if (geoRisk.triggeredEvents.length > 0) {
-      console.log(`[GoldSignalsCron] Geopolitical risk detected: ${geoRisk.riskLevel} - ${geoRisk.triggeredEvents.length} event(s)`, 
-        geoRisk.triggeredEvents.map(e => `${e.type}: ${e.title}`).join('; '));
+  // Step 0) Run automatic geopolitical risk validation for each country (event-driven)
+  // This runs every cycle to detect wars, conflicts, and geopolitical events in local markets
+  const countriesToAssess: Array<'GLOBAL' | 'EG'> = ['GLOBAL', 'EG'];
+  for (const country of countriesToAssess) {
+    try {
+      const geoRisk = await getGeopoliticalRisk(supabase, true, country); // Force refresh
+      if (geoRisk.triggeredEvents.length > 0) {
+        console.log(`[GoldSignalsCron] ${country} geopolitical risk detected: ${geoRisk.riskLevel} - ${geoRisk.triggeredEvents.length} event(s)`, 
+          geoRisk.triggeredEvents.map(e => `${e.type}: ${e.title}`).join('; '));
+      }
+    } catch (error) {
+      console.error(`[GoldSignalsCron] Error in ${country} geopolitical risk validation:`, error);
+      // Don't block signal creation if risk validation fails
     }
-  } catch (error) {
-    console.error('[GoldSignalsCron] Error in geopolitical risk validation:', error);
-    // Don't block signal creation if risk validation fails
   }
 
   // Step 1) Validate due signals (best-effort; don't block creation)

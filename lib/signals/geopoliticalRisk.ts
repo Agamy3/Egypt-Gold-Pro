@@ -144,22 +144,40 @@ function classifyEventType(title: string, summary?: string | null): Geopolitical
 }
 
 /**
- * Analyze news items for geopolitical risk events
+ * Analyze news items for geopolitical risk events for a specific country
+ * @param country - Country code (EG, AE, SA, US, GLOBAL) - defaults to GLOBAL
  */
 export async function analyzeGeopoliticalRisk(
   supabase: SupabaseClient,
-  hoursBack: number = 48
+  hoursBack: number = 48,
+  country: 'GLOBAL' | 'EG' | 'AE' | 'SA' | 'US' = 'GLOBAL'
 ): Promise<GeopoliticalRiskAssessment> {
   const cutoffDate = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
   
-  // Fetch recent news from GLOBAL and major country feeds
+  // For local markets, prioritize local news but also include GLOBAL news
+  // For GLOBAL, use all major country feeds
+  const countriesToFetch = country === 'GLOBAL' 
+    ? ['GLOBAL', 'EG', 'US', 'AE', 'SA']
+    : [country, 'GLOBAL']; // Local market + global context
+  
+  // Fetch recent news from country-specific feeds
   const { data: newsItems, error } = await supabase
     .from('news_items')
     .select('title, summary, source, published_at, country, url')
-    .in('country', ['GLOBAL', 'EG', 'US', 'AE', 'SA'])
+    .in('country', countriesToFetch)
     .gte('published_at', cutoffDate)
     .order('published_at', { ascending: false })
     .limit(200); // Get enough items to analyze
+  
+  // Prioritize local news for local markets
+  const sortedItems = country !== 'GLOBAL' 
+    ? (newsItems || []).sort((a, b) => {
+        // Local news first, then global
+        if (a.country === country && b.country !== country) return -1;
+        if (a.country !== country && b.country === country) return 1;
+        return 0;
+      })
+    : (newsItems || []);
   
   if (error) {
     console.error('[GeopoliticalRisk] Error fetching news:', error);
@@ -176,7 +194,7 @@ export async function analyzeGeopoliticalRisk(
   const triggeredEvents: GeopoliticalEvent[] = [];
   
   // Analyze each news item
-  for (const item of (newsItems || [])) {
+  for (const item of sortedItems) {
     const title = String(item.title || '').trim();
     if (!title) continue;
     
@@ -245,18 +263,20 @@ export async function analyzeGeopoliticalRisk(
 }
 
 /**
- * Get the current geopolitical risk assessment (cached or fresh)
+ * Get the current geopolitical risk assessment for a specific country (cached or fresh)
+ * @param country - Country code (EG, AE, SA, US, GLOBAL) - defaults to GLOBAL
  */
 export async function getGeopoliticalRisk(
   supabase: SupabaseClient,
-  forceRefresh: boolean = false
+  forceRefresh: boolean = false,
+  country: 'GLOBAL' | 'EG' | 'AE' | 'SA' | 'US' = 'GLOBAL'
 ): Promise<GeopoliticalRiskAssessment> {
   // Check for cached assessment (last 10 minutes)
   if (!forceRefresh) {
     const { data: cached } = await supabase
       .from('gold_signal_state')
       .select('meta')
-      .eq('country', 'GLOBAL')
+      .eq('country', country)
       .eq('asset', 'XAUUSD')
       .maybeSingle();
     
@@ -274,15 +294,15 @@ export async function getGeopoliticalRisk(
     }
   }
   
-  // Fetch fresh assessment
-  const assessment = await analyzeGeopoliticalRisk(supabase, 48);
+  // Fetch fresh assessment for the specific country
+  const assessment = await analyzeGeopoliticalRisk(supabase, 48, country);
   
   // Cache it in the state table (upsert to handle case where row doesn't exist)
   await supabase
     .from('gold_signal_state')
     .upsert(
       {
-        country: 'GLOBAL',
+        country: country,
         asset: 'XAUUSD',
         meta: {
           geopoliticalRisk: assessment,
