@@ -21,23 +21,11 @@ export interface AdVisibilityResult {
  * Rules:
  * - SHOW if: NOT logged in (guest) OR (logged in AND NOT premium)
  * - HIDE if: is_premium === true
- * - Also check cookie consent (marketing cookies must be accepted)
+ * - Note: Cookie consent is NOT required (ads show regardless of consent)
  */
 export async function shouldShowAds(): Promise<AdVisibilityResult> {
   try {
-    // Check cookie consent first
-    const cookieStore = await cookies();
-    const consentCookie = cookieStore.get('cookie_consent')?.value;
-    const hasConsent = consentCookie === 'accepted';
-
-    if (!hasConsent) {
-      return {
-        shouldShow: false,
-        reason: 'Cookie consent not given',
-      };
-    }
-
-    // Get user status
+    // Get user status (premium / no-ads check)
     const userStatus = await getUserAdStatus();
 
     return {
@@ -48,10 +36,10 @@ export async function shouldShowAds(): Promise<AdVisibilityResult> {
     };
   } catch (error) {
     console.error('[shouldShowAds] Error:', error);
-    // On error, default to not showing ads (safe fallback)
+    // On error, default to showing ads (since we removed consent requirement)
     return {
-      shouldShow: false,
-      reason: 'Error checking ad visibility',
+      shouldShow: true,
+      reason: 'Error checking ad visibility, defaulting to show',
     };
   }
 }

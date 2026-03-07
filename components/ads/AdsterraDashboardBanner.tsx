@@ -6,26 +6,19 @@ import Script from 'next/script';
 const AD_CONTAINER_ID = 'container-90406b83691f68931250bf976163119d';
 
 export default function AdsterraDashboardBanner() {
-  const isProd = process.env.NODE_ENV === 'production';
   const [canShowAd, setCanShowAd] = useState<boolean | null>(null);
 
-  // Safety: always clear the container on mount in production so we don't
+  // Safety: always clear the container on mount so we don't
   // accidentally re-run the third-party script into a dirty node.
   useEffect(() => {
-    if (!isProd) return;
     const el = document.getElementById(AD_CONTAINER_ID);
     if (el) {
       el.innerHTML = '';
     }
-  }, [isProd]);
+  }, []);
 
   // Respect user ad entitlement (premium / no-ads users), but do NOT gate on cookie consent.
   useEffect(() => {
-    if (!isProd) {
-      setCanShowAd(false);
-      return;
-    }
-
     let cancelled = false;
 
     const checkAdEligibility = async () => {
@@ -33,15 +26,23 @@ export default function AdsterraDashboardBanner() {
         // Ask the central ads API whether this user is allowed to see ads
         // (handles premium + "no ads" accounts).
         const res = await fetch('/api/ads/check');
+        if (!res.ok) {
+          console.error('[AdsterraDashboardBanner] API error:', res.status, res.statusText);
+          if (!cancelled) setCanShowAd(true); // Default to show on API error
+          return;
+        }
+        
         const data = await res.json();
+        console.log('[AdsterraDashboardBanner] Ad check result:', data);
 
         if (!cancelled) {
           // Only render for users where the central ads gate says we *should* show.
           setCanShowAd(data.shouldShow === true);
         }
-      } catch {
-        // On any failure, err on the side of NOT showing ads.
-        if (!cancelled) setCanShowAd(false);
+      } catch (error) {
+        console.error('[AdsterraDashboardBanner] Error checking ad eligibility:', error);
+        // On any failure, default to showing ads (since we removed consent requirement)
+        if (!cancelled) setCanShowAd(true);
       }
     };
 
@@ -50,15 +51,15 @@ export default function AdsterraDashboardBanner() {
     return () => {
       cancelled = true;
     };
-  }, [isProd]);
-
-  if (!isProd) {
-    return null;
-  }
+  }, []);
 
   // Don't render until we know if the user is allowed to see ads.
+  if (canShowAd === null) {
+    return null; // Still loading
+  }
+
   if (canShowAd !== true) {
-    return null;
+    return null; // User is premium or has no-ads flag
   }
 
   return (
