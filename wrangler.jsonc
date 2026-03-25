@@ -32,7 +32,6 @@
     "FRED_API_KEY": "af4206c524d8d45161f4ab50dcc5500b",
     "GOLDAPI_API_KEY": "goldapi-nssmjm04xea-io",
     "GOLDAPI_BASE_URL": "https://www.goldapi.io",
-    "GOLDAPI_FREE_BASE_URL": "https://api.gold-api.com",
     "GOLD_API_FREE_BASE_URL": "https://api.gold-api.com",
     "NEWS_RSS_FEEDS_JSON": "{GLOBAL:[https://www.kitco.com/rss/news,https://feeds.reuters.com/reuters/businessNews],US:[https://www.investing.com/rss/news_285.rss],EG:[https://www.dailynewsegypt.com/feed/],AE:[https://www.khaleejtimes.com/rss],SA:[https://english.alarabiya.net/rss.xml]}",
     "NEXT_PUBLIC_ADSENSE_CLIENT": "ca-pub-1715676389323573",
@@ -52,6 +51,9 @@
     "RESEND_API_KEY": "re_PCjx5fNp_EANGz47MKjbZ48M8Msmj7qqP",
     "VAPID_PRIVATE_KEY": "vyT_WSq4RfREhaC46PZ47SEBp1xOgSF8jJ0cra5wbHM",
     "VAPID_PUBLIC_KEY": "BHmc2wjId8PBYC1ofeJylyuwYkd7mASrPV5raJJr63m_fzA8sCNEq2PWPoGSICnZZCZd_zC1rMYUkiTzraoW-LA",
-    "VAPID_SUBJECT": "mailto:admin@egyptgoldpro.com"
+    "VAPID_SUBJECT": "mailto:admin@egyptgoldpro.com",
+    "SUPABASE_URL": "https://hsjiowivfwfyprqvjarc.supabase.co",
+    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzamlvd2l2ZndmeXBycXZqYXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3MzAzNTIsImV4cCI6MjA4MjMwNjM1Mn0.SvOrWAJ_S-XVyS4J7PKR4ORVaZ-411Kr338pWha0NBM",
+    "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzamlvd2l2ZndmeXBycXZqYXJjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjczMDM1Mi,\"exp\":2082306352}.Cp4b2u-TodAJh5q-1Mc4TzPlOcLeqnMgkoSQpYekUPI"
   }
 }
