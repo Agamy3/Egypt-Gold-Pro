@@ -157,6 +157,75 @@ export async function GET(request: Request) {
       };
     }
 
+    // Egypt: normalized table empty — run one full ingestion synchronously, then re-query; if still empty, merge live aggregates into this response.
+    if (country === 'EG') {
+      const mp = marketData.prices;
+      const localMissing =
+        (mp.market21Buy === null || mp.market21Buy === undefined) &&
+        (mp.market24Buy === null || mp.market24Buy === undefined);
+      if (localMissing || marketData.activeSourceCount === 0) {
+        try {
+          console.warn('[MarketSnapshot] EG norm data missing or zero sources; running synchronous ingestion', {
+            localMissing,
+            activeSourceCount: marketData.activeSourceCount,
+            lastUpdated: marketData.lastUpdated,
+          });
+          const { runIngestionCycle } = await import('@/lib/gold-ingestion-engine');
+          const ing = await runIngestionCycle();
+          marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 120);
+          const p2 = marketData.prices;
+          const stillMissing =
+            (p2.market21Buy === null || p2.market21Buy === undefined) &&
+            (p2.market24Buy === null || p2.market24Buy === undefined);
+          if (stillMissing) {
+            const b = ing.our_price_buy;
+            const n21 = b['21'];
+            const n24 = b['24'];
+            const liveOk =
+              (typeof n21 === 'number' && isFinite(n21) && n21 > 0) ||
+              (typeof n24 === 'number' && isFinite(n24) && n24 > 0);
+            if (liveOk) {
+              console.warn('[MarketSnapshot] Merging live aggregated prices (DB still has no 21/24 after ingest)', {
+                sourcesWritten: ing.sourcesWritten,
+                aggregatedSnapshotWritten: ing.aggregatedSnapshotWritten,
+                our_price_buy: ing.our_price_buy,
+              });
+              const n14 = b['14'];
+              const n18 = b['18'];
+              marketData = {
+                ...marketData,
+                prices: {
+                  ...marketData.prices,
+                  market14Buy: typeof n14 === 'number' && isFinite(n14) && n14 > 0 ? n14 : marketData.prices.market14Buy,
+                  market18Buy: typeof n18 === 'number' && isFinite(n18) && n18 > 0 ? n18 : marketData.prices.market18Buy,
+                  market21Buy: typeof n21 === 'number' && isFinite(n21) && n21 > 0 ? n21 : marketData.prices.market21Buy,
+                  market24Buy: typeof n24 === 'number' && isFinite(n24) && n24 > 0 ? n24 : marketData.prices.market24Buy,
+                },
+                activeSourceCount: Math.max(
+                  marketData.activeSourceCount,
+                  ing.confidence['21']?.num_sources ?? 0,
+                  ing.confidence['24']?.num_sources ?? 0,
+                  1
+                ),
+                sourcesUsed:
+                  ing.sources_used && Object.keys(ing.sources_used).length > 0
+                    ? ing.sources_used
+                    : marketData.sourcesUsed,
+                lastUpdated: Date.now(),
+              };
+            } else {
+              console.warn('[MarketSnapshot] Live ingestion produced no 21/24 prices for fallback', {
+                our_price_buy: ing.our_price_buy,
+                errors: ing.errors,
+              });
+            }
+          }
+        } catch (egIngestErr) {
+          console.error('[MarketSnapshot] EG synchronous ingestion failed:', egIngestErr);
+        }
+      }
+    }
+
     // Get active source count from normalized schema (use same 120min window for consistency)
     let activeSources = marketData.activeSourceCount;
     try {
