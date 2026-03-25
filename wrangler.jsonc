@@ -4,7 +4,7 @@
   // (or `npm run cf:build`). Plain `next build` / `npm run build` is not sufficient for Workers.
   // Use `npm run deploy` or `npm run cf:build` then `npm run cf:deploy` — do not run bare `wrangler deploy` without a prior OpenNext build.
   "main": ".open-next/worker.js",
-  "name": "egyptgold-pro",
+  "name": "egyptgoldpro",
   "compatibility_date": "2025-03-01",
   "compatibility_flags": [
     "nodejs_compat",
@@ -17,7 +17,7 @@
   "services": [
     {
       "binding": "WORKER_SELF_REFERENCE",
-      "service": "egyptgold-pro"
+      "service": "egyptgoldpro"
     }
   ],
   "images": {

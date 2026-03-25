@@ -7,7 +7,7 @@ export async function fetchXagUsd(): Promise<
   try {
     const res = await fetch('https://api.gold-api.com/price/XAG', {
       cache: 'no-store',
-      headers: { 'User-Agent': 'egyptgold-pro/1.0 (+vercel)' },
+      headers: { 'User-Agent': 'egyptgoldpro/1.0 (+cloudflare)' },
     });
     const json = (await res.json().catch(() => null)) as any;
     if (!res.ok) {

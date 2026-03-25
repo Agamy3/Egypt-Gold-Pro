@@ -125,7 +125,7 @@ export async function scrapeEgyptLocalSilverSafeHaven(): Promise<SafeHavenSilver
   try {
     const res = await fetch(pageUrl, {
       cache: 'no-store',
-      headers: { 'User-Agent': 'egyptgold-pro/1.0 (+vercel)' },
+      headers: { 'User-Agent': 'egyptgoldpro/1.0 (+cloudflare)' },
     });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}`, pageUrl, scrapedAtIso };
     const html = await res.text();
