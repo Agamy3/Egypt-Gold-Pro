@@ -97,7 +97,7 @@ async function isStale(source: string, karat: number, country: 'EG' | 'AE' | 'SA
     return await isSourceStaleSupabase(country, source, karat as 14 | 18 | 21 | 22 | 24, STALE_AFTER_MS);
   } catch (error) {
     console.error(`[Supabase] Error checking staleness for ${source}/${karat} (${country}):`, error);
-    return true; // On error, assume stale
+    return false; // Fail-open: don't reject valid prices on staleness backend errors
   }
 }
 
