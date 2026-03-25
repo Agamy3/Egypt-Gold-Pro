@@ -106,6 +106,7 @@ export async function GET() {
     
     // Get count of recent snapshots (last 10 minutes)
     let recentSnapshotCount = 0;
+    let recentSnapshotCountNorm = 0;
     try {
       const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
       const { count, error: countError } = await supabase
@@ -117,6 +118,19 @@ export async function GET() {
       if (!countError && count !== null) {
         recentSnapshotCount = count;
       }
+
+      // Also check normalized schema (homepage uses this for median prices).
+      const tenMinutesAgoISO = new Date(tenMinutesAgo).toISOString();
+      const { count: normCount, error: normCountError } = await supabase
+        .from('market_snapshots_norm')
+        .select('*', { count: 'exact', head: true })
+        .eq('country', 'EG')
+        .gte('created_at', tenMinutesAgoISO)
+        .gt('price', 0);
+
+      if (!normCountError && normCount !== null) {
+        recentSnapshotCountNorm = normCount;
+      }
     } catch (error) {
       // Ignore count errors
     }
@@ -126,6 +140,7 @@ export async function GET() {
       checks,
       write: writeStatus,
       recentSnapshotCount,
+      recentSnapshotCountNorm,
       timestamp: Date.now(),
       message: 'All required Supabase tables are accessible',
     });

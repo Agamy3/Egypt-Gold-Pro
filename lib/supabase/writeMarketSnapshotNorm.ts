@@ -125,7 +125,12 @@ export async function writeMarketSnapshotNorm(
       country: params.country, 
       source: params.source, 
       karats: rows.map(r => r.karat),
-      createdAt: createdAtISO 
+      createdAt: createdAtISO,
+      rowPreview: rows.slice(0, 4).map(r => ({
+        karat: r.karat,
+        price: r.price,
+        rawHashPrefix: r.raw_hash ? String(r.raw_hash).slice(0, 8) : null,
+      })),
     });
     
     try {
@@ -140,11 +145,27 @@ export async function writeMarketSnapshotNorm(
         
         if (result.error) {
           const errorMsg = result.error.message || String(result.error);
+          const errorCode = (result.error as any).code;
+          const errorDetails = (result.error as any).details;
+          const errorHint = (result.error as any).hint;
           const isUniqueViolation = 
             errorMsg.includes('duplicate key') ||
             errorMsg.includes('unique constraint') ||
             errorMsg.includes('violates unique constraint') ||
             result.error.code === '23505';
+          
+          console.error('[Supabase] Normalized insert error meta:', {
+            message: errorMsg,
+            code: errorCode,
+            details: errorDetails,
+            hint: errorHint,
+            attempted: {
+              country: params.country,
+              source: params.source,
+              karats: rows.map(r => r.karat),
+              createdAt: createdAtISO,
+            },
+          });
           
           if (isUniqueViolation) {
             // Unique constraint violation: check if existing row is old enough to update
@@ -253,7 +274,13 @@ export async function writeMarketSnapshotNorm(
       });
 
       if (error) {
-        console.error('[Supabase] Write error:', error, 'Rows attempted:', rows.length);
+        console.error('[Supabase] Write error:', {
+          message: error.message,
+          code: (error as any).code,
+          details: (error as any).details,
+          hint: (error as any).hint,
+          rowsAttempted: rows.length,
+        });
         return {
           ok: false,
           inserted: 0,

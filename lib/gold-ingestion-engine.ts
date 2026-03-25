@@ -560,6 +560,19 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
       
       // Write if source is valid OR if we have valid prices (even with errors, log them)
       if (sourceResult.valid && hasValidPrices) {
+        const snapshotPreview = {
+          source: sourceResult.source,
+          createdAt: now,
+          rawHashPrefix: rawHash.substring(0, 8),
+          prices: {
+            21: sourceResult.prices[21] ?? null,
+            24: sourceResult.prices[24] ?? null,
+            18: sourceResult.prices[18] ?? null,
+            14: sourceResult.prices[14] ?? null,
+          },
+        };
+        console.log('[Ingestion] Preparing snapshot insert (wide+norm):', snapshotPreview);
+
         try {
           // Write to both wide schema (backward compatibility) and normalized schema
           // Wide schema write (existing)
@@ -604,7 +617,10 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
           }
         } catch (supabaseError) {
           // Non-fatal: log and continue
-          console.error(`[Ingestion] Write exception for ${sourceResult.source}:`, supabaseError);
+          console.error(`[Ingestion] Write exception for ${sourceResult.source}:`, {
+            message: supabaseError instanceof Error ? supabaseError.message : String(supabaseError),
+            error: supabaseError,
+          });
         }
       } else {
         console.log(`[Ingestion] Skipping ${sourceResult.source}: valid=${sourceResult.valid}, hasValidPrices=${hasValidPrices}`);

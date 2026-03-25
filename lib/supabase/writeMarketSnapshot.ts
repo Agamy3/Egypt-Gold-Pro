@@ -88,6 +88,14 @@ export async function writeEgyptSnapshotToSupabase(
       source: params.source,
       createdAt: createdAt,
       rawHash: params.rawHash || null,
+      // IMPORTANT:
+      // Several read paths (health + homepage medians) filter with `error IS NULL`.
+      // If we omit `error` in INSERT, the DB default may be non-null (e.g. empty string),
+      // causing inserts to be ignored and resulting in "REFERENCE UNAVAILABLE".
+      error: null,
+      httpStatus: null,
+      url: null,
+      rawResponseSnippet: null,
     };
 
     // Add buy prices for each karat (only if valid)
@@ -132,13 +140,16 @@ export async function writeEgyptSnapshotToSupabase(
         // Check for network errors in the error object or thrown exceptions
         if (result.error) {
           const errorMsg = result.error.message || String(result.error);
+            const errorCode = (result.error as any).code;
+            const errorDetails = (result.error as any).details;
+            const errorHint = (result.error as any).hint;
           const isNetworkError = 
             errorMsg.includes('fetch failed') ||
             errorMsg.includes('ECONNRESET') ||
             errorMsg.includes('SocketError') ||
             errorMsg.includes('UND_ERR_SOCKET') ||
-            result.error.details?.includes('fetch failed') ||
-            result.error.details?.includes('ECONNRESET');
+              (errorDetails?.includes?.('fetch failed') ?? false) ||
+              (errorDetails?.includes?.('ECONNRESET') ?? false);
           
           if (isNetworkError) {
             throw new Error(errorMsg);
@@ -148,7 +159,19 @@ export async function writeEgyptSnapshotToSupabase(
       });
 
       if (error) {
-        console.error('[Supabase] Write error:', error, 'Row attempted:', { source: row.source, createdAt: row.createdAt });
+          console.error('[Supabase] Write error:', {
+            message: error.message,
+            code: (error as any).code,
+            details: (error as any).details,
+            hint: (error as any).hint,
+            rowAttempted: {
+              source: row.source,
+              createdAt: row.createdAt,
+              has21k: !!row.market21Buy,
+              has24k: !!row.market24Buy,
+              errorValue: row.error,
+            },
+          });
         return {
           ok: false,
           inserted: 0,
