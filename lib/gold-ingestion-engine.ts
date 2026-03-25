@@ -168,6 +168,7 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
             karat,
             buy: buy ?? null,
             sell: sell ?? null,
+            chosenPrice: hasValidPrice ? price : null,
             accepted: false,
             reason: 'no_valid_price',
           });
@@ -176,24 +177,15 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
 
         // Check if stale (async)
         const stale = await isStale(sourceResult.source, karat);
-        if (stale) {
-          console.log('[Aggregation] Source price check:', {
-            source: sourceResult.source,
-            karat,
-            buy: buy ?? null,
-            sell: sell ?? null,
-            accepted: false,
-            reason: 'stale',
-          });
-          continue;
-        }
-
         console.log('[Aggregation] Source price check:', {
           source: sourceResult.source,
           karat,
           buy: buy ?? null,
           sell: sell ?? null,
+          chosenPrice: price,
+          stale,
           accepted: true,
+          reason: stale ? 'stale_but_used' : null,
         });
 
         if (!karatData[karat]) {
