@@ -118,6 +118,22 @@ async function getLastOkBuy(source: string, karat: number, country: 'EG' | 'AE' 
 }
 
 /**
+ * Get effective price for aggregation/validation:
+ * prefer buy, fallback to sell when buy is missing.
+ */
+function getEffectivePrice(sourceResult: SourcePriceResult, karat: number): number | null {
+  const buy = sourceResult.prices[karat];
+  if (typeof buy === 'number' && isFinite(buy) && buy > 0) return buy;
+  const sell = sourceResult.sells?.[karat];
+  if (typeof sell === 'number' && isFinite(sell) && sell > 0) return sell;
+  return null;
+}
+
+function hasAnyEffectivePrice(sourceResult: SourcePriceResult): boolean {
+  return KARATS.some((karat) => getEffectivePrice(sourceResult, karat) !== null);
+}
+
+/**
  * Compute weighted average prices and confidence per karat
  */
 export async function computeWeightedAverage(sourceResults: SourcePriceResult[]): Promise<IngestionResult> {
@@ -136,12 +152,13 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
   const karatData: Record<number, Array<{ source: string; price: number; weight: number }>> = {};
 
   for (const sourceResult of sourceResults) {
-    if (sourceResult.valid) {
+    if (hasAnyEffectivePrice(sourceResult)) {
       result.num_sources_ok++;
       const weight = SOURCE_WEIGHTS[sourceResult.source] || 0.5;
 
       for (const karat of KARATS) {
-        if (karat in sourceResult.prices) {
+        const effectivePrice = getEffectivePrice(sourceResult, karat);
+        if (effectivePrice !== null) {
           // Check if stale (async)
           const stale = await isStale(sourceResult.source, karat);
           if (stale) {
@@ -153,7 +170,7 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
           }
           karatData[karat].push({
             source: sourceResult.source,
-            price: sourceResult.prices[karat],
+            price: effectivePrice,
             weight,
           });
         }
@@ -214,10 +231,11 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
     for (const sourceResult of sourceResults) {
       const source = sourceResult.source;
       const stale = await isStale(source, karat, 'EG');
-      if (karat in sourceResult.prices) {
+      const effectivePrice = getEffectivePrice(sourceResult, karat);
+      if (effectivePrice !== null) {
         breakdown[source] = {
-          buy: sourceResult.prices[karat],
-          sell: null, // Not tracked currently
+          buy: sourceResult.prices[karat] ?? sourceResult.sells?.[karat] ?? null,
+          sell: sourceResult.sells?.[karat] ?? null,
           valid: true,
           stale,
           reason: null,
@@ -505,24 +523,28 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
 
   // Update staleness tracking for valid prices
   for (const sourceResult of sourceResults) {
-    if (sourceResult.valid) {
+    if (hasAnyEffectivePrice(sourceResult)) {
       for (const karat of KARATS) {
-        if (karat in sourceResult.prices) {
+        const effectivePrice = getEffectivePrice(sourceResult, karat);
+        if (effectivePrice !== null) {
           // Check for sudden drops (60% drop from last known)
           const lastOk = await getLastOkBuy(sourceResult.source, karat);
           if (lastOk !== null) {
-            const dropPct = (lastOk - sourceResult.prices[karat]) / lastOk;
+            const dropPct = (lastOk - effectivePrice) / lastOk;
             if (dropPct > 0.60) {
               sourceResult.errors.push(
-                `Karat ${karat}: suspicious 60%+ drop (${lastOk} -> ${sourceResult.prices[karat]})`
+                `Karat ${karat}: suspicious 60%+ drop (${lastOk} -> ${effectivePrice})`
               );
               sourceResult.notes.push(`Rejected ${karat}K due to large drop`);
               delete sourceResult.prices[karat];
+              if (sourceResult.sells) {
+                delete sourceResult.sells[karat];
+              }
               continue;
             }
           }
           
-          await updateStaleness(sourceResult.source, karat, sourceResult.prices[karat]);
+          await updateStaleness(sourceResult.source, karat, effectivePrice);
         }
       }
     }
@@ -552,23 +574,23 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
       const isTrusted = sourceResult.source === 'goldbullioneg';
       
       // Only write if we have valid prices and source is valid
-      const hasValidPrices = 
-        (sourceResult.prices[24] && sourceResult.prices[24] > 0) || 
-        (sourceResult.prices[21] && sourceResult.prices[21] > 0) || 
-        (sourceResult.prices[18] && sourceResult.prices[18] > 0) || 
-        (sourceResult.prices[14] && sourceResult.prices[14] > 0);
+      const hasValidPrices =
+        getEffectivePrice(sourceResult, 24) !== null ||
+        getEffectivePrice(sourceResult, 21) !== null ||
+        getEffectivePrice(sourceResult, 18) !== null ||
+        getEffectivePrice(sourceResult, 14) !== null;
       
-      // Write if source is valid OR if we have valid prices (even with errors, log them)
-      if (sourceResult.valid && hasValidPrices) {
+      // Write if we have at least one valid price (buy or sell fallback)
+      if (hasValidPrices) {
         const snapshotPreview = {
           source: sourceResult.source,
           createdAt: now,
           rawHashPrefix: rawHash.substring(0, 8),
           prices: {
-            21: sourceResult.prices[21] ?? null,
-            24: sourceResult.prices[24] ?? null,
-            18: sourceResult.prices[18] ?? null,
-            14: sourceResult.prices[14] ?? null,
+            21: getEffectivePrice(sourceResult, 21),
+            24: getEffectivePrice(sourceResult, 24),
+            18: getEffectivePrice(sourceResult, 18),
+            14: getEffectivePrice(sourceResult, 14),
           },
         };
         console.log('[Ingestion] Preparing snapshot insert (wide+norm):', snapshotPreview);
@@ -582,10 +604,10 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
             createdAtMs: now,
             rawHash,
             prices: {
-              14: { buy: sourceResult.prices[14] || null },
-              18: { buy: sourceResult.prices[18] || null },
-              21: { buy: sourceResult.prices[21] || null },
-              24: { buy: sourceResult.prices[24] || null },
+              14: { buy: getEffectivePrice(sourceResult, 14) },
+              18: { buy: getEffectivePrice(sourceResult, 18) },
+              21: { buy: getEffectivePrice(sourceResult, 21) },
+              24: { buy: getEffectivePrice(sourceResult, 24) },
             },
           });
           
@@ -598,10 +620,10 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
             createdAt: now,
             rawHash,
             prices: {
-              14: { buy: sourceResult.prices[14] || null },
-              18: { buy: sourceResult.prices[18] || null },
-              21: { buy: sourceResult.prices[21] || null },
-              24: { buy: sourceResult.prices[24] || null },
+              14: { buy: getEffectivePrice(sourceResult, 14) },
+              18: { buy: getEffectivePrice(sourceResult, 18) },
+              21: { buy: getEffectivePrice(sourceResult, 21) },
+              24: { buy: getEffectivePrice(sourceResult, 24) },
             },
           });
           
