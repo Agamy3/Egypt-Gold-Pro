@@ -218,13 +218,63 @@ export async function GET(request: NextRequest) {
     // Fetch market data and FX rates
     // Match homepage market source mode/window to avoid divergence in current prices.
     const marketMediansResult = await getMarketMedians(country, false, 120);
+    let marketMedians = marketMediansResult.prices;
+
+    // Portfolio safety fallback:
+    // If the DB has no usable current prices, homepage can still show live aggregates,
+    // but portfolio should not degrade to 0/-100%. Run one ingestion cycle and
+    // merge the in-memory aggregated buy prices for the missing karats.
+    const karatToKey = (k: Karat): keyof typeof marketMedians =>
+      k === 14 ? 'market14Buy' :
+      k === 18 ? 'market18Buy' :
+      k === 21 ? 'market21Buy' :
+      'market24Buy';
+
+    const holdingKaratKeys = Array.from(new Set((holdings as Holding[]).map((h) => karatToKey(h.karat))));
+    const hasAnyHoldingPrice = holdingKaratKeys.some((key) => marketMedians[key] !== null);
+
+    if (!hasAnyHoldingPrice) {
+      console.warn('[Portfolio] No usable DB market prices; running ingestion fallback', {
+        country,
+        holdingKaratKeys,
+        our_price_buy: 'skipped_pre',
+      });
+      try {
+        const { runIngestionCycle } = await import('@/lib/gold-ingestion-engine');
+        const ing = await runIngestionCycle();
+        console.warn('[Portfolio] Ingestion fallback completed', {
+          aggregatedSnapshotWritten: ing.aggregatedSnapshotWritten,
+          our_price_buy: ing.our_price_buy,
+        });
+
+        // Merge aggregated buy prices (our_price_buy keys are strings: '14','18','21','24')
+        marketMedians = {
+          ...marketMedians,
+          market14Buy: typeof ing.our_price_buy['14'] === 'number' && isFinite(ing.our_price_buy['14'] as number) && (ing.our_price_buy['14'] as number) > 0
+            ? (ing.our_price_buy['14'] as number)
+            : marketMedians.market14Buy,
+          market18Buy: typeof ing.our_price_buy['18'] === 'number' && isFinite(ing.our_price_buy['18'] as number) && (ing.our_price_buy['18'] as number) > 0
+            ? (ing.our_price_buy['18'] as number)
+            : marketMedians.market18Buy,
+          market21Buy: typeof ing.our_price_buy['21'] === 'number' && isFinite(ing.our_price_buy['21'] as number) && (ing.our_price_buy['21'] as number) > 0
+            ? (ing.our_price_buy['21'] as number)
+            : marketMedians.market21Buy,
+          market24Buy: typeof ing.our_price_buy['24'] === 'number' && isFinite(ing.our_price_buy['24'] as number) && (ing.our_price_buy['24'] as number) > 0
+            ? (ing.our_price_buy['24'] as number)
+            : marketMedians.market24Buy,
+        };
+      } catch (ingErr) {
+        console.error('[Portfolio] Ingestion fallback failed:', ingErr);
+      }
+    }
+
     const fxRates = await getMultiCurrencyRates();
 
     const result = await calculateHoldings(
       holdings as Holding[],
       country,
       currency,
-      marketMediansResult.prices,
+      marketMedians,
       fxRates
     );
 
