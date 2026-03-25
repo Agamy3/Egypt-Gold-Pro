@@ -17,7 +17,7 @@ export type StrategyDecision = {
         score: number;
         confidence0to1: number;
         reasons: string[];
-        indicators: any;
+        indicators: ReturnType<typeof computeIndicators>;
       }
     | { type: 'SKIP'; symbol: string; reason: string }
   >;
@@ -40,15 +40,23 @@ export async function decideActions(input: {
   const scoreThreshold = input.scoreThreshold ?? 70;
 
   const equity = num(input.account.equity) ?? 0;
-  const cash = num((input.account as any).cash) ?? 0;
-  const buyingPower = num((input.account as any).buying_power) ?? null;
+  const cash = num(input.account.cash) ?? 0;
+  const buyingPower = num(input.account.buying_power) ?? null;
   const availableUsd = Math.max(0, input.availableUsd ?? cash);
   const inPos = new Set(input.positions.map((p) => p.symbol));
 
   // Use realtime quotes for entry reference (reduces Alpaca base_price mismatches vs bar closes).
   const realtimeBySymbol = await fetchRealtime(input.universe);
 
-  const candidates: Array<{ symbol: string; score: number; confidence0to1: number; reasons: string[]; price: number; atr: number | null; indicators: any }> = [];
+  const candidates: Array<{
+    symbol: string;
+    score: number;
+    confidence0to1: number;
+    reasons: string[];
+    price: number;
+    atr: number | null;
+    indicators: ReturnType<typeof computeIndicators>;
+  }> = [];
 
   for (const symbol of input.universe) {
     if (inPos.has(symbol)) continue;

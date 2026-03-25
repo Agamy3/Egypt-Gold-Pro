@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // Track last run time (in-memory, or could use DB)
-let lastRunTimestamp: number | null = null;
+const lastRunTimestamp: number | null = null;
 
 export async function GET() {
   try {

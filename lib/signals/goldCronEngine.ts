@@ -68,7 +68,8 @@ async function validateDueSignals(supabase: SupabaseClient, now: Date) {
   if (exitPrice === null) return { ok: false as const, error: exitOunce.error?.message ?? 'missing_exit_spot' };
 
   let validated = 0;
-  for (const row of due as any[]) {
+  type DueRow = { id: string; action: string; xau_usd: number | string | null };
+  for (const row of due as DueRow[]) {
     const entry = Number(row.xau_usd);
     const { outcome, pnlBp } = computeOutcome({ action: row.action as GoldSignalAction, entry, exit: exitPrice });
     const { error: updErr } = await supabase
@@ -99,7 +100,7 @@ async function computeVolatilityProxy(supabase: SupabaseClient): Promise<number>
   if (error || !data || data.length < 3) return 0;
 
   const prices = data
-    .map((r: any) => Number(r.xau_usd))
+    .map((r: { xau_usd?: unknown }) => Number(r.xau_usd))
     .filter((n: number) => Number.isFinite(n) && n > 0)
     .reverse();
 
@@ -120,7 +121,7 @@ async function getPrevCyclePrice(supabase: SupabaseClient): Promise<number | nul
     .order('cycle_started_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  const p = data ? Number((data as any).xau_usd) : NaN;
+  const p = data ? Number((data as { xau_usd?: unknown }).xau_usd) : NaN;
   return Number.isFinite(p) && p > 0 ? p : null;
 }
 
@@ -165,11 +166,12 @@ async function getPrevFinalState(supabase: SupabaseClient, country: Country): Pr
     .eq('asset', 'XAUUSD')
     .maybeSingle();
   if (data?.final_action && data.final_changed_at) {
+    const d = data as Record<string, unknown>;
     return {
-      final_action: String((data as any).final_action) as FinalAction,
-      final_confidence0to1: Number((data as any).final_confidence0to1),
-      final_changed_at: String((data as any).final_changed_at),
-      last_cycle_key: String((data as any).last_cycle_key),
+      final_action: String(d.final_action) as FinalAction,
+      final_confidence0to1: Number(d.final_confidence0to1),
+      final_changed_at: String(d.final_changed_at),
+      last_cycle_key: String(d.last_cycle_key),
     };
   }
 
@@ -183,14 +185,18 @@ async function getPrevFinalState(supabase: SupabaseClient, country: Country): Pr
     .maybeSingle();
 
   if (!last) return null;
-  const final_action = (last as any).final_action ? (String((last as any).final_action) as FinalAction) : (String((last as any).action) as FinalAction);
-  const final_changed_at =
-    (last as any).final_changed_at ? String((last as any).final_changed_at) : String((last as any).created_at ?? new Date().toISOString());
+  const L = last as Record<string, unknown>;
+  const final_action = L.final_action
+    ? (String(L.final_action) as FinalAction)
+    : (String(L.action) as FinalAction);
+  const final_changed_at = L.final_changed_at
+    ? String(L.final_changed_at)
+    : String(L.created_at ?? new Date().toISOString());
   return {
     final_action,
-    final_confidence0to1: Number((last as any).final_confidence0to1 ?? (last as any).confidence ?? 0),
+    final_confidence0to1: Number(L.final_confidence0to1 ?? L.confidence ?? 0),
     final_changed_at,
-    last_cycle_key: String((last as any).cycle_key ?? ''),
+    last_cycle_key: String(L.cycle_key ?? ''),
   };
 }
 
@@ -204,7 +210,7 @@ async function getRawHistory(supabase: SupabaseClient, country: Country, limit?:
     .order('cycle_started_at', { ascending: false })
     .limit(historyLimit);
 
-  return (data ?? []).map((r: any) => {
+  return (data ?? []).map((r: Record<string, unknown>) => {
     const a = (r.raw_action ?? r.action ?? 'HOLD') as FinalAction;
     const c = Number(r.raw_confidence0to1 ?? r.confidence ?? 0);
     return { cycle_key: String(r.cycle_key), rawAction: a, rawConfidence: clamp01(c) };
@@ -228,8 +234,8 @@ async function getEgLocalKaratSeries(supabase: SupabaseClient, karat: 24 | 18): 
     .limit(1)
     .maybeSingle();
 
-  const latestPrice = latest ? Number((latest as any).price) : null;
-  const latestAt = latest ? String((latest as any).created_at) : null;
+  const latestPrice = latest ? Number((latest as { price?: unknown }).price) : null;
+  const latestAt = latest ? String((latest as { created_at?: unknown }).created_at) : null;
   if (!latestAt || !Number.isFinite(Number(latestPrice)) || (latestPrice as number) <= 0) {
     return { latestPrice: null, latestAt: null, prevPrice: null, prevAt: null, pct: null };
   }
@@ -247,8 +253,8 @@ async function getEgLocalKaratSeries(supabase: SupabaseClient, karat: 24 | 18): 
     .limit(1)
     .maybeSingle();
 
-  const prevPrice = prev ? Number((prev as any).price) : null;
-  const prevAt = prev ? String((prev as any).created_at) : null;
+  const prevPrice = prev ? Number((prev as { price?: unknown }).price) : null;
+  const prevAt = prev ? String((prev as { created_at?: unknown }).created_at) : null;
   const pct = prevPrice && Number.isFinite(prevPrice) && prevPrice > 0 ? ((latestPrice as number) - prevPrice) / prevPrice : null;
   return { latestPrice: latestPrice as number, latestAt, prevPrice: prevPrice ?? null, prevAt, pct };
 }
@@ -295,7 +301,9 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
     .from('gold_signals')
     .select('country')
     .eq('cycle_key', cycleKey);
-  const existingCountries = new Set<string>((existing || []).map((r: any) => String(r.country)));
+  const existingCountries = new Set<string>(
+    (existing || []).map((r: { country?: unknown }) => String(r.country))
+  );
 
   if (existingCountries.has('GLOBAL') && existingCountries.has('EG')) {
     return {
@@ -357,7 +365,7 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
     const regimeInfo = classifyRegime({
       volatilityProxy,
       rawActionsLatestToOlder: [algo.action, ...historyRaw.map((h) => h.rawAction)],
-      pctChangesLatestToOlder: [pctChange5m, ...historyRaw.map((_) => 0)],
+      pctChangesLatestToOlder: [pctChange5m, ...historyRaw.map(() => 0)],
     });
 
     const derived = deriveFinalSignal({
@@ -383,7 +391,7 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
       final_changed_at: finalChangedAtIso,
       final_change_reason: derived.changeReason,
       meta: {
-        ...(baseRow as any).meta,
+        ...(baseRow.meta as Record<string, unknown>),
         regime: regimeInfo.regime,
         chopDetected: regimeInfo.chopDetected,
         final_guards: derived.guards,
@@ -440,7 +448,7 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
     const regimeInfo = classifyRegime({
       volatilityProxy,
       rawActionsLatestToOlder: [algo.action, ...historyRaw.map((h) => h.rawAction)],
-      pctChangesLatestToOlder: [pctChange5m, ...historyRaw.map((_) => 0)],
+      pctChangesLatestToOlder: [pctChange5m, ...historyRaw.map(() => 0)],
     });
 
     const derived = deriveFinalSignal({
@@ -486,7 +494,7 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
       final_changed_at: finalChangedAtIso,
       final_change_reason: derived.changeReason,
       meta: {
-        ...(baseRow as any).meta,
+        ...(baseRow.meta as Record<string, unknown>),
         regime: regimeInfo.regime,
         chopDetected: regimeInfo.chopDetected,
         varianceConflictNow,

@@ -93,17 +93,18 @@ export async function fetchGoldApiQuote(): Promise<Quote> {
         continue;
       }
 
-      let json: any;
+      let json: unknown;
       try {
-        json = JSON.parse(text);
+        json = JSON.parse(text) as unknown;
       } catch {
         lastErr = `GoldAPI invalid JSON @ ${url}: ${text.slice(0, 200)}`;
         continue;
       }
 
-      const price = asFiniteNumber(json?.price);
+      const j = json as Record<string, unknown>;
+      const price = asFiniteNumber(j.price);
       const tsMs =
-        normalizeTimestampMs(json?.timestamp ?? json?.timestamp_ms ?? json?.ts ?? json?.time ?? json?.updatedAt) ??
+        normalizeTimestampMs(j.timestamp ?? j.timestamp_ms ?? j.ts ?? j.time ?? j.updatedAt) ??
         null;
       if (price === null || price <= 0) {
         lastErr = `GoldAPI response missing valid price @ ${url}`;
@@ -114,8 +115,8 @@ export async function fetchGoldApiQuote(): Promise<Quote> {
         continue;
       }
 
-      const bid = asFiniteNumber(json?.bid);
-      const ask = asFiniteNumber(json?.ask);
+      const bid = asFiniteNumber(j.bid);
+      const ask = asFiniteNumber(j.ask);
 
       return {
         price,

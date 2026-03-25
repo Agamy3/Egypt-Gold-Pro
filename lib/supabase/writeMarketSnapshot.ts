@@ -40,7 +40,7 @@ async function retrySupabaseOperation<T>(
   maxRetries: number = 3,
   baseDelayMs: number = 1000
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -84,7 +84,7 @@ export async function writeEgyptSnapshotToSupabase(
     const createdAt = params.createdAtMs;
 
     // Build ONE wide row with all karat prices
-    const row: any = {
+    const row: Record<string, unknown> = {
       source: params.source,
       createdAt: createdAt,
       rawHash: params.rawHash || null,

@@ -18,7 +18,7 @@ async function retrySupabaseOperation<T>(
   maxRetries: number = 2,
   baseDelayMs: number = 500
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {

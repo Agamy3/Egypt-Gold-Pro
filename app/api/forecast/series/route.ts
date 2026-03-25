@@ -807,7 +807,7 @@ export async function GET(request: Request) {
                 if (egpRate && egpRate > 0) {
                   // If spot history has a multi-day hole (common when gold_spot caching stalls),
                   // supplement with Stooq daily history across the requested window.
-                  let spotSeries = [...goldSpotHistory];
+                  const spotSeries = [...goldSpotHistory];
                   if (rangeParam === 'weekly' || rangeParam === 'monthly' || rangeParam === 'yoy') {
                     const sorted = [...spotSeries].sort((a, b) => a.fetched_at - b.fetched_at);
                     const maxGapMs = sorted.reduce((max, cur, idx) => {

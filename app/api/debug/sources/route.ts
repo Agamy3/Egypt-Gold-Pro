@@ -180,7 +180,7 @@ export async function GET() {
     }
 
     // Fetch GoldBillion snapshot data from DB AND do live fetch for debugging
-    let goldBillionData: any = {
+    const goldBillionData: Record<string, unknown> = {
       status: 'UNKNOWN',
       lastIngested: null,
       prices: {

@@ -17,7 +17,7 @@ export interface UserProfile {
   preferred_language?: 'EN' | 'AR' | null;
   is_premium?: boolean;
   is_ad_free?: boolean;
-  entitlements?: Record<string, any>;
+  entitlements?: Record<string, unknown>;
   premium_expires_at?: string | null;
   role?: 'user' | 'admin';
   created_at: string;

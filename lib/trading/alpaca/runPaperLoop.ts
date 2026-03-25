@@ -5,7 +5,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { advisoryUnlock, tryAdvisoryLock } from '@/lib/db/advisoryLock';
 import { getAccount, getClock, getOrders, getPositions, placeBracketOrder } from '@/lib/brokers/alpacaPaper';
-import { decideActions } from '@/lib/trading/strategy/decide';
+import { decideActions, type StrategyDecision } from '@/lib/trading/strategy/decide';
+
+type BracketAction = Extract<StrategyDecision['actions'][number], { type: 'BUY_BRACKET' }>;
+type PlacedBracketRun = { action: BracketAction; orderId: string; tradeId: string | null };
 
 const LOCK_LEASE_SECONDS = 110;
 const LOCK_KEY_ALPACA_ADVISORY = 771_220_311;
@@ -33,13 +36,28 @@ export async function runAlpacaPaperLoop(
     .eq('key', 'default')
     .maybeSingle();
   if (sErr) return { ok: false as const, error: sErr.message };
-  const st = settings as any;
+  type PaperSettings = Record<string, unknown> & {
+    enabled?: unknown;
+    interval_seconds?: unknown;
+    universe?: unknown;
+    max_risk_per_trade_pct?: unknown;
+    max_daily_drawdown_pct?: unknown;
+  };
+  const st = (settings ?? {}) as PaperSettings;
   const enabled = Boolean(st?.enabled);
   const force = Boolean(opts?.force);
   const intervalSeconds = clampInt(Number(st?.interval_seconds ?? 60), 60, 300);
 
   const { data: stateRow } = await supabase.from('alpaca_paper_state').select('*').eq('key', 'default').maybeSingle();
-  const state = (stateRow as any) ?? { key: 'default' };
+  type PaperState = Record<string, unknown> & {
+    key?: string;
+    halted?: unknown;
+    last_run_at?: unknown;
+    reserved_cash?: unknown;
+    run_lock_until?: unknown;
+    run_lock_token?: unknown;
+  };
+  const state = (stateRow as PaperState | null) ?? { key: 'default' };
 
   if (!enabled && !force) {
     return { ok: true as const, serverAsOf: nowIso, skipped: true, reason: 'disabled', settings: st ?? null, state };
@@ -88,7 +106,7 @@ export async function runAlpacaPaperLoop(
         return { ok: false as const, error: lockErr.message };
       }
     } else {
-      if (!lockedRow || (lockedRow as any).run_lock_token !== lockToken) {
+      if (!lockedRow || (lockedRow as { run_lock_token?: unknown }).run_lock_token !== lockToken) {
         // Best-effort: include lock expiry so UI can show "try again in X seconds".
         const { data: lockInfo } = await supabase
           .from('alpaca_paper_state')
@@ -100,7 +118,7 @@ export async function runAlpacaPaperLoop(
           skipped: true,
           reason: 'lock_not_acquired',
           serverAsOf: nowIso,
-          lockUntil: (lockInfo as any)?.run_lock_until ?? null,
+          lockUntil: (lockInfo as { run_lock_until?: unknown } | null)?.run_lock_until ?? null,
         };
       }
       lockMode = 'lease';
@@ -115,7 +133,7 @@ export async function runAlpacaPaperLoop(
     const [account, positions, clock] = await Promise.all([getAccount(), getPositions(), getClock().catch(() => null)]);
 
     const equity = num(account.equity) ?? 0;
-    const lastEquity = num((account as any).last_equity) ?? null;
+    const lastEquity = num(account.last_equity) ?? null;
     const maxDD = num(st?.max_daily_drawdown_pct) ?? 0.05;
     if (lastEquity != null && lastEquity > 0) {
       const dd = (lastEquity - equity) / lastEquity;
@@ -150,7 +168,7 @@ export async function runAlpacaPaperLoop(
     );
 
     const reservedCash = num(state?.reserved_cash) ?? 0;
-    const cash = num((account as any).cash) ?? 0;
+    const cash = num(account.cash) ?? 0;
     const availableUsd = Math.max(0, cash - reservedCash);
 
     const decision = await decideActions({
@@ -168,7 +186,7 @@ export async function runAlpacaPaperLoop(
     const existingOrderIds = new Set(
       (
         await supabase.from('alpaca_paper_trades').select('order_id').not('order_id', 'is', null).limit(1000)
-      ).data?.map((r: any) => String(r.order_id)) ?? []
+      ).data?.map((r: { order_id?: unknown }) => String(r.order_id)) ?? []
     );
 
     for (const o of filledSells) {
@@ -185,7 +203,7 @@ export async function runAlpacaPaperLoop(
         .eq('side', 'BUY')
         .order('created_at', { ascending: false })
         .limit(1);
-      const entry = priorBuys && priorBuys[0] ? num((priorBuys[0] as any).entry_price) : null;
+      const entry = priorBuys && priorBuys[0] ? num((priorBuys[0] as { entry_price?: unknown }).entry_price) : null;
       const pnl = entry != null && exit != null ? (exit - entry) * qty : null;
 
       const { data: sellTrade } = await supabase
@@ -237,7 +255,7 @@ export async function runAlpacaPaperLoop(
       }
     }
 
-    const placed: any[] = [];
+    const placed: PlacedBracketRun[] = [];
     for (const a of decision.actions) {
       if (a.type !== 'BUY_BRACKET') continue;
       if (clock && clock.is_open === false && !force) {
@@ -331,7 +349,7 @@ export async function runAlpacaPaperLoop(
     }
 
     // Snapshot positions for history
-    await supabase.from('alpaca_paper_positions_snapshot').insert({ positions: positions as any });
+    await supabase.from('alpaca_paper_positions_snapshot').insert({ positions: positions as unknown });
 
     await supabase
       .from('alpaca_paper_state')

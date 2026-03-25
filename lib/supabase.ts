@@ -50,7 +50,9 @@ const db = {
    * Execute a query and return first result (like db.prepare().get())
    * Note: This is a simplified wrapper - for complex queries, use db.supabase directly
    */
-  async get<T = any>(query: string, ...params: any[]): Promise<T | undefined> {
+  async get<T = unknown>(query: string, ...params: unknown[]): Promise<T | undefined> {
+    void query;
+    void params;
     // For now, delegate to direct Supabase client for complex queries
     // This method signature is kept for compatibility but should be replaced with direct Supabase calls
     console.warn('db.get() called with raw SQL - consider using db.supabase directly for better type safety');
@@ -61,7 +63,9 @@ const db = {
    * Execute a query and return all results (like db.prepare().all())
    * Note: This is a simplified wrapper - for complex queries, use db.supabase directly
    */
-  async all<T = any>(query: string, ...params: any[]): Promise<T[]> {
+  async all<T = unknown>(query: string, ...params: unknown[]): Promise<T[]> {
+    void query;
+    void params;
     console.warn('db.all() called with raw SQL - consider using db.supabase directly for better type safety');
     throw new Error('db.all() with raw SQL is not supported. Use db.supabase.from(table).select() directly.');
   },
@@ -70,7 +74,9 @@ const db = {
    * Execute a query without returning results (like db.prepare().run())
    * Note: This is a simplified wrapper - for complex queries, use db.supabase directly
    */
-  async run(query: string, ...params: any[]): Promise<{ changes: number; lastInsertRowid?: number }> {
+  async run(query: string, ...params: unknown[]): Promise<{ changes: number; lastInsertRowid?: number }> {
+    void query;
+    void params;
     console.warn('db.run() called with raw SQL - consider using db.supabase directly for better type safety');
     throw new Error('db.run() with raw SQL is not supported. Use db.supabase.from(table).insert()/update()/delete() directly.');
   },
@@ -81,6 +87,7 @@ const db = {
    * This is mainly for schema initialization which should be done via migrations
    */
   async exec(sql: string): Promise<void> {
+    void sql;
     console.warn('db.exec() called - Supabase does not support arbitrary SQL execution. Use migrations instead.');
     // Schema initialization should be done via Supabase migrations, not here
   },

@@ -40,7 +40,7 @@ export async function insertMarketSnapshot(
     const createdAt = data.createdAt; // Use epoch ms directly (createdAt is bigint)
 
     // Build ONE wide row
-    const row: any = {
+    const row: Record<string, unknown> = {
       source: data.source,
       createdAt: createdAt,
       rawHash: data.rawHash || null,
@@ -111,7 +111,7 @@ export async function checkSupabaseWrite(): Promise<{
     const supabase = db.supabase;
     
     // Try a simple count query to verify access
-    const { count, error } = await supabase
+    const { error } = await supabase
       .from('market_snapshots')
       .select('*', { count: 'exact', head: true });
 

@@ -49,20 +49,22 @@ export async function fetchGoldApiFreeQuote(): Promise<Quote> {
         continue;
       }
 
-      let json: any;
+      let json: unknown;
       try {
-        json = JSON.parse(text);
+        json = JSON.parse(text) as unknown;
       } catch {
         lastErr = `gold-api.com invalid JSON @ ${url}: ${text.slice(0, 200)}`;
         continue;
       }
 
       // Accept several known shapes.
+      const j = json as Record<string, unknown>;
+      const data = j.data as Record<string, unknown> | undefined;
       const price =
-        asFiniteNumber(json?.price) ??
-        asFiniteNumber(json?.value) ??
-        asFiniteNumber(json?.data?.price) ??
-        asFiniteNumber(json?.data?.value);
+        asFiniteNumber(j.price) ??
+        asFiniteNumber(j.value) ??
+        asFiniteNumber(data?.price) ??
+        asFiniteNumber(data?.value);
 
       if (price == null || price <= 0) {
         lastErr = `gold-api.com response missing valid price @ ${url}`;
@@ -70,12 +72,12 @@ export async function fetchGoldApiFreeQuote(): Promise<Quote> {
       }
 
       const ts =
-        normalizeTimestampMs(json?.timestamp) ??
-        normalizeTimestampMs(json?.timestampMs) ??
-        normalizeTimestampMs(json?.updatedAt) ??
-        normalizeTimestampMs(json?.time) ??
-        normalizeTimestampMs(json?.data?.timestamp) ??
-        normalizeTimestampMs(json?.data?.updatedAt);
+        normalizeTimestampMs(j.timestamp) ??
+        normalizeTimestampMs(j.timestampMs) ??
+        normalizeTimestampMs(j.updatedAt) ??
+        normalizeTimestampMs(j.time) ??
+        normalizeTimestampMs(data?.timestamp) ??
+        normalizeTimestampMs(data?.updatedAt);
 
       const missingTimestamp = ts == null;
       const timestampMs = ts ?? Date.now();
@@ -85,7 +87,7 @@ export async function fetchGoldApiFreeQuote(): Promise<Quote> {
         timestampMs,
         provider: 'gold_api_free',
         missingTimestamp,
-        raw: { ...json, missingTimestamp },
+        raw: { ...(j as Record<string, unknown>), missingTimestamp },
       };
     }
 

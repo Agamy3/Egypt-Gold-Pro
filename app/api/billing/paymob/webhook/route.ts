@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
 import { getServerClient } from '@/lib/supabase/server';
-import { verifyPaymobHmac } from '@/lib/paymob/verifyHmac';
+import { verifyPaymobHmac, type PaymobWebhookPayload } from '@/lib/paymob/verifyHmac';
 import { applyPremiumEntitlementForUser } from '@/lib/billing/applyPremiumEntitlement';
 
 export const dynamic = 'force-dynamic';
@@ -55,7 +55,11 @@ export async function POST(req: NextRequest) {
   const providedFromBody = asText(payload?.hmac);
   const provided = asText(providedHmac) || providedFromBody;
 
-  const verify = verifyPaymobHmac({ payload, providedHmac: provided, secret: hmacSecret });
+  const verify = verifyPaymobHmac({
+    payload: payload as PaymobWebhookPayload,
+    providedHmac: provided,
+    secret: hmacSecret,
+  });
   const verified = verify.ok;
   if (!verified) {
     console.warn('[paymob:webhook] hmac rejected', { requestId, reason: verify.error });

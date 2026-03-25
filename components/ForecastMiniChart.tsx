@@ -650,7 +650,7 @@ export default function ForecastMiniChart({
     const tooltipHeight = 50;
     
     // Position tooltip to the left or right of cursor
-    let tooltipX = pixelX + (hover.x > width / 2 ? -tooltipWidth - 10 : 20);
+    const tooltipX = pixelX + (hover.x > width / 2 ? -tooltipWidth - 10 : 20);
     let tooltipY = pixelY - tooltipHeight / 2;
     
     // Clamp Y within plot area

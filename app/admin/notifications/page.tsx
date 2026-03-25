@@ -23,7 +23,7 @@ export default async function AdminNotificationsPage() {
           <div className="rounded-xl border border-red-800 bg-red-950/40 p-5 text-red-200">
             <div className="text-lg font-semibold">403 — Forbidden</div>
             <div className="mt-2 text-sm text-red-200/90">
-              You don't have access to this admin tool.
+              You don&apos;t have access to this admin tool.
             </div>
           </div>
         </div>

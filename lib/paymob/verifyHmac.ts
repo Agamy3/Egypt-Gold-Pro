@@ -13,9 +13,32 @@ import crypto from 'crypto';
  * - If computed HMAC doesn't match, returns {ok:false}.
  */
 
-export type PaymobWebhookPayload = any;
+export type PaymobWebhookPayload = Record<string, unknown>;
 
-function coerce(v: any): string {
+/** Transaction object fields used in Paymob HMAC concatenation (best-effort structural typing). */
+type PaymobTxnObj = {
+  amount_cents?: unknown;
+  created_at?: unknown;
+  currency?: unknown;
+  error_occured?: unknown;
+  has_parent_transaction?: unknown;
+  id?: unknown;
+  integration_id?: unknown;
+  is_3d_secure?: unknown;
+  is_auth?: unknown;
+  is_capture?: unknown;
+  is_refunded?: unknown;
+  is_standalone_payment?: unknown;
+  is_voided?: unknown;
+  order?: { id?: unknown } | null;
+  order_id?: unknown;
+  owner?: unknown;
+  pending?: unknown;
+  source_data?: { pan?: unknown; sub_type?: unknown; type?: unknown } | null;
+  success?: unknown;
+};
+
+function coerce(v: unknown): string {
   if (v === null || v === undefined) return '';
   if (typeof v === 'boolean') return v ? 'true' : 'false';
   if (typeof v === 'number') return Number.isFinite(v) ? String(v) : '';
@@ -33,12 +56,15 @@ function safeEqHex(a: string, b: string): boolean {
   }
 }
 
-function getTransactionObj(payload: PaymobWebhookPayload): any | null {
+function getTransactionObj(payload: PaymobWebhookPayload): PaymobTxnObj | null {
   if (!payload) return null;
-  if (payload.obj && typeof payload.obj === 'object') return payload.obj;
-  if (payload.data?.obj && typeof payload.data.obj === 'object') return payload.data.obj;
-  if (payload.transaction && typeof payload.transaction === 'object') return payload.transaction;
-  return null;
+  const pick = (v: unknown): PaymobTxnObj | null =>
+    v && typeof v === 'object' ? (v as PaymobTxnObj) : null;
+  return (
+    pick(payload.obj) ??
+    pick((payload.data as Record<string, unknown> | undefined)?.obj) ??
+    pick(payload.transaction)
+  );
 }
 
 /**
@@ -104,4 +130,3 @@ export function verifyPaymobHmac(args: {
   if (!match) return { ok: false, error: 'hmac_mismatch' };
   return { ok: true, computed, mode: 'transaction' };
 }
-

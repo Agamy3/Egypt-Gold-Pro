@@ -66,7 +66,7 @@ async function paymobFetch<T>(path: string, body: unknown, requestId: string): P
       requestId,
       url,
       status: res.status,
-      bodyPreview: typeof body === 'object' ? Object.keys(body as any) : typeof body,
+      bodyPreview: typeof body === 'object' && body !== null ? Object.keys(body as Record<string, unknown>) : typeof body,
       response: text.slice(0, 500),
     });
     throw new PaymobHttpError({ status: res.status, url, responsePreview: text.slice(0, 500) });
@@ -131,7 +131,7 @@ export async function createPaymentKey(args: {
   merchantOrderId?: string;
 }): Promise<string> {
   const b = args.billingData;
-  const body: any = {
+  const body: Record<string, unknown> = {
     auth_token: args.authToken,
     amount_cents: String(args.amountCents),
     expiration: 3600,

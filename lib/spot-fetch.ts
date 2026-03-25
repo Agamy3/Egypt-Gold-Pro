@@ -72,10 +72,10 @@ async function fetchGoldAPI(): Promise<{ price: number | null; error: GoldApiErr
       };
     }
 
-    let data: any;
+    let data: Record<string, unknown>;
     try {
-      data = JSON.parse(responseText);
-    } catch (parseError) {
+      data = JSON.parse(responseText) as Record<string, unknown>;
+    } catch {
       return {
         price: null,
         error: {
@@ -86,7 +86,7 @@ async function fetchGoldAPI(): Promise<{ price: number | null; error: GoldApiErr
     }
 
     // Check if price field exists and is numeric
-    if (typeof data.price !== 'number' || isNaN(data.price) || data.price <= 0) {
+    if (typeof data['price'] !== 'number' || isNaN(data['price']) || data['price'] <= 0) {
       return {
         price: null,
         error: {
@@ -97,7 +97,7 @@ async function fetchGoldAPI(): Promise<{ price: number | null; error: GoldApiErr
     }
 
     return {
-      price: data.price,
+      price: data['price'] as number,
       error: null,
     };
   } catch (error) {

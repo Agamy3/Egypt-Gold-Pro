@@ -321,7 +321,7 @@ export async function POST(req: NextRequest) {
     }
     
     // Adjust AI action/confidence if crisis-level events detected
-    let finalAiAction = ai.json.ai_action;
+    const finalAiAction = ai.json.ai_action;
     let finalAiConfidence = ai.json.ai_confidence0to1;
     const finalAiReasons = [...ai.json.ai_reasons];
     

@@ -164,7 +164,7 @@ export default function AdminPremiumRequestsPage() {
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center">
             <h1 className="text-3xl font-bold text-white mb-4">Not Authorized</h1>
-            <p className="text-gray-400 mb-8">You don't have permission to access this page.</p>
+            <p className="text-gray-400 mb-8">You don&apos;t have permission to access this page.</p>
             <Link href="/" className="text-gold-400 hover:text-gold-300">
               Return to Home
             </Link>

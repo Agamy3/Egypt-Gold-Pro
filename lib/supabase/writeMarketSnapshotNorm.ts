@@ -43,7 +43,7 @@ async function retrySupabaseOperation<T>(
   maxRetries: number = 3,
   baseDelayMs: number = 1000
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -133,7 +133,7 @@ export async function writeMarketSnapshotNorm(
         // The unique index from migration 0019 on (country, karat, raw_hash) WHERE raw_hash IS NOT NULL
         // can cause inserts to fail if the same raw_hash exists. We need to handle this.
         // Strategy: Try insert first, if unique violation, update the existing row's created_at
-        let result = await supabase
+        const result = await supabase
           .from('market_snapshots_norm')
           .insert(rows)
           .select('id');

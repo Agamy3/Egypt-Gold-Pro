@@ -2,6 +2,8 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+type PredRow = { p0: unknown; p0_at: unknown };
+
 export async function getRecentPricesForVolatility(
   supabase: SupabaseClient,
   opts?: { secondsBack?: number; limit?: number; source?: string }
@@ -25,8 +27,8 @@ export async function getRecentPricesForVolatility(
   const points =
     (data || [])
       .map((r) => ({
-        t: Date.parse(String((r as any).p0_at)),
-        v: Number((r as any).p0),
+        t: Date.parse(String((r as PredRow).p0_at)),
+        v: Number((r as PredRow).p0),
       }))
       .filter((p) => isFinite(p.t) && isFinite(p.v) && p.v > 0)
       .sort((a, b) => a.t - b.t);
@@ -63,9 +65,9 @@ export async function getNearestPriceAroundTime(
   const points =
     (data || [])
       .map((r) => ({
-        t: Date.parse(String((r as any).p0_at)),
-        iso: String((r as any).p0_at),
-        v: Number((r as any).p0),
+        t: Date.parse(String((r as PredRow).p0_at)),
+        iso: String((r as PredRow).p0_at),
+        v: Number((r as PredRow).p0),
       }))
       .filter((p) => isFinite(p.t) && isFinite(p.v) && p.v > 0 && p.iso)
       .sort((a, b) => a.t - b.t);
@@ -109,8 +111,8 @@ export async function getLatestPriceAtOrBeforeTime(
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'No reference price found' };
 
-  const price = Number((data as any).p0);
-  const atIso = String((data as any).p0_at);
+  const price = Number((data as PredRow).p0);
+  const atIso = String((data as PredRow).p0_at);
   const atMs = Date.parse(atIso);
 
   if (!isFinite(price) || price <= 0 || !isFinite(atMs) || !atIso) {

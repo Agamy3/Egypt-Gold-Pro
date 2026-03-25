@@ -4,7 +4,6 @@
  */
 
 import 'server-only';
-// @ts-ignore - web-push doesn't have types
 import webpush from 'web-push';
 
 let vapidInitialized = false;
@@ -56,16 +55,21 @@ export async function sendPushNotification(
 
     await webpush.sendNotification(subscription, notificationPayload);
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Handle specific error codes
-    if (error.statusCode === 410 || error.statusCode === 404) {
+    const status =
+      error && typeof error === 'object' && 'statusCode' in error
+        ? (error as { statusCode?: number }).statusCode
+        : undefined;
+    if (status === 410 || status === 404) {
       // Subscription expired or invalid
       return { success: false, error: 'Subscription expired' };
     }
     console.error('[PUSH] Push notification error:', error);
+    const msg = error instanceof Error ? error.message : 'Failed to send push notification';
     return {
       success: false,
-      error: error.message || 'Failed to send push notification',
+      error: msg,
     };
   }
 }

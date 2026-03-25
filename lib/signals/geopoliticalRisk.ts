@@ -29,6 +29,12 @@ export type GeopoliticalRiskAssessment = {
   lastChecked: string;
 };
 
+/** Subset of `gold_signal_state.meta` used for geopolitical cache reads. */
+type CachedGeopoliticalMeta = {
+  geopoliticalRisk?: GeopoliticalRiskAssessment;
+  geopoliticalRiskLastChecked?: string;
+};
+
 // High-severity keywords that indicate active conflict
 const WAR_KEYWORDS = [
   // Active military actions
@@ -281,7 +287,7 @@ export async function getGeopoliticalRisk(
       .maybeSingle();
     
     if (cached?.meta && typeof cached.meta === 'object') {
-      const meta = cached.meta as any;
+      const meta = cached.meta as CachedGeopoliticalMeta;
       if (meta.geopoliticalRisk && meta.geopoliticalRiskLastChecked) {
         const lastChecked = new Date(meta.geopoliticalRiskLastChecked);
         const ageMinutes = (Date.now() - lastChecked.getTime()) / (60 * 1000);

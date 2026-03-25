@@ -145,7 +145,7 @@ export async function getMarketMedians(
 
   for (const { karat, buyKey, sellKey } of karatConfigs) {
     // Filter rows for this karat with valid prices
-    const validRows = dataToUse.filter((row: any) => {
+    const validRows = dataToUse.filter((row: Record<string, unknown>) => {
       return row.karat === karat && 
              row.price !== null && 
              row.price !== undefined && 
@@ -154,8 +154,8 @@ export async function getMarketMedians(
     });
 
     // Check for aggregated/series_aggregate sources first (prioritized fallbacks)
-    const aggregatedRow = validRows.find((r: any) => r.source === 'aggregated');
-    const seriesAggregateRow = validRows.find((r: any) => r.source === 'series_aggregate');
+    const aggregatedRow = validRows.find((r: Record<string, unknown>) => r.source === 'aggregated');
+    const seriesAggregateRow = validRows.find((r: Record<string, unknown>) => r.source === 'series_aggregate');
     
     // Prioritize aggregated over series_aggregate, but use series_aggregate if aggregated not available
     const priorityRow = aggregatedRow || seriesAggregateRow;
@@ -165,7 +165,7 @@ export async function getMarketMedians(
         prices[buyKey] = price;
         prices[sellKey] = null; // Normalized schema only stores buy prices currently
         
-        const allSources = Array.from(new Set(validRows.map((r: any) => r.source as string)));
+        const allSources = Array.from(new Set(validRows.map((r: Record<string, unknown>) => r.source as string)));
         sourcesUsed[karat.toString()] = allSources.filter(s => s !== 'aggregated' && s !== 'series_aggregate');
         allSources.forEach(s => contributingSources.add(s));
         
@@ -182,7 +182,7 @@ export async function getMarketMedians(
     // Compute median from individual sources
     if (validRows.length > 0) {
       const buyPrices: number[] = validRows
-        .map((row: any) => Number(row.price))
+        .map((row: Record<string, unknown>) => Number(row.price))
         .filter((price): price is number => isFinite(price) && price > 0)
         .sort((a, b) => a - b);
       
@@ -194,11 +194,11 @@ export async function getMarketMedians(
       prices[buyKey] = medianBuy;
       prices[sellKey] = null; // No sell prices in normalized schema yet
 
-      const karatSources = Array.from(new Set(validRows.map((r: any) => r.source as string)));
+      const karatSources = Array.from(new Set(validRows.map((r: Record<string, unknown>) => r.source as string)));
       sourcesUsed[karat.toString()] = karatSources;
       karatSources.forEach(s => contributingSources.add(s));
 
-      const timestamps = validRows.map((row: any) => {
+      const timestamps = validRows.map((row: Record<string, unknown>) => {
         const ts = row.created_at;
         return typeof ts === 'string' ? new Date(ts).getTime() : (typeof ts === 'number' ? ts : 0);
       });
