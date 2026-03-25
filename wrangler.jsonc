@@ -33,6 +33,7 @@
     "GOLDAPI_API_KEY": "goldapi-nssmjm04xea-io",
     "GOLDAPI_BASE_URL": "https://www.goldapi.io",
     "GOLDAPI_FREE_BASE_URL": "https://api.gold-api.com",
+    "GOLD_API_FREE_BASE_URL": "https://api.gold-api.com",
     "NEWS_RSS_FEEDS_JSON": "{GLOBAL:[https://www.kitco.com/rss/news,https://feeds.reuters.com/reuters/businessNews],US:[https://www.investing.com/rss/news_285.rss],EG:[https://www.dailynewsegypt.com/feed/],AE:[https://www.khaleejtimes.com/rss],SA:[https://english.alarabiya.net/rss.xml]}",
     "NEXT_PUBLIC_ADSENSE_CLIENT": "ca-pub-1715676389323573",
     "NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD": "9450111383",
