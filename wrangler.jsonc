@@ -3,6 +3,8 @@
   // OpenNext: deploy/preview need `.open-next/.build/open-next.config.edge.mjs` from `opennextjs-cloudflare build`
   // (or `npm run cf:build`). Plain `next build` / `npm run build` is not sufficient for Workers.
   // Use `npm run deploy` or `npm run cf:build` then `npm run cf:deploy` — do not run bare `wrangler deploy` without a prior OpenNext build.
+  // Web Push: set VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY (+ VAPID_SUBJECT) in vars/secrets. If NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  // is missing from the client bundle (common when it was not set at build time), the app uses GET /api/push/vapid-public-key.
   "main": ".open-next/worker.js",
   "name": "egyptgoldpro",
   "compatibility_date": "2025-03-01",

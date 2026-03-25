@@ -453,6 +453,7 @@ function NotificationsContent() {
 
   const handleEnablePush = async () => {
     if (typeof window === 'undefined') return;
+    setError(null);
 
     const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
     if (!isSecure) {
@@ -473,15 +474,22 @@ function NotificationsContent() {
         return;
       }
 
-      // Get VAPID public key from environment (available at build time)
-      // In Next.js, NEXT_PUBLIC_ variables are injected into the client bundle
-      // Get VAPID public key from environment (available at build time)
-      // In Next.js, NEXT_PUBLIC_ variables are injected into the client bundle
-      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!vapidPublicKey || vapidPublicKey.trim() === '') {
-        console.error('[PUSH] NEXT_PUBLIC_VAPID_PUBLIC_KEY is not configured');
-        console.error('[PUSH] Please set NEXT_PUBLIC_VAPID_PUBLIC_KEY in your Vercel environment variables');
-        alert(lang === 'ar' ? 'إعدادات الإشعارات الفورية غير مكتملة. يرجى إضافة NEXT_PUBLIC_VAPID_PUBLIC_KEY في متغيرات البيئة.' : 'Push notification settings are incomplete. Please add NEXT_PUBLIC_VAPID_PUBLIC_KEY to your environment variables.');
+      // Build-time (Vercel/local): NEXT_PUBLIC_* is inlined. Cloudflare Workers vars are often runtime-only — then fetch from API.
+      let vapidPublicKey = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '').trim();
+      if (!vapidPublicKey) {
+        const keyRes = await fetch('/api/push/vapid-public-key', { cache: 'no-store' });
+        const keyJson = (await keyRes.json().catch(() => null)) as { ok?: boolean; publicKey?: string; error?: string } | null;
+        if (keyRes.ok && keyJson?.ok && keyJson.publicKey?.trim()) {
+          vapidPublicKey = keyJson.publicKey.trim();
+        }
+      }
+      if (!vapidPublicKey) {
+        console.error('[PUSH] VAPID public key unavailable (client env + /api/push/vapid-public-key)');
+        setError(
+          lang === 'ar'
+            ? 'مفتاح الإشعارات غير مضبوط على الخادم. أضف VAPID_PUBLIC_KEY (أو NEXT_PUBLIC_VAPID_PUBLIC_KEY وقت البناء) في إعدادات Cloudflare / wrangler.'
+            : 'Push is not configured on the server. Set VAPID_PUBLIC_KEY (and VAPID_PRIVATE_KEY) in Cloudflare Worker vars/secrets, or NEXT_PUBLIC_VAPID_PUBLIC_KEY at build time.'
+        );
         return;
       }
 
