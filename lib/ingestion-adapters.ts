@@ -6,6 +6,17 @@
 
 import crypto from 'crypto';
 
+// Cloudflare Workers (and some runtimes) may not support AbortSignal.timeout.
+// Polyfill it so upstream fetches time out instead of throwing.
+const AbortSignalAny = AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal };
+if (typeof AbortSignalAny.timeout !== 'function') {
+  AbortSignalAny.timeout = (ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  };
+}
+
 export interface IngestionResult {
   source: 'isagha' | 'goldbillion';
   market21Buy: number | null;

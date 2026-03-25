@@ -5,6 +5,7 @@
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { getCanonicalOrigin } from '@/lib/canonical-site';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,9 +20,19 @@ export async function POST(request: NextRequest) {
     }
 
     const response = NextResponse.json({});
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json(
+        { error: 'Authentication service is not configured. Please contact support.' },
+        { status: 503 }
+      );
+    }
+
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      supabaseUrl,
+      supabaseAnonKey,
       {
         cookies: {
           get(name: string) {
@@ -56,7 +67,7 @@ export async function POST(request: NextRequest) {
     );
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/reset-password`,
+      redirectTo: `${getCanonicalOrigin()}/auth/reset-password`,
     });
 
     if (error) {

@@ -5,6 +5,7 @@
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { getCanonicalOrigin } from '@/lib/canonical-site';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,8 +22,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check environment variables - use explicit undefined check
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
     // Log for debugging (only in non-production or if explicitly enabled)
     if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_AUTH) {
@@ -88,8 +89,9 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || request.headers.get('origin') || 'http://localhost:3000';
-    const redirectUrl = `${siteUrl}/api/auth/callback?next=/`;
+    // Always use a single canonical origin to avoid root/www ambiguity.
+    const canonicalOrigin = getCanonicalOrigin();
+    const redirectUrl = `${canonicalOrigin}/api/auth/callback?next=/`;
 
     // Initiate OAuth flow - this will store PKCE code verifier in cookies
     const { data, error } = await supabase.auth.signInWithOAuth({

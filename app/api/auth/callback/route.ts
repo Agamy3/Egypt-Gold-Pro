@@ -7,6 +7,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getServerClient } from '@/lib/supabase/server';
+import { getCanonicalOrigin } from '@/lib/canonical-site';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,8 @@ export async function GET(request: NextRequest) {
     const errorDescription = requestUrl.searchParams.get('error_description');
     const type = requestUrl.searchParams.get('type'); // 'signup' for email confirmation
     const next = requestUrl.searchParams.get('next') || '/';
+    const canonicalOrigin = getCanonicalOrigin();
+    const safeNext = next.startsWith('/') ? next : '/';
 
     // Check for OAuth errors first
     if (error) {
@@ -26,7 +29,7 @@ export async function GET(request: NextRequest) {
         errorDescription,
         url: request.url,
       });
-      const errorUrl = new URL('/auth/auth-code-error', request.url);
+      const errorUrl = new URL('/auth/auth-code-error', canonicalOrigin);
       errorUrl.searchParams.set('error', error);
       if (errorDescription) {
         errorUrl.searchParams.set('message', decodeURIComponent(errorDescription));
@@ -36,24 +39,20 @@ export async function GET(request: NextRequest) {
 
     if (!code) {
       console.error('No code parameter in callback URL:', request.url);
-      return NextResponse.redirect(new URL('/auth/auth-code-error', request.url));
+      return NextResponse.redirect(new URL('/auth/auth-code-error', canonicalOrigin));
     }
 
-    // Support both OpenNext/Next-style NEXT_PUBLIC env vars and
-    // Cloudflare Workers-style SUPABASE_* env vars.
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
     const supabaseAnonKey =
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      // Not documented in env.example, but commonly used in non-Next environments.
-      process.env.SUPABASE_ANON_KEY;
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseAnonKey) {
       console.error('Supabase configuration missing in callback');
-      return NextResponse.redirect(new URL('/auth/auth-code-error', request.url));
+      return NextResponse.redirect(new URL('/auth/auth-code-error', canonicalOrigin));
     }
 
     // Create redirect response that we can modify
-    const response = NextResponse.redirect(new URL(next, request.url));
+    const response = NextResponse.redirect(new URL(safeNext, canonicalOrigin));
     
     // Create Supabase client that reads PKCE code verifier from cookies
     const supabase = createServerClient(
@@ -104,14 +103,14 @@ export async function GET(request: NextRequest) {
         status: exchangeError.status,
         fullError: exchangeError,
       });
-      const errorUrl = new URL('/auth/auth-code-error', request.url);
+      const errorUrl = new URL('/auth/auth-code-error', canonicalOrigin);
       errorUrl.searchParams.set('error', exchangeError.message || 'unknown_error');
       return NextResponse.redirect(errorUrl);
     }
 
     if (!session) {
       console.error('No session returned after code exchange');
-      const errorUrl = new URL('/auth/auth-code-error', request.url);
+      const errorUrl = new URL('/auth/auth-code-error', canonicalOrigin);
       errorUrl.searchParams.set('error', 'no_session');
       return NextResponse.redirect(errorUrl);
     }
@@ -125,7 +124,7 @@ export async function GET(request: NextRequest) {
       // Check if this is likely a new confirmation by checking if we should redirect to confirmed page
       // For email confirmations, redirect to confirmed page
       if (isEmailConfirmation) {
-        const confirmedUrl = new URL('/auth/confirmed', request.url);
+        const confirmedUrl = new URL('/auth/confirmed', canonicalOrigin);
         return NextResponse.redirect(confirmedUrl);
       }
     }
@@ -161,7 +160,7 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (error) {
     console.error('Callback error:', error);
-    return NextResponse.redirect(new URL('/auth/auth-code-error', request.url));
+    return NextResponse.redirect(new URL('/auth/auth-code-error', getCanonicalOrigin()));
   }
 }
 

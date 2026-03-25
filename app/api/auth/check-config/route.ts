@@ -8,8 +8,10 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const hasSupabaseUrl = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const hasSupabaseAnonKey = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  const hasSupabaseUrl = !!supabaseUrl;
+  const hasSupabaseAnonKey = !!supabaseAnonKey;
   const hasServiceRoleKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
   
   // Don't expose actual values, just check if they exist
@@ -18,8 +20,8 @@ export async function GET() {
     hasSupabaseUrl,
     hasSupabaseAnonKey,
     hasServiceRoleKey,
-    supabaseUrlLength: process.env.NEXT_PUBLIC_SUPABASE_URL?.length || 0,
-    anonKeyLength: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length || 0,
+    supabaseUrlLength: supabaseUrl?.length || 0,
+    anonKeyLength: supabaseAnonKey?.length || 0,
     nodeEnv: process.env.NODE_ENV,
   });
 }

@@ -10,15 +10,27 @@ import { NextResponse } from 'next/server';
 import db from '@/lib/supabase';
 import { fetchImpliedOunce, fetchGoldApiOunceUsd } from '@/lib/implied-ounce';
 import { fetchIsagha, fetchGoldBillion } from '@/lib/ingestion-adapters';
-import { processSource } from '@/lib/gold-sources-adapters';
 import { SOURCE_WEIGHTS, SOURCE_URLS } from '@/lib/gold-ingestion-config';
 import { checkSupabaseWrite } from '@/lib/supabase/snapshots';
+import type { SourcePriceResult } from '@/lib/gold-sources-adapters-regex';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET() {
   try {
+    // Load source parsing logic dynamically to avoid module-load crashes
+    // in constrained Worker runtimes.
+    let processSourceFn: null | ((source: string) => Promise<SourcePriceResult>) = null;
+    let processSourceImportError: string | null = null;
+    try {
+      const mod = await import('@/lib/gold-sources-adapters-regex');
+      processSourceFn = mod.processSource;
+    } catch (e) {
+      processSourceImportError = e instanceof Error ? e.message : String(e);
+      console.error('[DebugSources] Failed to load processSource module:', processSourceImportError);
+    }
+
     // Fetch Egypt Market Implied Ounce data (TradingView)
     let impliedOunceData: any = {
       status: 'UNKNOWN',
@@ -310,7 +322,10 @@ export async function GET() {
     for (const sourceName of webSourceNames) {
       const startTime = Date.now();
       try {
-        const result = await processSource(sourceName);
+        if (!processSourceFn) {
+          throw new Error(processSourceImportError || 'processSource not available in this runtime');
+        }
+        const result = await processSourceFn(sourceName);
         const latencyMs = Date.now() - startTime;
         
         // Build parsed values object

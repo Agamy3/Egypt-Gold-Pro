@@ -7,6 +7,17 @@
 import * as cheerio from 'cheerio';
 import { Karat } from './gold-ingestion-config';
 
+// Cloudflare Workers (and some runtimes) may not support AbortSignal.timeout.
+// Polyfill it so upstream fetches time out instead of throwing.
+const AbortSignalAny = AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal };
+if (typeof AbortSignalAny.timeout !== 'function') {
+  AbortSignalAny.timeout = (ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  };
+}
+
 export interface MultiCountrySourceResult {
   source: string;
   country: 'AE' | 'SA' | 'US';

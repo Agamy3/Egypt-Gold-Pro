@@ -8,9 +8,37 @@ import db from './supabase';
 import { writeEgyptSnapshotToSupabase } from './supabase/writeMarketSnapshot';
 import { writeMarketSnapshotNorm } from './supabase/writeMarketSnapshotNorm';
 import { updateSourceStaleness, isSourceStale as isSourceStaleSupabase, getLastOkBuy as getLastOkBuySupabase } from './supabase/sourceStaleness';
-import { processSource, SourcePriceResult } from './gold-sources-adapters';
+import { processSource, type SourcePriceResult } from './gold-sources-adapters-regex';
 import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, Karat } from './gold-ingestion-config';
 import { computeConfidence } from './gold-ingestion-utils';
+
+/**
+ * Worker-safe base64 encoder for stable raw_hash values.
+ * Cloudflare Workers may not provide Node.js `Buffer`.
+ */
+function base64Encode(input: string): string {
+  // Prefer Workers/Web `btoa` when available.
+  if (typeof btoa === 'function' && typeof TextEncoder !== 'undefined') {
+    const bytes = new TextEncoder().encode(input);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      for (let j = 0; j < chunk.length; j++) {
+        binary += String.fromCharCode(chunk[j]);
+      }
+    }
+    return btoa(binary);
+  }
+
+  // Fallback to Node.js Buffer for local/dev environments.
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(input).toString('base64');
+  }
+
+  // Last resort (should be unreachable in practice).
+  throw new Error('No base64 encoder available in this runtime');
+}
 
 export interface IngestionResult {
   timestamp: string;
@@ -256,7 +284,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     const usResult = await fetchUSASpotPrices(spotPrice);
     
     if (usResult.valid && Object.keys(usResult.prices).length > 0) {
-      const rawHash = Buffer.from(JSON.stringify(usResult)).toString('base64').substring(0, 32);
+      const rawHash = base64Encode(JSON.stringify(usResult)).substring(0, 32);
       const writeResult = await writeMarketSnapshotNorm({
         country: 'US',
         source: 'goldapi_spot',
@@ -315,7 +343,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     const aeResult = await fetchUAEGoldPrices();
     
     if (aeResult.valid && Object.keys(aeResult.prices).length > 0) {
-      const rawHash = Buffer.from(JSON.stringify(aeResult)).toString('base64').substring(0, 32);
+      const rawHash = base64Encode(JSON.stringify(aeResult)).substring(0, 32);
       const writeResult = await writeMarketSnapshotNorm({
         country: 'AE',
         source: 'goldprice_org_ae',
@@ -384,7 +412,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     const saResult = await fetchSaudiGoldPrices();
     
     if (saResult.valid && Object.keys(saResult.prices).length > 0) {
-      const rawHash = Buffer.from(JSON.stringify(saResult)).toString('base64').substring(0, 32);
+      const rawHash = base64Encode(JSON.stringify(saResult)).substring(0, 32);
       const writeResult = await writeMarketSnapshotNorm({
         country: 'SA',
         source: 'goldprice_org_sa',
@@ -516,7 +544,7 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
   
   // Write individual source snapshots
   for (const sourceResult of sourceResults) {
-    const rawHash = Buffer.from(JSON.stringify(sourceResult)).toString('base64').substring(0, 32);
+    const rawHash = base64Encode(JSON.stringify(sourceResult)).substring(0, 32);
     
     try {
       // Write to Supabase using the unified client
@@ -592,7 +620,7 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
   let aggregatedWritten = false;
   if (result.our_price_buy && Object.keys(result.our_price_buy).length > 0) {
     try {
-      const aggregatedHash = Buffer.from(JSON.stringify(result)).toString('base64').substring(0, 32);
+      const aggregatedHash = base64Encode(JSON.stringify(result)).substring(0, 32);
       // Extract prices from result.our_price_buy (keys are strings like '14', '18', '21', '24')
       const price14 = result.our_price_buy['14'] ?? result.our_price_buy[14] ?? null;
       const price18 = result.our_price_buy['18'] ?? result.our_price_buy[18] ?? null;

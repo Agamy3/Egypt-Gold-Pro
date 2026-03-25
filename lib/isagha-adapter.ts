@@ -5,6 +5,17 @@
  * Avoids OCR/image parsing by finding the real data source
  */
 
+// Cloudflare Workers (and some runtimes) may not support AbortSignal.timeout.
+// Polyfill it so upstream fetches time out instead of throwing.
+const AbortSignalAny = AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal };
+if (typeof AbortSignalAny.timeout !== 'function') {
+  AbortSignalAny.timeout = (ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  };
+}
+
 interface DiscoveredEndpoint {
   url: string;
   method: 'GET' | 'POST';

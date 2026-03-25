@@ -30,6 +30,17 @@ let fxCache: {
 const FX_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const FX_STALE_MS = 30 * 60 * 1000; // 30 minutes (consider stale after this)
 
+// Cloudflare Workers (and some runtimes) may not support AbortSignal.timeout.
+// Polyfill it so upstream fetches time out instead of throwing.
+const AbortSignalAny = AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal };
+if (typeof AbortSignalAny.timeout !== 'function') {
+  AbortSignalAny.timeout = (ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  };
+}
+
 /**
  * Fetch all required FX rates from open.er-api.com
  * Returns rates with USD as pivot (1 USD = X EGP, 1 USD = X AED, etc.)

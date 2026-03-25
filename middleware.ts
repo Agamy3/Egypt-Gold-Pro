@@ -6,8 +6,21 @@
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { canonicalizeHost, getCanonicalSiteUrl } from '@/lib/canonical-site';
 
 export async function middleware(request: NextRequest) {
+  // Canonicalize www -> root to keep Supabase PKCE/session cookies consistent.
+  // If OAuth starts on www and the callback lands on root (or vice versa),
+  // the PKCE verifier cookie can be missing.
+  const requestUrl = new URL(request.url);
+  const host = requestUrl.hostname;
+  const canonicalHost = canonicalizeHost(host);
+  if (canonicalHost !== host) {
+    requestUrl.hostname = canonicalHost;
+    requestUrl.protocol = 'https:';
+    return NextResponse.redirect(requestUrl, 308);
+  }
+
   // Check if Supabase env vars are available
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
