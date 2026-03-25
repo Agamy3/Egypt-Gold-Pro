@@ -157,23 +157,53 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
       const weight = SOURCE_WEIGHTS[sourceResult.source] || 0.5;
 
       for (const karat of KARATS) {
-        const effectivePrice = getEffectivePrice(sourceResult, karat);
-        if (effectivePrice !== null) {
-          // Check if stale (async)
-          const stale = await isStale(sourceResult.source, karat);
-          if (stale) {
-            continue;
-          }
-          
-          if (!karatData[karat]) {
-            karatData[karat] = [];
-          }
-          karatData[karat].push({
+        const buy = sourceResult.prices[karat];
+        const sell = sourceResult.sells?.[karat];
+        const price = buy ?? sell;
+        const hasValidPrice = typeof price === 'number' && isFinite(price) && price > 0;
+
+        if (!hasValidPrice) {
+          console.log('[Aggregation] Source price check:', {
             source: sourceResult.source,
-            price: effectivePrice,
-            weight,
+            karat,
+            buy: buy ?? null,
+            sell: sell ?? null,
+            accepted: false,
+            reason: 'no_valid_price',
           });
+          continue;
         }
+
+        // Check if stale (async)
+        const stale = await isStale(sourceResult.source, karat);
+        if (stale) {
+          console.log('[Aggregation] Source price check:', {
+            source: sourceResult.source,
+            karat,
+            buy: buy ?? null,
+            sell: sell ?? null,
+            accepted: false,
+            reason: 'stale',
+          });
+          continue;
+        }
+
+        console.log('[Aggregation] Source price check:', {
+          source: sourceResult.source,
+          karat,
+          buy: buy ?? null,
+          sell: sell ?? null,
+          accepted: true,
+        });
+
+        if (!karatData[karat]) {
+          karatData[karat] = [];
+        }
+        karatData[karat].push({
+          source: sourceResult.source,
+          price,
+          weight,
+        });
       }
     } else {
       result.num_sources_errors++;
