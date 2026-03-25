@@ -12,26 +12,37 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 function getSupabaseConfig() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl) {
     throw new Error(
       'Missing Supabase URL: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL must be set in .env.local'
     );
   }
-  if (!supabaseServiceRoleKey) {
+
+  // Writes/admin operations require the service role key, but reads can work with
+  // the public anon key (assuming your RLS policies allow it). This prevents
+  // the whole app from breaking when SUPABASE_SERVICE_ROLE_KEY isn't configured
+  // in the Workers environment.
+  if (supabaseServiceRoleKey) {
+    return { supabaseUrl, supabaseKey: supabaseServiceRoleKey as string, usingServiceRole: true };
+  }
+
+  if (!supabaseAnonKey) {
     throw new Error(
-      'Missing Supabase service role key: SUPABASE_SERVICE_ROLE_KEY must be set in .env.local'
+      'Missing Supabase keys: set SUPABASE_SERVICE_ROLE_KEY (server-only) or NEXT_PUBLIC_SUPABASE_ANON_KEY for reads'
     );
   }
-  return { supabaseUrl, supabaseServiceRoleKey };
+
+  return { supabaseUrl, supabaseKey: supabaseAnonKey as string, usingServiceRole: false };
 }
 
 let supabase: SupabaseClient | null = null;
 
 function getSupabase(): SupabaseClient {
   if (!supabase) {
-    const { supabaseUrl, supabaseServiceRoleKey } = getSupabaseConfig();
-    supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    const { supabaseUrl, supabaseKey } = getSupabaseConfig();
+    supabase = createClient(supabaseUrl, supabaseKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,

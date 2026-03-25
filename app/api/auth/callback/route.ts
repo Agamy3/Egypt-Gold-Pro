@@ -39,8 +39,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/auth/auth-code-error', request.url));
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // Support both OpenNext/Next-style NEXT_PUBLIC env vars and
+    // Cloudflare Workers-style SUPABASE_* env vars.
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseAnonKey =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      // Not documented in env.example, but commonly used in non-Next environments.
+      process.env.SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseAnonKey) {
       console.error('Supabase configuration missing in callback');
