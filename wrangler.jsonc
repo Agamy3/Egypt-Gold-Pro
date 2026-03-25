@@ -22,5 +22,35 @@
   ],
   "images": {
     "binding": "IMAGES"
+  },
+  "vars": {
+    "ADMIN_EMAILS": "admin@egyptgoldpro.com,mohagamy4@gmail.com",
+    "ALPACA_API_KEY_ID": "PKH7GSCUJF55MAYM5O6NP4XVKT",
+    "ALPACA_API_SECRET_KEY": "2j29yWFchDAjEEnHZuhreTuigshhUuSSKqPyAZiL4fnA",
+    "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+    "CRON_SECRET": "b2bfb2bc27c487620d0e9153a8429d6a5526b0e9109909bb5fd0f533e2406862",
+    "FRED_API_KEY": "af4206c524d8d45161f4ab50dcc5500b",
+    "GOLDAPI_API_KEY": "goldapi-nssmjm04xea-io",
+    "GOLDAPI_BASE_URL": "https://www.goldapi.io",
+    "GOLDAPI_FREE_BASE_URL": "https://api.gold-api.com",
+    "NEWS_RSS_FEEDS_JSON": "{GLOBAL:[https://www.kitco.com/rss/news,https://feeds.reuters.com/reuters/businessNews],US:[https://www.investing.com/rss/news_285.rss],EG:[https://www.dailynewsegypt.com/feed/],AE:[https://www.khaleejtimes.com/rss],SA:[https://english.alarabiya.net/rss.xml]}",
+    "NEXT_PUBLIC_ADSENSE_CLIENT": "ca-pub-1715676389323573",
+    "NEXT_PUBLIC_ADSENSE_SLOT_DASHBOARD": "9450111383",
+    "NEXT_PUBLIC_SITE_URL": "https://egyptgoldpro.com/",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzamlvd2l2ZndmeXBycXZqYXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3MzAzNTIsImV4cCI6MjA4MjMwNjM1Mn0.SvOrWAJ_S-XVyS4J7PKR4ORVaZ-411Kr338pWha0NBM",
+    "NEXT_PUBLIC_SUPABASE_URL": "https://hsjiowivfwfyprqvjarc.supabase.co",
+    "NEXT_PUBLIC_VAPID_PUBLIC_KEY": "BHmc2wjId8PBYC1ofeJylyuwYkd7mASrPV5raJJr63m_fzA8sCNEq2PWPoGSICnZZCZd_zC1rMYUkiTzraoW-LA",
+    "NOTIF_FROM_EMAIL": "notification@egyptgoldpro.com",
+    "NOTIF_FROM_NAME": "EgyptGold Pro",
+    "OPENAI_API_KEY": "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",
+    "PAYMOB_API_KEY": "ZXlKaGJHY2lPaUpJVXpVeE1pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SmpiR0Z6Y3lJNklrMWxjbU5vWVc1MElpd2ljSEp2Wm1sc1pWOXdheUk2TmpVM09EY3pMQ0p1WVcxbElqb2lNVGMzTURnd05UZzJPQzQ1TVRjNU55SjkuTWV4X3dGYjFwS09aQ1dYeUlSb3ZQSEtOZWZpTFNmbllPUGwzSVpWNHZVcnpnUlpLTzVpTVBFQ3lIVzdiUzl1Wi16N1VzaHpHejlPTUVXbndfNUxRa3c=",
+    "PAYMOB_BASE_URL": "https://accept.paymob.com/api",
+    "PAYMOB_HMAC_SECRET": "E6D8DFB27FE1EA32CE4EBAA9ACECA695",
+    "PAYMOB_INTEGRATION_ID_CARD": "3213460",
+    "PRICE_FEED_PROVIDER": "gold_api_free",
+    "RESEND_API_KEY": "re_PCjx5fNp_EANGz47MKjbZ48M8Msmj7qqP",
+    "VAPID_PRIVATE_KEY": "vyT_WSq4RfREhaC46PZ47SEBp1xOgSF8jJ0cra5wbHM",
+    "VAPID_PUBLIC_KEY": "BHmc2wjId8PBYC1ofeJylyuwYkd7mASrPV5raJJr63m_fzA8sCNEq2PWPoGSICnZZCZd_zC1rMYUkiTzraoW-LA",
+    "VAPID_SUBJECT": "mailto:admin@egyptgoldpro.com"
   }
 }
