@@ -20,8 +20,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseAnonKey) {
       return NextResponse.json(
@@ -29,6 +29,18 @@ export async function POST(request: NextRequest) {
         { status: 503 }
       );
     }
+
+    console.log('[Supabase] server auth init (signup route):', {
+      host: (() => {
+        try {
+          return new URL(supabaseUrl).host;
+        } catch {
+          return supabaseUrl;
+        }
+      })(),
+      keyType: 'anon',
+      keyPrefix: supabaseAnonKey ? String(supabaseAnonKey).slice(0, 10) : null,
+    });
 
     const response = NextResponse.json({ success: true });
     const supabase = createServerClient(

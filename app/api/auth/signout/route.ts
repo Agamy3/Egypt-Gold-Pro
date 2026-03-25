@@ -8,9 +8,23 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 export async function POST(request: NextRequest) {
   const response = NextResponse.json({ success: true });
+
+  console.log('[Supabase] server auth init (signout route):', {
+    host: (() => {
+      const url = process.env.SUPABASE_URL;
+      try {
+        return url ? new URL(url).host : null;
+      } catch {
+        return url ?? null;
+      }
+    })(),
+    keyType: 'anon',
+    keyPrefix: process.env.SUPABASE_ANON_KEY ? String(process.env.SUPABASE_ANON_KEY).slice(0, 10) : null,
+  });
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_ANON_KEY!,
     {
       cookies: {
         get(name: string) {

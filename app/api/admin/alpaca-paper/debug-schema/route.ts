@@ -15,7 +15,7 @@ function withNoStoreHeaders(res: NextResponse) {
 }
 
 function getSupabaseHost(): string | null {
-  const url = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+  const url = (process.env.SUPABASE_URL || '').trim();
   if (!url) return null;
   try {
     return new URL(url).host;

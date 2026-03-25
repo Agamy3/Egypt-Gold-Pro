@@ -55,8 +55,8 @@ export async function GET(request: NextRequest) {
 
     // Cloudflare Workers may inject `SUPABASE_*` (non-NEXT_PUBLIC) env vars.
     // Prefer them to avoid stale Vercel-era NEXT_PUBLIC values.
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
     const supabaseHost = (() => {
       if (!supabaseUrl) return null;
@@ -75,6 +75,7 @@ export async function GET(request: NextRequest) {
     console.log('[AuthCallback] supabase env', {
       supabaseHost,
       anonKeyLength: supabaseAnonKey?.length ?? 0,
+      anonKeyPrefix: supabaseAnonKey ? String(supabaseAnonKey).slice(0, 10) : null,
       canonicalOrigin,
     });
 

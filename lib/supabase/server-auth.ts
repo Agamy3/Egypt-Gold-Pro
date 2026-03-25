@@ -16,12 +16,24 @@ import { cookies } from 'next/headers';
 export async function createServerSupabaseClient() {
   const cookieStore = await cookies();
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing Supabase keys: set NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY (or SUPABASE_URL + SUPABASE_ANON_KEY)');
+    throw new Error('Missing Supabase keys: set SUPABASE_URL + SUPABASE_ANON_KEY');
   }
+
+  console.log('[Supabase] server auth init', {
+    host: (() => {
+      try {
+        return new URL(supabaseUrl).host;
+      } catch {
+        return supabaseUrl;
+      }
+    })(),
+    keyType: 'anon',
+    keyPrefix: String(supabaseAnonKey).slice(0, 10),
+  });
 
   return createServerClient(
     supabaseUrl,

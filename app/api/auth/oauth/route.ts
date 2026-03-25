@@ -23,18 +23,14 @@ export async function POST(request: NextRequest) {
 
     // Check environment variables - use explicit undefined check
     // Prefer Cloudflare-injected SUPABASE_* values to avoid stale NEXT_PUBLIC_*.
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
-    // Log for debugging (only in non-production or if explicitly enabled)
-    if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_AUTH) {
-      console.log('OAuth route - Env check:', {
-        hasUrl: !!supabaseUrl,
-        hasKey: !!supabaseAnonKey,
-        urlLength: supabaseUrl?.length || 0,
-        keyLength: supabaseAnonKey?.length || 0,
-      });
-    }
+    console.log('[Supabase] server auth init (oauth route):', {
+      host: supabaseUrl ? (() => { try { return new URL(supabaseUrl).host; } catch { return supabaseUrl; } })() : null,
+      keyType: 'anon',
+      keyPrefix: supabaseAnonKey ? String(supabaseAnonKey).slice(0, 10) : null,
+    });
 
     if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.trim() === '' || supabaseAnonKey.trim() === '') {
       console.error('OAuth route - Missing environment variables:', {

@@ -10,13 +10,13 @@ import 'server-only';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 function getSupabaseConfig() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl) {
     throw new Error(
-      'Missing Supabase URL: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL must be set in .env.local'
+      'Missing Supabase URL: SUPABASE_URL must be set in .env.local'
     );
   }
 
@@ -25,15 +25,37 @@ function getSupabaseConfig() {
   // the whole app from breaking when SUPABASE_SERVICE_ROLE_KEY isn't configured
   // in the Workers environment.
   if (supabaseServiceRoleKey) {
+    console.log('[Supabase] init', {
+      host: (() => {
+        try {
+          return new URL(supabaseUrl).host;
+        } catch {
+          return supabaseUrl;
+        }
+      })(),
+      keyType: 'service_role',
+      keyPrefix: String(supabaseServiceRoleKey).slice(0, 10),
+    });
     return { supabaseUrl, supabaseKey: supabaseServiceRoleKey as string, usingServiceRole: true };
   }
 
   if (!supabaseAnonKey) {
     throw new Error(
-      'Missing Supabase keys: set SUPABASE_SERVICE_ROLE_KEY (server-only) or NEXT_PUBLIC_SUPABASE_ANON_KEY for reads'
+      'Missing Supabase keys: set SUPABASE_SERVICE_ROLE_KEY (server-only) or SUPABASE_ANON_KEY for reads'
     );
   }
 
+  console.log('[Supabase] init', {
+    host: (() => {
+      try {
+        return new URL(supabaseUrl).host;
+      } catch {
+        return supabaseUrl;
+      }
+    })(),
+    keyType: 'anon',
+    keyPrefix: String(supabaseAnonKey).slice(0, 10),
+  });
   return { supabaseUrl, supabaseKey: supabaseAnonKey as string, usingServiceRole: false };
 }
 

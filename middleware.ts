@@ -22,8 +22,8 @@ export async function middleware(request: NextRequest) {
   }
 
   // Check if Supabase env vars are available
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     // If env vars are missing, just pass through without auth
@@ -37,6 +37,18 @@ export async function middleware(request: NextRequest) {
   });
 
   try {
+    console.log('[Supabase] server auth init (middleware):', {
+      host: (() => {
+        try {
+          return supabaseUrl ? new URL(supabaseUrl).host : null;
+        } catch {
+          return supabaseUrl ?? null;
+        }
+      })(),
+      keyType: 'anon',
+      keyPrefix: supabaseAnonKey ? String(supabaseAnonKey).slice(0, 10) : null,
+    });
+
     const supabase = createServerClient(
       supabaseUrl,
       supabaseAnonKey,
