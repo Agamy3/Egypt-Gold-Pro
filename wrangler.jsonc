@@ -1,5 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  // OpenNext: deploy/preview need `.open-next/.build/open-next.config.edge.mjs` from `opennextjs-cloudflare build`
+  // (or `npm run cf:build`). Plain `next build` / `npm run build` is not sufficient for Workers.
+  // Use `npm run deploy` or `npm run cf:build` then `npm run cf:deploy` — do not run bare `wrangler deploy` without a prior OpenNext build.
   "main": ".open-next/worker.js",
   "name": "egyptgold-pro",
   "compatibility_date": "2025-03-01",
