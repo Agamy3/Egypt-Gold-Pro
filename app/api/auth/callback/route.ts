@@ -22,6 +22,17 @@ export async function GET(request: NextRequest) {
     const canonicalOrigin = getCanonicalOrigin();
     const safeNext = next.startsWith('/') ? next : '/';
 
+    // Targeted callback logging (do not log the OAuth `code` itself).
+    console.log('[AuthCallback] incoming', {
+      pathname: requestUrl.pathname,
+      hasCode: !!code,
+      hasOAuthError: !!error,
+      oauthError: error || null,
+      type,
+      next: safeNext,
+      canonicalOrigin,
+    });
+
     // Check for OAuth errors first
     if (error) {
       console.error('OAuth error in callback:', {
@@ -42,14 +53,30 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/auth/auth-code-error', canonicalOrigin));
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-    const supabaseAnonKey =
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    // Cloudflare Workers may inject `SUPABASE_*` (non-NEXT_PUBLIC) env vars.
+    // Prefer them to avoid stale Vercel-era NEXT_PUBLIC values.
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    const supabaseHost = (() => {
+      if (!supabaseUrl) return null;
+      try {
+        return new URL(supabaseUrl).host;
+      } catch {
+        return null;
+      }
+    })();
 
     if (!supabaseUrl || !supabaseAnonKey) {
       console.error('Supabase configuration missing in callback');
       return NextResponse.redirect(new URL('/auth/auth-code-error', canonicalOrigin));
     }
+
+    console.log('[AuthCallback] supabase env', {
+      supabaseHost,
+      anonKeyLength: supabaseAnonKey?.length ?? 0,
+      canonicalOrigin,
+    });
 
     // Create redirect response that we can modify
     const response = NextResponse.redirect(new URL(safeNext, canonicalOrigin));
@@ -94,17 +121,25 @@ export async function GET(request: NextRequest) {
       }
     );
 
-    const { data: { session }, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-    
+    let session: any = null;
+    let exchangeError: any = null;
+    try {
+      const exchangeResult = await supabase.auth.exchangeCodeForSession(code);
+      session = exchangeResult.data?.session ?? null;
+      exchangeError = exchangeResult.error ?? null;
+    } catch (e) {
+      exchangeError = e;
+    }
+
     if (exchangeError) {
+      const exchangeMessage = exchangeError instanceof Error ? exchangeError.message : String(exchangeError);
       console.error('Error exchanging code for session:', {
-        error: exchangeError.message,
-        code: exchangeError.code,
-        status: exchangeError.status,
-        fullError: exchangeError,
+        exchangeMessage,
+        exchangeCode: exchangeError && (exchangeError as any).code ? (exchangeError as any).code : null,
+        exchangeStatus: exchangeError && (exchangeError as any).status ? (exchangeError as any).status : null,
       });
       const errorUrl = new URL('/auth/auth-code-error', canonicalOrigin);
-      errorUrl.searchParams.set('error', exchangeError.message || 'unknown_error');
+      errorUrl.searchParams.set('error', exchangeMessage || 'unknown_error');
       return NextResponse.redirect(errorUrl);
     }
 

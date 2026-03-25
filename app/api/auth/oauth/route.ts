@@ -22,8 +22,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check environment variables - use explicit undefined check
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    // Prefer Cloudflare-injected SUPABASE_* values to avoid stale NEXT_PUBLIC_*.
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     // Log for debugging (only in non-production or if explicitly enabled)
     if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_AUTH) {
@@ -92,6 +93,13 @@ export async function POST(request: NextRequest) {
     // Always use a single canonical origin to avoid root/www ambiguity.
     const canonicalOrigin = getCanonicalOrigin();
     const redirectUrl = `${canonicalOrigin}/api/auth/callback?next=/`;
+
+    if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_AUTH) {
+      console.log('OAuth route - redirectTo:', {
+        canonicalOrigin,
+        redirectPath: new URL(redirectUrl).pathname,
+      });
+    }
 
     // Initiate OAuth flow - this will store PKCE code verifier in cookies
     const { data, error } = await supabase.auth.signInWithOAuth({
