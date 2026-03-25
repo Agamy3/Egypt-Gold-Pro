@@ -125,6 +125,14 @@ export async function writeEgyptSnapshotToSupabase(
                           row.market18Buy !== null || row.market14Buy !== null;
 
     if (!hasValidPrice) {
+      console.warn('[Supabase] Skipping wide insert (no valid price):', {
+        source: row.source,
+        createdAt: row.createdAt,
+        market21Buy: row.market21Buy,
+        market24Buy: row.market24Buy,
+        market18Buy: row.market18Buy,
+        market14Buy: row.market14Buy,
+      });
       return { ok: true, inserted: 0 };
     }
 
@@ -133,10 +141,35 @@ export async function writeEgyptSnapshotToSupabase(
     
     try {
       const { error, data: inserted } = await retrySupabaseOperation(async () => {
+        console.log('[Supabase] INSERT wide -> market_snapshots (pre):', {
+          table: 'market_snapshots',
+          source: row.source,
+          createdAt: row.createdAt,
+          rawHashPrefix: row.rawHash ? String(row.rawHash).slice(0, 8) : null,
+          market21Buy: row.market21Buy,
+          market24Buy: row.market24Buy,
+          market18Buy: row.market18Buy,
+          market14Buy: row.market14Buy,
+          errorValue: row.error,
+        });
+
         const result = await supabase
           .from('market_snapshots')
           .insert(row)
           .select('id');
+
+        console.log('[Supabase] INSERT wide -> market_snapshots (post):', {
+          table: 'market_snapshots',
+          source: row.source,
+          createdAt: row.createdAt,
+          insertedIdsPreview: (result.data || []).slice(0, 3).map((r: any) => r?.id),
+          insertedRowsCount: result.data?.length || 0,
+          errorMessage: result.error?.message || null,
+          errorCode: (result.error as any)?.code || null,
+          errorDetails: (result.error as any)?.details || null,
+          errorHint: (result.error as any)?.hint || null,
+        });
+
         // Check for network errors in the error object or thrown exceptions
         if (result.error) {
           const errorMsg = result.error.message || String(result.error);
@@ -159,6 +192,15 @@ export async function writeEgyptSnapshotToSupabase(
       });
 
       if (error) {
+          console.error('[Supabase] Wide INSERT failed (from retry result):', {
+            table: 'market_snapshots',
+            source: row.source,
+            createdAt: row.createdAt,
+            errorMessage: error.message,
+            errorCode: (error as any).code,
+            errorDetails: (error as any).details,
+            errorHint: (error as any).hint,
+          });
           console.error('[Supabase] Write error:', {
             message: error.message,
             code: (error as any).code,

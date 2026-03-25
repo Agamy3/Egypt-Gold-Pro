@@ -118,6 +118,12 @@ export async function writeMarketSnapshotNorm(
     }
 
     if (rows.length === 0) {
+      console.warn('[Supabase] Skipping normalized insert (no karat rows):', {
+        table: 'market_snapshots_norm',
+        country: params.country,
+        source: params.source,
+        createdAt: createdAtISO,
+      });
       return { ok: true, inserted: 0 };
     }
 
@@ -138,11 +144,38 @@ export async function writeMarketSnapshotNorm(
         // The unique index from migration 0019 on (country, karat, raw_hash) WHERE raw_hash IS NOT NULL
         // can cause inserts to fail if the same raw_hash exists. We need to handle this.
         // Strategy: Try insert first, if unique violation, update the existing row's created_at
+        console.log('[Supabase] INSERT norm -> market_snapshots_norm (pre):', {
+          table: 'market_snapshots_norm',
+          country: params.country,
+          source: params.source,
+          createdAt: createdAtISO,
+          rowsSent: rows.length,
+          rowPreview: rows.slice(0, 4).map(r => ({
+            karat: r.karat,
+            price: r.price,
+            rawHashPrefix: r.raw_hash ? String(r.raw_hash).slice(0, 8) : null,
+          })),
+        });
+
         const result = await supabase
           .from('market_snapshots_norm')
           .insert(rows)
           .select('id');
         
+        console.log('[Supabase] INSERT norm -> market_snapshots_norm (post/final):', {
+          table: 'market_snapshots_norm',
+          country: params.country,
+          source: params.source,
+          createdAt: createdAtISO,
+          rowsSent: rows.length,
+          insertedRowsCount: result.data?.length || 0,
+          insertedIdsPreview: (result.data || []).slice(0, 3).map((r: any) => r?.id),
+          errorMessage: result.error?.message || null,
+          errorCode: (result.error as any)?.code || null,
+          errorDetails: (result.error as any)?.details || null,
+          errorHint: (result.error as any)?.hint || null,
+        });
+
         if (result.error) {
           const errorMsg = result.error.message || String(result.error);
           const errorCode = (result.error as any).code;
@@ -218,27 +251,62 @@ export async function writeMarketSnapshotNorm(
                     // Existing row is recent (< 5 min), insert new row with NULL raw_hash to create new snapshot
                     // This ensures we have multiple snapshots over time even if price hasn't changed
                     const newRowWithoutHash = { ...row, raw_hash: null };
+                    console.log('[Supabase] INSERT norm fallback (recent dup) -> market_snapshots_norm (pre):', {
+                      table: 'market_snapshots_norm',
+                      country: params.country,
+                      source: params.source,
+                      createdAt: createdAtISO,
+                      rowsSent: 1,
+                      karat: row.karat,
+                      price: row.price,
+                      rawHash: null,
+                    });
                     const insertResult = await supabase
                       .from('market_snapshots_norm')
                       .insert(newRowWithoutHash)
                       .select('id');
                     
                     if (insertResult.error) {
-                      console.error('[Supabase] Insert error for new row without raw_hash:', newRowWithoutHash, insertResult.error);
+                      console.error('[Supabase] INSERT norm fallback (recent dup) -> ERROR:', {
+                        attempted: newRowWithoutHash,
+                        message: insertResult.error.message,
+                        code: (insertResult.error as any)?.code,
+                        details: (insertResult.error as any)?.details,
+                        hint: (insertResult.error as any)?.hint,
+                      });
                     } else {
-                      console.log('[Supabase] Inserted new snapshot without raw_hash (recent data exists):', insertResult.data?.[0]?.id);
+                      console.log('[Supabase] INSERT norm fallback (recent dup) -> OK:', {
+                        insertedId: insertResult.data?.[0]?.id,
+                        rows: insertResult.data?.length || 0,
+                      });
                     }
                   }
                 } else {
                   // No existing row found, try insert without raw_hash
                   const newRowWithoutHash = { ...row, raw_hash: null };
+                  console.log('[Supabase] INSERT norm fallback (no existing) -> market_snapshots_norm (pre):', {
+                    table: 'market_snapshots_norm',
+                    country: params.country,
+                    source: params.source,
+                    createdAt: createdAtISO,
+                    rowsSent: 1,
+                    karat: row.karat,
+                    price: row.price,
+                    rawHash: null,
+                  });
                   const insertResult = await supabase
                     .from('market_snapshots_norm')
                     .insert(newRowWithoutHash)
                     .select('id');
                   
                   if (insertResult.error) {
-                    console.error('[Supabase] Insert error for row without raw_hash (fallback):', newRowWithoutHash, insertResult.error);
+                    console.error('[Supabase] INSERT norm fallback (no existing) -> ERROR:', {
+                      attempted: newRowWithoutHash,
+                      message: insertResult.error.message,
+                      code: (insertResult.error as any)?.code,
+                      details: (insertResult.error as any)?.details,
+                      hint: (insertResult.error as any)?.hint,
+                    });
                   }
                 }
               } else {
