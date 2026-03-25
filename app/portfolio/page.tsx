@@ -25,10 +25,10 @@ interface PortfolioData {
     created_at: string;
     updated_at: string;
     invested_value_selected: number;
-    current_value_selected: number;
+    current_value_selected: number | null;
     current_price_per_gram_selected: number | null;
-    pnl: number;
-    pnl_pct: number;
+    pnl: number | null;
+    pnl_pct: number | null;
     status: 'WIN' | 'LOSS' | 'FLAT';
   }>;
   karatAggregates: Array<{
@@ -37,16 +37,16 @@ interface PortfolioData {
     avg_buy_price_per_gram_selected: number;
     current_price_per_gram_selected: number | null;
     invested_value_selected: number;
-    current_value_selected: number;
-    pnl: number;
-    pnl_pct: number;
+    current_value_selected: number | null;
+    pnl: number | null;
+    pnl_pct: number | null;
     status: 'WIN' | 'LOSS' | 'FLAT';
   }>;
   totals: {
     invested_value_selected: number;
-    current_value_selected: number;
-    pnl: number;
-    pnl_pct: number;
+    current_value_selected: number | null;
+    pnl: number | null;
+    pnl_pct: number | null;
     status: 'WIN' | 'LOSS' | 'FLAT';
   };
   referenceUnavailable: boolean;
@@ -179,7 +179,7 @@ function PortfolioContent() {
                   portfolio.totals.status === 'WIN' ? 'text-green-400' :
                   portfolio.totals.status === 'LOSS' ? 'text-red-400' : 'text-gray-300'
                 }`}>
-                  {formatCurrency(portfolio.totals.pnl, currency)} ({formatNumber(portfolio.totals.pnl_pct * 100, 2)}%)
+                  {formatCurrency(portfolio.totals.pnl, currency)} ({portfolio.totals.pnl_pct === null ? 'N/A' : `${formatNumber(portfolio.totals.pnl_pct * 100, 2)}%`})
                 </p>
               </div>
 
@@ -240,7 +240,7 @@ function PortfolioContent() {
                           agg.status === 'WIN' ? 'text-green-400' :
                           agg.status === 'LOSS' ? 'text-red-400' : 'text-gray-300'
                         }`}>
-                          {formatCurrency(agg.pnl, currency)} ({formatNumber(agg.pnl_pct * 100, 2)}%)
+                          {formatCurrency(agg.pnl, currency)} ({agg.pnl_pct === null ? 'N/A' : `${formatNumber(agg.pnl_pct * 100, 2)}%`})
                         </span>
                       </div>
                     </div>

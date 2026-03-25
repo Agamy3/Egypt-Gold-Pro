@@ -32,10 +32,10 @@ interface Holding {
 
 interface CalculatedHolding extends Holding {
   invested_value_selected: number;
-  current_value_selected: number;
+  current_value_selected: number | null;
   current_price_per_gram_selected: number | null;
-  pnl: number;
-  pnl_pct: number;
+  pnl: number | null;
+  pnl_pct: number | null;
   status: 'WIN' | 'LOSS' | 'FLAT';
 }
 
@@ -45,9 +45,9 @@ interface KaratAggregate {
   avg_buy_price_per_gram_selected: number;
   current_price_per_gram_selected: number | null;
   invested_value_selected: number;
-  current_value_selected: number;
-  pnl: number;
-  pnl_pct: number;
+  current_value_selected: number | null;
+  pnl: number | null;
+  pnl_pct: number | null;
   status: 'WIN' | 'LOSS' | 'FLAT';
 }
 
@@ -68,9 +68,9 @@ async function calculateHoldings(
   karatAggregates: KaratAggregate[];
   totals: {
     invested_value_selected: number;
-    current_value_selected: number;
-    pnl: number;
-    pnl_pct: number;
+    current_value_selected: number | null;
+    pnl: number | null;
+    pnl_pct: number | null;
     status: 'WIN' | 'LOSS' | 'FLAT';
   };
   referenceUnavailable: boolean;
@@ -85,9 +85,10 @@ async function calculateHoldings(
     const currentPriceCanonical = marketMedians?.[karatKey] as number | null;
 
     // Convert to selected currency
-    const currentPriceSelected = currentPriceCanonical && fxRates
-      ? convertMoney(currentPriceCanonical, canonicalCurrency, currency, fxRates)
-      : null;
+    const currentPriceSelected =
+      typeof currentPriceCanonical === 'number' && isFinite(currentPriceCanonical) && currentPriceCanonical > 0 && fxRates
+        ? convertMoney(currentPriceCanonical, canonicalCurrency, currency, fxRates)
+        : null;
 
     // Convert purchase price to selected currency
     const purchasePriceSelected = fxRates
@@ -95,9 +96,12 @@ async function calculateHoldings(
       : holding.purchase_price_per_gram; // Fallback if no FX
 
     const investedValueSelected = holding.grams * (purchasePriceSelected || holding.purchase_price_per_gram);
-    const currentValueSelected = currentPriceSelected ? holding.grams * currentPriceSelected : 0;
-    const pnl = currentValueSelected - investedValueSelected;
-    const pnlPct = investedValueSelected > 0 ? pnl / investedValueSelected : 0;
+    const currentValueSelected =
+      typeof currentPriceSelected === 'number' && isFinite(currentPriceSelected) && currentPriceSelected > 0
+        ? holding.grams * currentPriceSelected
+        : null;
+    const pnl = currentValueSelected !== null ? currentValueSelected - investedValueSelected : null;
+    const pnlPct = currentValueSelected !== null && investedValueSelected > 0 ? pnl! / investedValueSelected : null;
 
     return {
       ...holding,
@@ -106,7 +110,7 @@ async function calculateHoldings(
       current_price_per_gram_selected: currentPriceSelected,
       pnl,
       pnl_pct: pnlPct,
-      status: calculateStatus(pnlPct),
+      status: pnlPct !== null ? calculateStatus(pnlPct) : 'FLAT',
     };
   });
 
@@ -124,13 +128,17 @@ async function calculateHoldings(
 
     const karatKey = `market${karat}Buy` as keyof typeof marketMedians;
     const currentPriceCanonical = marketMedians?.[karatKey] as number | null;
-    const currentPriceSelected = currentPriceCanonical && fxRates
-      ? convertMoney(currentPriceCanonical, canonicalCurrency, currency, fxRates)
-      : null;
+    const currentPriceSelected =
+      typeof currentPriceCanonical === 'number' && isFinite(currentPriceCanonical) && currentPriceCanonical > 0 && fxRates
+        ? convertMoney(currentPriceCanonical, canonicalCurrency, currency, fxRates)
+        : null;
 
-    const currentValue = currentPriceSelected ? totalGrams * currentPriceSelected : 0;
-    const pnl = currentValue - totalInvested;
-    const pnlPct = totalInvested > 0 ? pnl / totalInvested : 0;
+    const currentValue =
+      typeof currentPriceSelected === 'number' && isFinite(currentPriceSelected) && currentPriceSelected > 0
+        ? totalGrams * currentPriceSelected
+        : null;
+    const pnl = currentValue !== null ? currentValue - totalInvested : null;
+    const pnlPct = currentValue !== null && totalInvested > 0 ? pnl! / totalInvested : null;
 
     return {
       karat,
@@ -141,15 +149,18 @@ async function calculateHoldings(
       current_value_selected: currentValue,
       pnl,
       pnl_pct: pnlPct,
-      status: calculateStatus(pnlPct),
+      status: pnlPct !== null ? calculateStatus(pnlPct) : 'FLAT',
     };
   });
 
   // Calculate totals
   const totalInvested = calculatedHoldings.reduce((sum, h) => sum + h.invested_value_selected, 0);
-  const totalCurrent = calculatedHoldings.reduce((sum, h) => sum + h.current_value_selected, 0);
-  const totalPnl = totalCurrent - totalInvested;
-  const totalPnlPct = totalInvested > 0 ? totalPnl / totalInvested : 0;
+  const hasMissingCurrent = calculatedHoldings.some((h) => h.current_value_selected === null);
+  const totalCurrent = hasMissingCurrent
+    ? null
+    : calculatedHoldings.reduce((sum, h) => sum + (h.current_value_selected ?? 0), 0);
+  const totalPnl = totalCurrent !== null ? totalCurrent - totalInvested : null;
+  const totalPnlPct = totalCurrent !== null && totalInvested > 0 ? totalPnl! / totalInvested : null;
 
   return {
     calculatedHoldings,
@@ -159,7 +170,7 @@ async function calculateHoldings(
       current_value_selected: totalCurrent,
       pnl: totalPnl,
       pnl_pct: totalPnlPct,
-      status: calculateStatus(totalPnlPct),
+      status: totalPnlPct !== null ? calculateStatus(totalPnlPct) : 'FLAT',
     },
     referenceUnavailable,
   };
@@ -205,7 +216,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch market data and FX rates
-    const marketMediansResult = await getMarketMedians(country, true, 60);
+    // Match homepage market source mode/window to avoid divergence in current prices.
+    const marketMediansResult = await getMarketMedians(country, false, 120);
     const fxRates = await getMultiCurrencyRates();
 
     const result = await calculateHoldings(

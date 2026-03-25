@@ -20,10 +20,10 @@ interface Holding {
   created_at: string;
   updated_at: string;
   invested_value_selected: number;
-  current_value_selected: number;
+  current_value_selected: number | null;
   current_price_per_gram_selected: number | null;
-  pnl: number;
-  pnl_pct: number;
+  pnl: number | null;
+  pnl_pct: number | null;
   status: 'WIN' | 'LOSS' | 'FLAT';
 }
 
@@ -277,7 +277,7 @@ export default function PortfolioTable({ holdings, currency, country, lang, onRe
                       holding.status === 'WIN' ? 'text-green-400' :
                       holding.status === 'LOSS' ? 'text-red-400' : 'text-gray-300'
                     }`}>
-                      {formatCurrency(holding.pnl, currency)} ({formatNumber(holding.pnl_pct * 100, 2)}%)
+                      {formatCurrency(holding.pnl, currency)} ({holding.pnl_pct === null ? 'N/A' : `${formatNumber(holding.pnl_pct * 100, 2)}%`})
                     </td>
                     <td className="py-3 px-4">
                       <button
