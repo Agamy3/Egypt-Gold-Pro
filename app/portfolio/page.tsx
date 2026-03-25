@@ -212,7 +212,7 @@ function PortfolioContent() {
                       <h3 className="text-sm font-semibold text-gray-300">
                         {agg.karat}k
                       </h3>
-                      {Math.abs(agg.pnl_pct) >= 0.05 && (
+                      {agg.pnl_pct !== null && Math.abs(agg.pnl_pct) >= 0.05 && (
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${
                           agg.status === 'WIN' ? 'bg-green-600 text-white' :
                           agg.status === 'LOSS' ? 'bg-red-600 text-white' : 'bg-gray-600 text-gray-200'
