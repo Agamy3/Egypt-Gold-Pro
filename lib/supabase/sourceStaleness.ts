@@ -126,6 +126,14 @@ export async function isSourceStale(
       .maybeSingle();
 
     if (error || !data) {
+      console.log('[Staleness] stale=true (missing row or query error):', {
+        country,
+        source,
+        karat,
+        staleAfterMs,
+        hasData: !!data,
+        error: error?.message || null,
+      });
       return true; // Never seen before = stale
     }
 
@@ -133,8 +141,31 @@ export async function isSourceStale(
     const lastOkTimestamp = typeof data.last_ok_timestamp === 'string'
       ? new Date(data.last_ok_timestamp).getTime()
       : (typeof data.last_ok_timestamp === 'number' ? data.last_ok_timestamp : 0);
+    if (!isFinite(lastOkTimestamp) || lastOkTimestamp <= 0) {
+      console.log('[Staleness] stale=true (invalid timestamp):', {
+        country,
+        source,
+        karat,
+        staleAfterMs,
+        lastOkTimestampRaw: data.last_ok_timestamp,
+        parsedMs: lastOkTimestamp,
+      });
+      return true;
+    }
     const age = Date.now() - lastOkTimestamp;
-    return age > staleAfterMs;
+    const stale = age > staleAfterMs;
+    console.log('[Staleness] decision:', {
+      country,
+      source,
+      karat,
+      staleAfterMs,
+      lastOkTimestampRaw: data.last_ok_timestamp,
+      parsedMs: lastOkTimestamp,
+      ageMs: age,
+      stale,
+      reason: stale ? 'age_exceeds_threshold' : 'fresh_within_threshold',
+    });
+    return stale;
   } catch (error) {
     console.error('[Supabase] Error checking source staleness:', error);
     return true; // On error, assume stale

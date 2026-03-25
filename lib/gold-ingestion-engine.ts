@@ -78,7 +78,17 @@ async function updateStaleness(source: string, karat: number, price: number, cou
   }
   
   try {
-    await updateSourceStaleness(country, source, karat as 14 | 18 | 21 | 22 | 24, now, price);
+    const updateResult = await updateSourceStaleness(country, source, karat as 14 | 18 | 21 | 22 | 24, now, price);
+    if (!updateResult.ok) {
+      console.warn('[Ingestion] Staleness update failed:', {
+        source,
+        karat,
+        country,
+        price,
+        timestampMs: now,
+        reason: updateResult.error || 'unknown',
+      });
+    }
   } catch (error) {
     console.error(`[Supabase] Failed to update staleness for ${source}/${karat} (${country}):`, error);
     // Continue - staleness update failure shouldn't block ingestion
@@ -649,12 +659,23 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
             },
           });
           
-          if ((wideResult.ok && wideResult.inserted && wideResult.inserted > 0) ||
-              (normResult.ok && normResult.inserted && normResult.inserted > 0)) {
+          const sourceWriteAccepted = wideResult.ok || normResult.ok;
+          if (sourceWriteAccepted) {
             sourcesWritten++;
-            console.log(`[Ingestion] Wrote snapshot for ${sourceResult.source}: wide=${wideResult.inserted || 0}, norm=${normResult.inserted || 0} row(s)`);
+            console.log(`[Ingestion] Wrote snapshot for ${sourceResult.source}: wide=${wideResult.inserted || 0}, norm=${normResult.inserted || 0} row(s)`, {
+              source: sourceResult.source,
+              accepted: true,
+              reason: (wideResult.inserted || normResult.inserted) ? 'inserted_rows' : 'ok_zero_rows_idempotent_or_dedup',
+              wideOk: wideResult.ok,
+              wideInserted: wideResult.inserted || 0,
+              normOk: normResult.ok,
+              normInserted: normResult.inserted || 0,
+            });
           } else {
-            console.error(`[Ingestion] Write failed for ${sourceResult.source}:`, {
+            console.error(`[Ingestion] Write skipped/failed for ${sourceResult.source}:`, {
+              source: sourceResult.source,
+              accepted: false,
+              reason: 'both_writers_not_ok',
               wide: wideResult.error,
               norm: normResult.error,
             });
@@ -667,7 +688,17 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
           });
         }
       } else {
-        console.log(`[Ingestion] Skipping ${sourceResult.source}: valid=${sourceResult.valid}, hasValidPrices=${hasValidPrices}`);
+        console.log(`[Ingestion] Skipping ${sourceResult.source}: valid=${sourceResult.valid}, hasValidPrices=${hasValidPrices}`, {
+          source: sourceResult.source,
+          accepted: false,
+          reason: 'no_effective_prices',
+          prices: {
+            24: getEffectivePrice(sourceResult, 24),
+            21: getEffectivePrice(sourceResult, 21),
+            18: getEffectivePrice(sourceResult, 18),
+            14: getEffectivePrice(sourceResult, 14),
+          },
+        });
       }
     } catch (e) {
       console.error(`[Ingestion] Failed to store snapshot for ${sourceResult.source}:`, e);
@@ -721,25 +752,37 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
           },
         });
         
-        if ((wideAggregatedResult.ok && wideAggregatedResult.inserted && wideAggregatedResult.inserted > 0) ||
-            (normAggregatedResult.ok && normAggregatedResult.inserted && normAggregatedResult.inserted > 0)) {
+        const aggregatedWriteAccepted = wideAggregatedResult.ok || normAggregatedResult.ok;
+        if (aggregatedWriteAccepted) {
           aggregatedWritten = true;
           console.log(`[Ingestion] ✓ Wrote aggregated snapshot: wide=${wideAggregatedResult.inserted || 0}, norm=${normAggregatedResult.inserted || 0} row(s)`, {
             prices24: price24,
             prices21: price21,
             prices18: price18,
             prices14: price14,
+            accepted: true,
+            reason: (wideAggregatedResult.inserted || normAggregatedResult.inserted) ? 'inserted_rows' : 'ok_zero_rows_idempotent_or_dedup',
+            wideOk: wideAggregatedResult.ok,
+            wideInserted: wideAggregatedResult.inserted || 0,
+            normOk: normAggregatedResult.ok,
+            normInserted: normAggregatedResult.inserted || 0,
           });
         } else {
           const errorMsg = normAggregatedResult.error || wideAggregatedResult.error || 'Unknown error';
           console.error(`[Ingestion] ✗ Failed to write aggregated snapshot:`, errorMsg, {
             attempted: { price14, price18, price21, price24 },
+            accepted: false,
+            reason: 'both_writers_not_ok',
             wide: wideAggregatedResult.error,
             norm: normAggregatedResult.error,
           });
         }
       } else {
-        console.warn('[Ingestion] Skipping aggregated snapshot write: all prices are null', result.our_price_buy);
+        console.warn('[Ingestion] Skipping aggregated snapshot write: all prices are null', {
+          accepted: false,
+          reason: 'all_aggregated_prices_null',
+          prices: result.our_price_buy,
+        });
       }
     } catch (aggregatedError) {
       console.error(`[Ingestion] Exception writing aggregated snapshot:`, aggregatedError);
