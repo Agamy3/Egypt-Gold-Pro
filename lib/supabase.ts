@@ -1,33 +1,45 @@
 /**
  * Unified Supabase Database Client
- * 
+ *
  * Replaces SQLite (lib/db.ts) with Supabase Postgres
  * Uses service role key for server-side operations
  * Preserves existing table and column names from SQLite schema
  */
 
 import 'server-only';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-// Read credentials from .env.local
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+function getSupabaseConfig() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!supabaseUrl) {
-  throw new Error('Missing Supabase URL: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL must be set in .env.local');
+  if (!supabaseUrl) {
+    throw new Error(
+      'Missing Supabase URL: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL must be set in .env.local'
+    );
+  }
+  if (!supabaseServiceRoleKey) {
+    throw new Error(
+      'Missing Supabase service role key: SUPABASE_SERVICE_ROLE_KEY must be set in .env.local'
+    );
+  }
+  return { supabaseUrl, supabaseServiceRoleKey };
 }
 
-if (!supabaseServiceRoleKey) {
-  throw new Error('Missing Supabase service role key: SUPABASE_SERVICE_ROLE_KEY must be set in .env.local');
-}
+let supabase: SupabaseClient | null = null;
 
-// Create Supabase client with service role (bypasses RLS)
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+function getSupabase(): SupabaseClient {
+  if (!supabase) {
+    const { supabaseUrl, supabaseServiceRoleKey } = getSupabaseConfig();
+    supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+  }
+  return supabase;
+}
 
 /**
  * Database client interface matching SQLite usage patterns
@@ -78,7 +90,7 @@ const db = {
    * Use this for all database operations
    */
   get supabase() {
-    return supabase;
+    return getSupabase();
   },
 };
 

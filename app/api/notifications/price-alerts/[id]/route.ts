@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getServerUser();
@@ -21,7 +21,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const ruleId = parseInt(params.id, 10);
+    const { id: idParam } = await params;
+    const ruleId = parseInt(idParam, 10);
     if (isNaN(ruleId)) {
       return NextResponse.json({ error: 'Invalid rule ID' }, { status: 400 });
     }
@@ -90,7 +91,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getServerUser();
@@ -98,7 +99,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const ruleId = parseInt(params.id, 10);
+    const { id: idParam } = await params;
+    const ruleId = parseInt(idParam, 10);
     if (isNaN(ruleId)) {
       return NextResponse.json({ error: 'Invalid rule ID' }, { status: 400 });
     }

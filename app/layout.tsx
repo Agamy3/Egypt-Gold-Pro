@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import './globals.css'
 import { LanguageProvider } from '@/components/LanguageProvider'
@@ -12,12 +12,18 @@ import AdsterraPopunder from '@/components/ads/AdsterraPopunder'
 // Get site URL from environment or use fallback
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com'
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: 'cover',
+  themeColor: '#0b1220',
+}
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: 'EgyptGold Pro - Egyptian Gold Market Analysis',
   description: 'Educational decision-support for the Egyptian gold market',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover',
-  themeColor: '#0b1220',
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
@@ -66,9 +72,7 @@ export default function RootLayout({
   return (
     <html lang="en" dir="ltr">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover" />
         <link rel="manifest" href="/manifest.webmanifest" />
-        <meta name="theme-color" content="#0b1220" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="EgyptGold Pro" />

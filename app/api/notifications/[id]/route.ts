@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getServerUser();
@@ -21,6 +21,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const { id } = await params;
     const body = await request.json();
     const { direction, threshold_value, currency, enabled } = body;
 
@@ -35,7 +36,7 @@ export async function PUT(
     const { data, error } = await supabase
       .from('user_notifications')
       .update(updateData)
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('user_id', user.id)
       .select()
       .single();
@@ -53,7 +54,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getServerUser();
@@ -61,11 +62,12 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const { id } = await params;
     const supabase = await createServerSupabaseClient();
     const { error } = await supabase
       .from('user_notifications')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('user_id', user.id);
 
     if (error) {

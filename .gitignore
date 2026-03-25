@@ -4,6 +4,7 @@
 /node_modules
 /.pkg
 /.next
+/.open-next
 /out
 
 # production
@@ -21,6 +22,7 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+.dev.vars
 
 # vercel
 .vercel

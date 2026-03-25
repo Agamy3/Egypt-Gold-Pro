@@ -11,13 +11,17 @@ function withNoStoreHeaders(res: NextResponse) {
   return res;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const user = await getServerUser();
     if (!user) return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }));
 
     const supabase = await createServerSupabaseClient();
-    const idNum = Number(params.id);
+    const { id: idStr } = await params;
+    const idNum = Number(idStr);
     if (!Number.isFinite(idNum)) return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Invalid id' }, { status: 400 }));
 
     const { data, error } = await supabase
@@ -37,14 +41,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   // Mark as read
   try {
     const user = await getServerUser();
     if (!user) return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }));
 
     const supabase = await createServerSupabaseClient();
-    const idNum = Number(params.id);
+    const { id: idStr } = await params;
+    const idNum = Number(idStr);
     if (!Number.isFinite(idNum)) return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Invalid id' }, { status: 400 }));
 
     const { error } = await supabase

@@ -140,17 +140,18 @@ export default function ForecastChart({ minutes = 120 }: ForecastChartProps) {
               borderRadius: '6px',
               padding: '8px',
             }}
-            formatter={(value: any, name?: string) => {
-              if (name === 'ounceUsd') {
+            formatter={(value: any, name?: string | number) => {
+              const key = name != null ? String(name) : '';
+              if (key === 'ounceUsd') {
                 return [`$${value?.toFixed(2) ?? 'N/A'}`, 'Global Ounce (XAU/USD)'];
               }
-              if (name === 'market21Buy') {
+              if (key === 'market21Buy') {
                 return [`${value?.toFixed(0) ?? 'N/A'} EGP`, 'Market 21k'];
               }
-              if (name === 'fair21') {
+              if (key === 'fair21') {
                 return [`${value?.toFixed(0) ?? 'N/A'} EGP`, 'Fair 21k'];
               }
-              if (name === 'variancePct') {
+              if (key === 'variancePct') {
                 return [`${value ?? 'N/A'}%`, 'Variance'];
               }
               return [value, name];

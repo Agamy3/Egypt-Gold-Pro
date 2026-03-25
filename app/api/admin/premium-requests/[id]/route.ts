@@ -10,14 +10,18 @@ import { createServerClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const status = await getUserStatus();
     if (!status.isAdmin) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 403 });
     }
 
-    const id = parseInt(params.id, 10);
+    const { id: idParam } = await params;
+    const id = parseInt(idParam, 10);
     if (isNaN(id)) {
       return NextResponse.json({ ok: false, error: 'Invalid request ID' }, { status: 400 });
     }

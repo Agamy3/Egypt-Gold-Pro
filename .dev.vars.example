@@ -1,0 +1,2 @@
+# Copy to .dev.vars for `wrangler dev` / preview. Supabase vars are set in Cloudflare dashboard for production.
+NEXTJS_ENV=development

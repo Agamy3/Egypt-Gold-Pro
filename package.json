@@ -5,6 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "start": "next start",
     "lint": "next lint",
     "test": "jest"
@@ -16,27 +20,31 @@
     "@vercel/analytics": "^1.6.1",
     "cheerio": "^1.0.0-rc.12",
     "exceljs": "^4.4.0",
-    "next": "^14.0.0",
+    "next": "15.5.10",
     "nodemailer": "^7.0.12",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "recharts": "^3.6.0",
     "resend": "^6.7.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.17.3",
     "@types/jest": "^29.5.0",
     "@types/node": "^20.10.0",
     "@types/nodemailer": "^6.4.21",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.0",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.10",
     "jest": "^29.7.0",
     "postcss": "^8.4.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.0",
     "ts-jest": "^29.1.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "wrangler": "^4.65.0"
   },
   "engines": {
     "node": ">=20"
