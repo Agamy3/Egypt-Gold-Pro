@@ -852,7 +852,10 @@ export async function GET(request: NextRequest) {
     const isVercelCron = !!request.headers.get('x-vercel-cron');
 
     if (!isVercelCron) {
-      const secret = searchParams.get('secret') || request.headers.get('authorization')?.replace('Bearer ', '');
+      const secret =
+        searchParams.get('secret') ||
+        request.headers.get('x-cron-secret') ||
+        request.headers.get('authorization')?.replace('Bearer ', '');
       if (!expectedSecret || secret !== expectedSecret) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
