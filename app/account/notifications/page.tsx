@@ -680,8 +680,12 @@ function NotificationsContent() {
     }
   };
 
-  const handleGenerateTelegramLink = async () => {
+  const handleConnectTelegram = async () => {
     setError(null);
+    // Open a window immediately from user gesture to reduce popup blocking.
+    const tgWindow = typeof window !== 'undefined'
+      ? window.open('https://t.me', '_blank', 'noopener,noreferrer')
+      : null;
     try {
       const res = await fetch('/api/notifications/telegram/link-token', {
         method: 'POST',
@@ -699,11 +703,19 @@ function NotificationsContent() {
       if (botUsernameRaw && typeof window !== 'undefined') {
         const appLink = `tg://resolve?domain=${encodeURIComponent(botUsernameRaw)}&start=${encodeURIComponent(token)}`;
         const webLink = json.botLink ? String(json.botLink) : `https://t.me/${botUsernameRaw}?start=${encodeURIComponent(token)}`;
-        // Try to open Telegram app first; fallback to web bot link.
-        window.location.href = appLink;
-        setTimeout(() => {
+        // Try app deep-link, then fallback/update opened tab to web start-link.
+        try {
+          window.location.assign(appLink);
+        } catch {
+          // no-op
+        }
+        if (tgWindow && !tgWindow.closed) {
+          tgWindow.location.href = webLink;
+        } else {
           window.open(webLink, '_blank', 'noopener,noreferrer');
-        }, 600);
+        }
+      } else if (json?.botLink && tgWindow && !tgWindow.closed) {
+        tgWindow.location.href = String(json.botLink);
       }
       setSuccess(
         lang === 'ar'
@@ -711,6 +723,11 @@ function NotificationsContent() {
           : 'Telegram link token generated and bot opened automatically.'
       );
     } catch (err) {
+      try {
+        if (tgWindow && !tgWindow.closed) tgWindow.close();
+      } catch {
+        // ignore
+      }
       setError(err instanceof Error ? err.message : 'Failed to generate Telegram link token');
     }
   };
@@ -998,10 +1015,10 @@ function NotificationsContent() {
                   {!telegramConnection?.connected ? (
                     <button
                       type="button"
-                      onClick={handleGenerateTelegramLink}
+                      onClick={handleConnectTelegram}
                       className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm rounded-md"
                     >
-                      {lang === 'ar' ? 'إنشاء رابط' : 'Generate Link'}
+                      {lang === 'ar' ? 'ربط تيليجرام' : 'Connect Telegram'}
                     </button>
                   ) : (
                     <div className="flex items-center gap-2">
