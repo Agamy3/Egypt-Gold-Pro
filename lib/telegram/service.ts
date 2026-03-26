@@ -336,6 +336,8 @@ export async function sendTelegramSignalToEnabledUsers(args: {
   country: Country;
   local24?: number | null;
   local21?: number | null;
+  fair24Local?: number | null;
+  variancePct?: number | null;
   sourcesCount?: number | null;
   timestampIso?: string;
 }): Promise<{ sent: number; failed: number; errors: string[] }> {
