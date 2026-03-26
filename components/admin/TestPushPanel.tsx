@@ -18,6 +18,7 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
   const [zonePrice, setZonePrice] = useState('4180');
   const [tgMode, setTgMode] = useState<'test' | 'signal'>('signal');
   const [tgPreview, setTgPreview] = useState<any>(null);
+  const [tgDryRun, setTgDryRun] = useState(true);
 
   const handleTestPush = async () => {
     setLoading(true);
@@ -94,6 +95,7 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
         body: JSON.stringify({
           target,
           mode: tgMode,
+          dryRun: tgDryRun,
           priceUsd: isFinite(price) ? price : undefined,
           action: price >= 5200 ? 'SELL' : 'BUY',
         }),
@@ -103,7 +105,9 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
       setTgPreview(json.preview || null);
       setMessage({
         type: 'success',
-        text: `Telegram sent to ${json.sent} user(s). ${json.failed > 0 ? `${json.failed} failed.` : ''}`,
+        text: json.dryRun
+          ? `Telegram dry run ready for ${json.recipients} recipient(s).`
+          : `Telegram sent to ${json.sent} user(s). ${json.failed > 0 ? `${json.failed} failed.` : ''}`,
       });
       await handleTelegramStats();
     } catch (e) {
@@ -195,13 +199,21 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
               className="px-3 py-2 rounded-md text-sm bg-gray-800 text-gray-200 border border-gray-700 w-40"
               placeholder="XAU/USD"
             />
+            <label className="text-xs text-gray-300 inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={tgDryRun}
+                onChange={(e) => setTgDryRun(e.target.checked)}
+              />
+              Dry run
+            </label>
             <button
               type="button"
               onClick={handleTestTelegram}
               disabled={tgLoading}
               className="px-4 py-2 rounded-md text-sm font-semibold bg-emerald-700 text-white hover:bg-emerald-600 disabled:opacity-50"
             >
-              {tgLoading ? 'Sending...' : 'Send test Telegram'}
+              {tgLoading ? 'Sending...' : (tgDryRun ? 'Preview Telegram' : 'Send test Telegram')}
             </button>
           </div>
           {tgPreview && (

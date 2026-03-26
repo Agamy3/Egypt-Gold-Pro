@@ -41,9 +41,11 @@ export async function POST(req: NextRequest) {
       mode?: 'test' | 'signal';
       priceUsd?: number;
       action?: 'BUY' | 'SELL' | 'HOLD';
+      dryRun?: boolean;
     } | null;
     const target = body?.target || 'me';
     const mode = body?.mode || 'test';
+    const dryRun = !!body?.dryRun;
 
     let query = db.supabase
       .from('user_telegram_connections')
@@ -74,12 +76,18 @@ export async function POST(req: NextRequest) {
         : formatTelegramTestMessage();
 
     for (const row of rows) {
+      if (dryRun) {
+        sent.push({ user_id: String(row.user_id), ok: true });
+        continue;
+      }
       const r = await sendTelegramMessage(String(row.telegram_chat_id), signalText);
       sent.push({ user_id: String(row.user_id), ok: r.success, error: r.error });
     }
 
     return NextResponse.json({
       ok: true,
+      dryRun,
+      recipients: rows.length,
       sent: sent.filter((x) => x.ok).length,
       failed: sent.filter((x) => !x.ok).length,
       results: sent,

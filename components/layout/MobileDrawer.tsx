@@ -18,6 +18,7 @@ export default function MobileDrawer() {
   const pathname = usePathname() || '/';
   const { lang } = useLang();
   const [logoError, setLogoError] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
 
   useEffect(() => {
     // Close drawer on route change
@@ -63,15 +64,21 @@ export default function MobileDrawer() {
     { href: '/account/notifications', labelEn: 'Notifications', labelAr: 'الإشعارات' },
   ];
 
-  if (isAdmin) {
-    navItems.push(
-      { href: '/admin/coupons', labelEn: 'Coupons', labelAr: 'الكوبونات' },
-      { href: '/admin/premium-requests', labelEn: 'Premium Requests', labelAr: 'طلبات المميز' },
-      { href: '/admin/forecast-only', labelEn: 'Forecast Only', labelAr: 'توقع فقط' },
-      { href: '/admin/alpaca-paper', labelEn: 'Alpaca Paper', labelAr: 'ألباكا (تجريبي)' },
-      { href: '/admin/billing', labelEn: 'Billing', labelAr: 'الفوترة' },
-    );
-  }
+  const adminItems: NavItem[] = isAdmin
+    ? [
+        { href: '/admin/source-prices', labelEn: 'Source Prices', labelAr: 'مصادر الأسعار' },
+        { href: '/admin/signals', labelEn: 'Signals', labelAr: 'الإشارات' },
+        { href: '/admin/gold-signals', labelEn: 'Gold Signals', labelAr: 'إشارات الذهب' },
+        { href: '/admin/30s-forecast', labelEn: '30s Forecast', labelAr: 'توقع 30 ثانية' },
+        { href: '/admin/coupons', labelEn: 'Coupons', labelAr: 'الكوبونات' },
+        { href: '/admin/premium-requests', labelEn: 'Premium Requests', labelAr: 'طلبات المميز' },
+        { href: '/admin/forecast-only', labelEn: 'Forecast Only', labelAr: 'توقع فقط' },
+        { href: '/admin/alpaca-paper', labelEn: 'Alpaca Paper', labelAr: 'ألباكا (تجريبي)' },
+        { href: '/admin/news', labelEn: 'News Admin', labelAr: 'إدارة الأخبار' },
+        { href: '/admin/notifications', labelEn: 'Notifications', labelAr: 'الإشعارات' },
+        { href: '/admin/billing', labelEn: 'Billing', labelAr: 'الفوترة' },
+      ]
+    : [];
 
   return (
     <div className="md:hidden">
@@ -141,6 +148,36 @@ export default function MobileDrawer() {
                   </Link>
                 );
               })}
+
+              {isAdmin && (
+                <div className="pt-3 mt-3 border-t border-gray-800">
+                  <button
+                    type="button"
+                    onClick={() => setAdminOpen((v) => !v)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-semibold text-gold-300 hover:bg-gray-900"
+                  >
+                    <span>{lang === 'ar' ? 'الإدارة' : 'Admin'}</span>
+                    <span className={`transition-transform ${adminOpen ? 'rotate-90' : ''}`}>▶</span>
+                  </button>
+                  {adminOpen && adminItems.map((item) => {
+                    const active =
+                      pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`block px-3 py-2 rounded-md text-sm font-medium ${
+                          active
+                            ? 'bg-gray-900 text-gold-300'
+                            : 'text-gray-300 hover:bg-gray-900 hover:text-gold-200'
+                        }`}
+                      >
+                        {lang === 'ar' ? item.labelAr : item.labelEn}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </nav>
           </div>
         </div>

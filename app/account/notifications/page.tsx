@@ -694,7 +694,22 @@ function NotificationsContent() {
         expiresAt: String(json.expiresAt),
         botLink: json.botLink ? String(json.botLink) : null,
       });
-      setSuccess(lang === 'ar' ? 'تم إنشاء رابط ربط تيليجرام. افتح البوت وأرسل /start <token>' : 'Telegram link token generated. Open the bot and send /start <token>.');
+      const token = String(json.token);
+      const botUsernameRaw = String(json.botUsername || '').replace('@', '').trim();
+      if (botUsernameRaw && typeof window !== 'undefined') {
+        const appLink = `tg://resolve?domain=${encodeURIComponent(botUsernameRaw)}&start=${encodeURIComponent(token)}`;
+        const webLink = json.botLink ? String(json.botLink) : `https://t.me/${botUsernameRaw}?start=${encodeURIComponent(token)}`;
+        // Try to open Telegram app first; fallback to web bot link.
+        window.location.href = appLink;
+        setTimeout(() => {
+          window.open(webLink, '_blank', 'noopener,noreferrer');
+        }, 600);
+      }
+      setSuccess(
+        lang === 'ar'
+          ? 'تم إنشاء رابط تيليجرام وفتح البوت تلقائياً.'
+          : 'Telegram link token generated and bot opened automatically.'
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate Telegram link token');
     }

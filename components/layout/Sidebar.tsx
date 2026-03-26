@@ -22,6 +22,7 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(true); // Default to collapsed (hidden)
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentCountry, setCurrentCountry] = useState<string | null>(null);
+  const [adminOpen, setAdminOpen] = useState(true);
 
   // Load collapsed state from localStorage on mount and listen for changes
   useEffect(() => {
@@ -136,6 +137,30 @@ export default function Sidebar() {
   const adminItems: NavItem[] = isAdmin
     ? [
         {
+          href: '/admin/source-prices',
+          labelEn: 'Source Prices',
+          labelAr: 'مصادر الأسعار',
+          icon: <span>🧭</span>,
+        },
+        {
+          href: '/admin/signals',
+          labelEn: 'Signals',
+          labelAr: 'الإشارات',
+          icon: <span>📡</span>,
+        },
+        {
+          href: '/admin/gold-signals',
+          labelEn: 'Gold Signals',
+          labelAr: 'إشارات الذهب',
+          icon: <span>🥇</span>,
+        },
+        {
+          href: '/admin/30s-forecast',
+          labelEn: '30s Forecast',
+          labelAr: 'توقع 30 ثانية',
+          icon: <span>⏱️</span>,
+        },
+        {
           href: '/admin/coupons',
           labelEn: 'Coupons',
           labelAr: 'الكوبونات',
@@ -180,8 +205,6 @@ export default function Sidebar() {
       ]
     : [];
 
-  const allItems = [...navItems, ...adminItems];
-
   // Don't render if collapsed (hidden)
   if (collapsed) {
     return null;
@@ -195,8 +218,8 @@ export default function Sidebar() {
       )}
     >
       <div className="flex-1 flex flex-col py-4">
-        <nav className="flex-1 px-2 space-y-1">
-          {allItems.map((item) => {
+        <nav className="flex-1 px-2 space-y-1 overflow-y-auto">
+          {navItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             // Preserve country parameter when navigating to /news
             const href = item.href === '/news' && currentCountry
@@ -220,6 +243,43 @@ export default function Sidebar() {
               </Link>
             );
           })}
+
+          {isAdmin && (
+            <div className="pt-3 mt-3 border-t border-gray-800">
+              <button
+                type="button"
+                onClick={() => setAdminOpen((v) => !v)}
+                className="w-full flex items-center justify-between px-2 py-2 rounded-md text-sm font-semibold text-gold-300 hover:bg-gray-900"
+              >
+                <span>{lang === 'ar' ? 'الإدارة' : 'Admin'}</span>
+                <span className={classNames('transition-transform', adminOpen ? 'rotate-90' : '')}>▶</span>
+              </button>
+              {adminOpen && (
+                <div className="mt-1 space-y-1">
+                  {adminItems.map((item) => {
+                    const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={classNames(
+                          'group flex items-center gap-3 px-2 py-2 rounded-md text-sm font-medium transition-colors',
+                          active
+                            ? 'bg-gray-900 text-gold-300'
+                            : 'text-gray-300 hover:bg-gray-900 hover:text-gold-200'
+                        )}
+                      >
+                        <span className="text-base flex-shrink-0">{item.icon}</span>
+                        <span className="truncate">
+                          {lang === 'ar' ? item.labelAr : item.labelEn}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
       </div>
     </aside>
