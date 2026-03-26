@@ -40,7 +40,7 @@ async function handler(req: NextRequest) {
       if (createdSignal) {
         const { data: latestEg } = await supabase
           .from('gold_signals')
-          .select('xau_usd, final_confidence0to1, cycle_started_at, meta')
+          .select('xau_usd, final_confidence0to1, variance_pct, cycle_started_at, meta')
           .eq('country', 'EG')
           .eq('cycle_key', result.cycleKey)
           .order('cycle_started_at', { ascending: false })
@@ -57,6 +57,8 @@ async function handler(req: NextRequest) {
             country: 'EG',
             local24: typeof meta.eg_local_24_latest === 'number' ? meta.eg_local_24_latest : null,
             local21: typeof meta.eg_local_21_latest === 'number' ? meta.eg_local_21_latest : null,
+            variancePct: typeof (latestEg as any)?.variance_pct === 'number' ? Number((latestEg as any).variance_pct) : null,
+            fair24Local: typeof meta.eg_fair_24_latest === 'number' ? meta.eg_fair_24_latest : null,
             timestampIso: (latestEg as any)?.cycle_started_at || new Date().toISOString(),
           });
         }

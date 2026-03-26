@@ -87,9 +87,9 @@ function appBaseUrl(): string {
 
 function actionLink(type: 'signals' | 'gold' | 'portfolio' | 'home'): string {
   const base = appBaseUrl();
-  if (type === 'signals') return `${base}/signals`;
-  if (type === 'gold') return `${base}/gold`;
-  if (type === 'portfolio') return `${base}/portfolio`;
+  if (type === 'signals') return base;
+  if (type === 'gold') return base;
+  if (type === 'portfolio') return base;
   return base;
 }
 
@@ -158,6 +158,8 @@ export function formatTelegramSignalAlert(args: {
   country: Country;
   local24?: number | null;
   local21?: number | null;
+  fair24Local?: number | null;
+  variancePct?: number | null;
   sourcesCount?: number | null;
   timestampIso?: string;
 }): string {
@@ -219,6 +221,26 @@ export function formatTelegramSignalAlert(args: {
   if (typeof args.sourcesCount === 'number' && isFinite(args.sourcesCount))
     extra.push(lang === 'ar' ? `عدد المصادر: ${args.sourcesCount}` : `Sources: ${args.sourcesCount}`);
   if (args.timestampIso) extra.push(lang === 'ar' ? `الوقت: ${new Date(args.timestampIso).toISOString()}` : `Time: ${new Date(args.timestampIso).toISOString()}`);
+
+  if (
+    typeof args.local24 === 'number' &&
+    isFinite(args.local24) &&
+    typeof args.fair24Local === 'number' &&
+    isFinite(args.fair24Local) &&
+    args.fair24Local > 0
+  ) {
+    const delta = args.local24 - args.fair24Local;
+    const pct = typeof args.variancePct === 'number' && isFinite(args.variancePct) ? args.variancePct : delta / args.fair24Local;
+    if (lang === 'ar') {
+      extra.push(
+        `⚠️ تنويه: فرق السوق الحالي بين 24k العالمي والمحلي = ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${(pct * 100).toFixed(2)}%)`
+      );
+    } else {
+      extra.push(
+        `⚠️ Disclaimer: Current market variance between global 24k and local 24k = ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${(pct * 100).toFixed(2)}%)`
+      );
+    }
+  }
 
   const link = actionLink('signals');
   const base = `${actionIcon} ${headline}

@@ -503,6 +503,8 @@ export async function runGoldSignalsCron(input: { supabase: SupabaseClient; now?
         eg_local_24_prev: eg24.prevPrice,
         eg_local_24_prev_at: eg24.prevAt,
         eg_local_24_pct: eg24.pct,
+        eg_usd_egp: usdEgp,
+        eg_fair_24_latest: fair24Egp,
         eg_local_18_latest: eg18.latestPrice,
         eg_local_18_latest_at: eg18.latestAt,
         eg_local_18_prev: eg18.prevPrice,

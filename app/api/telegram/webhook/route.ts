@@ -164,8 +164,8 @@ export async function POST(req: NextRequest) {
     await sendTelegramMessage(
       chatId,
       conn?.language === 'ar'
-        ? `آخر إشارة متاحة في التطبيق.\n${appBaseUrl()}/signals`
-        : `Latest signal is available in the app.\n${appBaseUrl()}/signals`
+        ? `آخر إشارة متاحة في الصفحة الرئيسية.\n${appBaseUrl()}`
+        : `Latest signal is available on the homepage.\n${appBaseUrl()}`
     );
     return NextResponse.json({ ok: true, latest_signal: true });
   }
@@ -175,8 +175,8 @@ export async function POST(req: NextRequest) {
     await sendTelegramMessage(
       chatId,
       conn?.language === 'ar'
-        ? `الأسعار الحية:\n${appBaseUrl()}/gold`
-        : `Live prices:\n${appBaseUrl()}/gold`
+        ? `الأسعار الحية في الصفحة الرئيسية:\n${appBaseUrl()}`
+        : `Live prices are on the homepage:\n${appBaseUrl()}`
     );
     return NextResponse.json({ ok: true, prices: true });
   }
