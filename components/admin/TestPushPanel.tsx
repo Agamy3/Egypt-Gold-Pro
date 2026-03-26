@@ -134,6 +134,24 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
     }
   };
 
+  const handleSetTelegramWebhook = async () => {
+    setTgWebhookLoading(true);
+    try {
+      const res = await fetch('/api/admin/notifications/telegram-webhook-info', {
+        method: 'POST',
+        cache: 'no-store',
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Failed (${res.status})`);
+      setTgWebhookInfo(json.webhook || null);
+      setMessage({ type: 'success', text: `Webhook set to ${json.webhookUrl}` });
+    } catch (e) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : 'Failed to set webhook' });
+    } finally {
+      setTgWebhookLoading(false);
+    }
+  };
+
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-950 p-6">
       <h2 className="text-lg font-semibold text-gray-100 mb-4">Notifications Debug</h2>
@@ -182,6 +200,14 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
             className="px-4 py-2 rounded-md text-sm font-semibold bg-indigo-700 text-white hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {tgWebhookLoading ? 'Loading...' : 'Webhook info'}
+          </button>
+          <button
+            type="button"
+            onClick={handleSetTelegramWebhook}
+            disabled={loading || debugLoading || tgWebhookLoading}
+            className="px-4 py-2 rounded-md text-sm font-semibold bg-fuchsia-700 text-white hover:bg-fuchsia-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {tgWebhookLoading ? 'Loading...' : 'Set webhook'}
           </button>
         </div>
         {message && (
