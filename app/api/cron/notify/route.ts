@@ -110,6 +110,14 @@ async function sendTelegramForRule(args: {
   body: string;
   url: string | null;
   telegramText?: string;
+  priceAlertData?: {
+    country: Country;
+    karat: number;
+    price: number;
+    currency: string;
+    directionLabel: 'UP' | 'DOWN';
+    pctChange: number;
+  };
 }) {
   if (!args.rule?.channel_telegram) return;
   const conn = await getEnabledTelegramConnection(args.userId);
@@ -117,7 +125,18 @@ async function sendTelegramForRule(args: {
     await logDelivery(args.userId, args.ruleId, 'telegram', 'skipped', { reason: 'no_telegram_connection' }, null);
     return;
   }
-  const text = args.telegramText || `${args.title}\n${args.body}${args.url ? `\n${args.url}` : ''}`;
+  if (args.priceAlertData && conn.alertPriceEnabled === false) {
+    await logDelivery(args.userId, args.ruleId, 'telegram', 'skipped', { reason: 'telegram_price_alerts_disabled' }, null);
+    return;
+  }
+  const text = args.telegramText
+    || (args.priceAlertData
+      ? formatTelegramPriceAlert({
+          ...args.priceAlertData,
+          lang: conn.language || 'en',
+          preferredKarat: conn.preferredKarat || '21',
+        })
+      : `${args.title}\n${args.body}${args.url ? `\n${args.url}` : ''}`);
   const tg = await sendTelegramMessage(conn.chatId, text);
   await logDelivery(
     args.userId,
@@ -313,14 +332,14 @@ async function checkPriceMoves() {
             title,
             body,
             url,
-            telegramText: formatTelegramPriceAlert({
+            priceAlertData: {
               country,
               karat,
               price: currentPrice,
               currency: canonicalCurrency,
               directionLabel,
               pctChange: absPctChange,
-            }),
+            },
           });
 
           // Update state

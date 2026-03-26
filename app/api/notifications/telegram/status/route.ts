@@ -12,7 +12,7 @@ export async function GET() {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase
     .from('user_telegram_connections')
-    .select('telegram_chat_id, telegram_username, is_enabled, linked_at')
+    .select('telegram_chat_id, telegram_username, is_enabled, linked_at, language, preferred_karat, alert_signals_enabled, alert_price_enabled')
     .eq('user_id', user.id)
     .maybeSingle();
 
@@ -26,6 +26,10 @@ export async function GET() {
           username: data.telegram_username || null,
           is_enabled: !!data.is_enabled,
           linked_at: data.linked_at || null,
+          language: (data.language || 'en') as 'en' | 'ar',
+          preferred_karat: (data.preferred_karat || '21') as '21' | '24' | 'global',
+          alert_signals_enabled: data.alert_signals_enabled !== false,
+          alert_price_enabled: data.alert_price_enabled !== false,
         }
       : null,
     botUsername: process.env.TELEGRAM_BOT_USERNAME || null,

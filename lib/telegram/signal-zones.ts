@@ -27,21 +27,40 @@ export function getGoldSignalZone(priceUsd: number): GoldSignalZone | null {
   return null;
 }
 
-export function zoneWhyNow(zone: GoldSignalZone): string {
+export function getGoldZone(priceUsd: number): {
+  zone: string;
+  action: string;
+  strength: string;
+  direction: ZoneDirection;
+} | null {
+  const z = getGoldSignalZone(priceUsd);
+  if (!z) return null;
+  return { zone: z.label, action: z.action, strength: z.stars, direction: z.direction };
+}
+
+export function zoneWhyNow(zone: GoldSignalZone, lang: 'en' | 'ar' = 'en'): string {
+  if (lang === 'ar') {
+    if (zone.label === 'Core Buy') return 'الذهب في منطقة تجميع قوية طويلة المدى.';
+    if (zone.label === 'Strong Buy') return 'الذهب في منطقة تجميع قوية وبيعتبر أقل من قيمته حسب التحليل.';
+    if (zone.label === 'Buy') return 'الذهب داخل نطاق مناسب للتجميع التدريجي.';
+    if (zone.label === 'Partial Sell') return 'الذهب وصل لمنطقة مناسبة لجني الأرباح جزئياً.';
+    if (zone.label === 'Strong Sell') return 'الذهب في منطقة مرتفعة وخطر نسبي مقارنة بالتحليل.';
+    return 'السعر داخل نطاق استراتيجي حسب الحدود المعرّفة.';
+  }
   if (zone.label === 'Core Buy') {
-    return 'Price is currently inside the Core Buy zone, which historically represents a strong accumulation area relative to our strategy thresholds.';
+    return 'Gold is in a strong long-term accumulation zone, indicating high confidence for positioning.';
   }
   if (zone.label === 'Strong Buy') {
-    return 'Price is currently inside the Strong Buy zone, indicating deep discount conditions where accumulation may be attractive.';
+    return 'Gold is in a deep accumulation zone, historically considered undervalued relative to our strategy.';
   }
   if (zone.label === 'Buy') {
-    return 'Price is in the Buy zone, meaning it is above deep-discount levels but still within an accumulation range.';
+    return 'Gold remains in an accumulation range where gradual buying is favorable.';
   }
   if (zone.label === 'Partial Sell') {
-    return 'Price is in the Partial Sell zone, which may justify trimming exposure while keeping a core position.';
+    return 'Gold has entered a profit-taking zone where reducing exposure may be reasonable.';
   }
   if (zone.label === 'Strong Sell') {
-    return 'Price has moved into the Strong Sell zone, which suggests elevated levels where reducing exposure may be prudent.';
+    return 'Gold is in a high-risk distribution zone where prices are elevated relative to strategy thresholds.';
   }
   return 'Price is inside a strategy zone based on configured thresholds.';
 }

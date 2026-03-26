@@ -19,6 +19,7 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
   const [tgWebhookInfo, setTgWebhookInfo] = useState<any>(null);
   const [zonePrice, setZonePrice] = useState('4180');
   const [tgMode, setTgMode] = useState<'test' | 'signal'>('signal');
+  const [tgLang, setTgLang] = useState<'en' | 'ar'>('en');
   const [tgPreview, setTgPreview] = useState<any>(null);
   const [tgDryRun, setTgDryRun] = useState(true);
 
@@ -97,6 +98,7 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
         body: JSON.stringify({
           target,
           mode: tgMode,
+          language: tgLang,
           dryRun: tgDryRun,
           priceUsd: isFinite(price) ? price : undefined,
           action: price >= 5200 ? 'SELL' : 'BUY',
@@ -243,6 +245,14 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
               <option value="signal">Signal format (zone-based)</option>
               <option value="test">Simple test</option>
             </select>
+            <select
+              value={tgLang}
+              onChange={(e) => setTgLang(e.target.value as 'en' | 'ar')}
+              className="px-3 py-2 rounded-md text-sm bg-gray-800 text-gray-200 border border-gray-700"
+            >
+              <option value="en">English</option>
+              <option value="ar">العربية</option>
+            </select>
             <input
               type="number"
               value={zonePrice}
@@ -276,6 +286,8 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
             <div className="text-xs text-gray-300 flex flex-wrap items-center gap-2">
               <span className="rounded bg-gray-950/40 px-2 py-1">linked: {tgStats.linkedUsers ?? 0}</span>
               <span className="rounded bg-gray-950/40 px-2 py-1">enabled: {tgStats.enabledUsers ?? 0}</span>
+              <span className="rounded bg-gray-950/40 px-2 py-1">active: {tgStats.activeUsers ?? 0}</span>
+              <span className="rounded bg-gray-950/40 px-2 py-1">failed sends: {tgStats.failedSends ?? 0}</span>
               <span className="rounded bg-gray-950/40 px-2 py-1">latest events: {(tgStats.latestDeliveries || []).length}</span>
             </div>
           )}

@@ -10,9 +10,11 @@ export const revalidate = 0;
 export async function GET() {
   try {
     await requireAdmin();
-    const [{ count: linked }, { count: enabled }, { data: latest }] = await Promise.all([
+    const [{ count: linked }, { count: enabled }, { count: active }, { count: failedSends }, { data: latest }] = await Promise.all([
       db.supabase.from('user_telegram_connections').select('*', { count: 'exact', head: true }),
       db.supabase.from('user_telegram_connections').select('*', { count: 'exact', head: true }).eq('is_enabled', true),
+      db.supabase.from('user_telegram_connections').select('*', { count: 'exact', head: true }).eq('is_enabled', true).or('alert_signals_enabled.eq.true,alert_price_enabled.eq.true'),
+      db.supabase.from('notification_deliveries_log').select('*', { count: 'exact', head: true }).eq('channel', 'telegram').eq('status', 'failed'),
       db.supabase
         .from('notification_deliveries_log')
         .select('status, error, created_at')
@@ -25,6 +27,8 @@ export async function GET() {
       ok: true,
       linkedUsers: linked || 0,
       enabledUsers: enabled || 0,
+      activeUsers: active || 0,
+      failedSends: failedSends || 0,
       latestDeliveries: latest || [],
     });
   } catch (e) {
@@ -41,6 +45,7 @@ export async function POST(req: NextRequest) {
       mode?: 'test' | 'signal';
       priceUsd?: number;
       action?: 'BUY' | 'SELL' | 'HOLD';
+      language?: 'en' | 'ar';
       dryRun?: boolean;
     } | null;
     const target = body?.target || 'me';
@@ -49,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     let query = db.supabase
       .from('user_telegram_connections')
-      .select('user_id, telegram_chat_id, telegram_username, is_enabled')
+      .select('user_id, telegram_chat_id, telegram_username, is_enabled, language, preferred_karat')
       .eq('is_enabled', true);
 
     if (target === 'me') query = query.eq('user_id', user.id);
@@ -64,23 +69,28 @@ export async function POST(req: NextRequest) {
     const sent: Array<{ user_id: string; ok: boolean; error?: string }> = [];
     const price = Number(body?.priceUsd);
     const action = body?.action || 'BUY';
-    const signalText =
-      mode === 'signal' && isFinite(price) && price > 0
-        ? formatTelegramSignalAlert({
-            action,
-            xauUsd: price,
-            confidence: 0.78,
-            country: 'EG',
-            timestampIso: new Date().toISOString(),
-          })
-        : formatTelegramTestMessage();
+    const overrideLang = body?.language;
 
     for (const row of rows) {
+      const lang = overrideLang || ((row as any).language || 'en');
+      const preferredKarat = ((row as any).preferred_karat || '21') as '21' | '24' | 'global';
+      const text =
+        mode === 'signal' && isFinite(price) && price > 0
+          ? formatTelegramSignalAlert({
+              action,
+              xauUsd: price,
+              confidence: 0.78,
+              country: 'EG',
+              timestampIso: new Date().toISOString(),
+              lang,
+              preferredKarat,
+            })
+          : formatTelegramTestMessage(lang);
       if (dryRun) {
         sent.push({ user_id: String(row.user_id), ok: true });
         continue;
       }
-      const r = await sendTelegramMessage(String(row.telegram_chat_id), signalText);
+      const r = await sendTelegramMessage(String(row.telegram_chat_id), text);
       sent.push({ user_id: String(row.user_id), ok: r.success, error: r.error });
     }
 
