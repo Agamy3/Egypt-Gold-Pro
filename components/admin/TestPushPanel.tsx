@@ -15,6 +15,8 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
   const [tgLoading, setTgLoading] = useState(false);
   const [tgStatsLoading, setTgStatsLoading] = useState(false);
   const [tgStats, setTgStats] = useState<any>(null);
+  const [tgWebhookLoading, setTgWebhookLoading] = useState(false);
+  const [tgWebhookInfo, setTgWebhookInfo] = useState<any>(null);
   const [zonePrice, setZonePrice] = useState('4180');
   const [tgMode, setTgMode] = useState<'test' | 'signal'>('signal');
   const [tgPreview, setTgPreview] = useState<any>(null);
@@ -117,6 +119,21 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
     }
   };
 
+  const handleTelegramWebhookInfo = async () => {
+    setTgWebhookLoading(true);
+    try {
+      const res = await fetch('/api/admin/notifications/telegram-webhook-info', { cache: 'no-store' });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Failed (${res.status})`);
+      setTgWebhookInfo(json.webhook || null);
+      setMessage({ type: 'success', text: 'Telegram webhook info loaded.' });
+    } catch (e) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : 'Failed to load webhook info' });
+    } finally {
+      setTgWebhookLoading(false);
+    }
+  };
+
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-950 p-6">
       <h2 className="text-lg font-semibold text-gray-100 mb-4">Notifications Debug</h2>
@@ -157,6 +174,14 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
             className="px-4 py-2 rounded-md text-sm font-semibold bg-sky-700 text-white hover:bg-sky-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {tgStatsLoading ? 'Loading...' : 'Telegram diagnostics'}
+          </button>
+          <button
+            type="button"
+            onClick={handleTelegramWebhookInfo}
+            disabled={loading || debugLoading || tgWebhookLoading}
+            className="px-4 py-2 rounded-md text-sm font-semibold bg-indigo-700 text-white hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {tgWebhookLoading ? 'Loading...' : 'Webhook info'}
           </button>
         </div>
         {message && (
@@ -227,6 +252,11 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
               <span className="rounded bg-gray-950/40 px-2 py-1">enabled: {tgStats.enabledUsers ?? 0}</span>
               <span className="rounded bg-gray-950/40 px-2 py-1">latest events: {(tgStats.latestDeliveries || []).length}</span>
             </div>
+          )}
+          {tgWebhookInfo && (
+            <pre className="max-h-64 overflow-auto rounded bg-black/40 p-3 text-xs text-gray-200">
+              {JSON.stringify(tgWebhookInfo, null, 2)}
+            </pre>
           )}
         </div>
 

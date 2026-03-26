@@ -10,9 +10,9 @@ export async function POST() {
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
   const { token, expiresAt } = await createLinkTokenForUser(user.id, 15);
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME?.replace('@', '') || '';
+  const botUsername = (process.env.TELEGRAM_BOT_USERNAME?.replace('@', '') || 'EgyptGoldProbot').trim();
   const startCommand = `/start ${token}`;
-  const botLink = botUsername ? `https://t.me/${botUsername}?start=${token}` : null;
+  const botLink = `https://t.me/${botUsername}?start=${token}`;
 
   return NextResponse.json({
     ok: true,
@@ -20,6 +20,6 @@ export async function POST() {
     expiresAt,
     startCommand,
     botLink,
-    botUsername: process.env.TELEGRAM_BOT_USERNAME || null,
+    botUsername,
   });
 }
