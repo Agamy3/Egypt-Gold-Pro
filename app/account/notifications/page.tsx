@@ -24,6 +24,7 @@ interface NotificationRule {
   channel_inapp: boolean;
   channel_push: boolean;
   channel_email: boolean;
+  channel_telegram?: boolean;
   created_at: string;
 }
 
@@ -55,6 +56,8 @@ function NotificationsContent() {
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const [telegramConnection, setTelegramConnection] = useState<{ connected: boolean; chat_id?: string | null; username?: string | null; is_enabled?: boolean } | null>(null);
+  const [telegramLink, setTelegramLink] = useState<{ token: string; expiresAt: string; botLink: string | null } | null>(null);
 
   // Watchlist state
   const [watchlist, setWatchlist] = useState<Record<Country, boolean>>({
@@ -90,6 +93,7 @@ function NotificationsContent() {
     channel_inapp: true,
     channel_push: false,
     channel_email: false,
+    channel_telegram: false,
   });
 
   useEffect(() => {
@@ -102,6 +106,7 @@ function NotificationsContent() {
     fetchLocalPctRule();
     fetchSilverPctRule();
     fetchInAppNotifications();
+    fetchTelegramStatus();
     startActivityPing();
   }, []);
 
@@ -390,6 +395,24 @@ function NotificationsContent() {
     }
   };
 
+  const fetchTelegramStatus = async () => {
+    try {
+      const res = await fetch('/api/notifications/telegram/status', { cache: 'no-store' });
+      const json = (await res.json().catch(() => null)) as any;
+      if (res.ok && json?.ok) {
+        const c = json.connection || null;
+        setTelegramConnection({
+          connected: !!json.connected,
+          chat_id: c?.chat_id || null,
+          username: c?.username || null,
+          is_enabled: c?.is_enabled ?? false,
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching telegram status:', err);
+    }
+  };
+
   const handleSaveProfile = async () => {
     setSaving(true);
     setError(null);
@@ -657,6 +680,57 @@ function NotificationsContent() {
     }
   };
 
+  const handleGenerateTelegramLink = async () => {
+    setError(null);
+    try {
+      const res = await fetch('/api/notifications/telegram/link-token', {
+        method: 'POST',
+        cache: 'no-store',
+      });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Failed to generate Telegram link token');
+      setTelegramLink({
+        token: String(json.token),
+        expiresAt: String(json.expiresAt),
+        botLink: json.botLink ? String(json.botLink) : null,
+      });
+      setSuccess(lang === 'ar' ? 'تم إنشاء رابط ربط تيليجرام. افتح البوت وأرسل /start <token>' : 'Telegram link token generated. Open the bot and send /start <token>.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate Telegram link token');
+    }
+  };
+
+  const handleToggleTelegram = async () => {
+    if (!telegramConnection?.connected) return;
+    setError(null);
+    const enabled = !telegramConnection.is_enabled;
+    try {
+      const res = await fetch('/api/notifications/telegram/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Failed to update Telegram settings');
+      await fetchTelegramStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update Telegram settings');
+    }
+  };
+
+  const handleDisconnectTelegram = async () => {
+    setError(null);
+    try {
+      const res = await fetch('/api/notifications/telegram/disconnect', { method: 'POST' });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Failed to disconnect Telegram');
+      setTelegramLink(null);
+      await fetchTelegramStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to disconnect Telegram');
+    }
+  };
+
   const handleCreateRule = async () => {
     setSaving(true);
     setError(null);
@@ -667,6 +741,7 @@ function NotificationsContent() {
         channel_inapp: ruleForm.channel_inapp,
         channel_push: ruleForm.channel_push,
         channel_email: ruleForm.channel_email,
+        channel_telegram: ruleForm.channel_telegram,
       };
 
       if (ruleForm.country) payload.country = ruleForm.country;
@@ -890,6 +965,65 @@ function NotificationsContent() {
                   </span>
                 )}
               </div>
+
+              <div className="border-t border-gray-800 pt-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-300">
+                      {lang === 'ar' ? 'ربط تيليجرام' : 'Connect Telegram'}
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {telegramConnection?.connected
+                        ? (telegramConnection.username
+                          ? `@${telegramConnection.username}`
+                          : (lang === 'ar' ? 'تم الربط بدون اسم مستخدم' : 'Connected (no username)'))
+                        : (lang === 'ar' ? 'اربط حسابك لتلقي التنبيهات مجاناً عبر Telegram' : 'Link your account to receive free Telegram alerts')}
+                    </p>
+                  </div>
+                  {!telegramConnection?.connected ? (
+                    <button
+                      type="button"
+                      onClick={handleGenerateTelegramLink}
+                      className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm rounded-md"
+                    >
+                      {lang === 'ar' ? 'إنشاء رابط' : 'Generate Link'}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleToggleTelegram}
+                        className={`px-3 py-2 text-sm rounded-md ${telegramConnection.is_enabled ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+                      >
+                        {telegramConnection.is_enabled ? (lang === 'ar' ? 'تعطيل' : 'Disable') : (lang === 'ar' ? 'تفعيل' : 'Enable')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDisconnectTelegram}
+                        className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-md"
+                      >
+                        {lang === 'ar' ? 'فصل' : 'Disconnect'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {telegramLink && (
+                  <div className="mt-3 rounded-md border border-gray-700 bg-gray-950 p-3 text-xs text-gray-300 space-y-2">
+                    {telegramLink.botLink ? (
+                      <div>
+                        <a href={telegramLink.botLink} target="_blank" rel="noreferrer" className="text-sky-300 hover:text-sky-200 underline">
+                          {lang === 'ar' ? 'افتح البوت مباشرة' : 'Open bot directly'}
+                        </a>
+                      </div>
+                    ) : null}
+                    <div className="font-mono">/start {telegramLink.token}</div>
+                    <div className="text-gray-500">
+                      {lang === 'ar' ? 'ينتهي الرمز في:' : 'Token expires at:'} {new Date(telegramLink.expiresAt).toLocaleString()}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 
@@ -936,6 +1070,7 @@ function NotificationsContent() {
                     channel_inapp: true,
                     channel_push: false,
                     channel_email: false,
+                    channel_telegram: false,
                   });
                   setShowAddRule(true);
                 }}
@@ -1050,6 +1185,16 @@ function NotificationsContent() {
                         {rule.threshold_value && `${rule.threshold_value} `}
                         {rule.pct_threshold && `${(rule.pct_threshold * 100).toFixed(1)}% `}
                         {rule.one_time && (lang === 'ar' ? '(مرة واحدة)' : '(one-time)')}
+                      </div>
+                      <div className="text-[11px] text-gray-500 mt-1">
+                        {[
+                          rule.channel_inapp ? 'In-App' : null,
+                          rule.channel_push ? 'Push' : null,
+                          rule.channel_email ? 'Email' : null,
+                          rule.channel_telegram ? 'Telegram' : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1311,6 +1456,25 @@ function NotificationsContent() {
                 <span
                   className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                     ruleForm.channel_push ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-300">
+                Telegram
+              </label>
+              <button
+                type="button"
+                onClick={() => setRuleForm({ ...ruleForm, channel_telegram: !ruleForm.channel_telegram })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  ruleForm.channel_telegram ? 'bg-blue-600' : 'bg-gray-700'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    ruleForm.channel_telegram ? 'translate-x-6' : 'translate-x-1'
                   }`}
                 />
               </button>

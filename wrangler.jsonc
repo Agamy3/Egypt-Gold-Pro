@@ -66,7 +66,9 @@
     "VAPID_SUBJECT": "mailto:admin@egyptgoldpro.com",
     "SUPABASE_URL": "https://hsjiowivfwfyprqvjarc.supabase.co",
     "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzamlvd2l2ZndmeXBycXZqYXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3MzAzNTIsImV4cCI6MjA4MjMwNjM1Mn0.SvOrWAJ_S-XVyS4J7PKR4ORVaZ-411Kr338pWha0NBM",
-    "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzamlvd2l2ZndmeXBycXZqYXJjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjczMDM1MiwiZXhwIjoyMDgyMzA2MzUyfQ.Cp4b2u-TodAJh5q-1Mc4TzPlOcLeqnMgkoSQpYekUPI"
+    "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzamlvd2l2ZndmeXBycXZqYXJjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjczMDM1MiwiZXhwIjoyMDgyMzA2MzUyfQ.Cp4b2u-TodAJh5q-1Mc4TzPlOcLeqnMgkoSQpYekUPI",
+    "TELEGRAM_BOT_TOKEN": "",
+    "TELEGRAM_BOT_USERNAME": ""
 
   }
 }

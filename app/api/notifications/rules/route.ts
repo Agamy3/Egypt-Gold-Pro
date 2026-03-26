@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
       channel_inapp = true,
       channel_push = false,
       channel_email = false,
+      channel_telegram = false,
       schedule_cron,
     } = body;
 
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
         channel_inapp,
         channel_push,
         channel_email,
+        channel_telegram,
         schedule_cron: schedule_cron || null,
       })
       .select()

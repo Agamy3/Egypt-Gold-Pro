@@ -18,6 +18,7 @@ import { getMarketMedians } from '@/lib/supabase/queries-norm';
 import { getCountryCurrency, getMultiCurrencyRates, convertMoney } from '@/lib/fx-multi';
 import { sendPushNotification } from '@/lib/push';
 import { sendNotificationEmail, formatPriceChangeEmail } from '@/lib/email/resend';
+import { formatTelegramPriceAlert, getEnabledTelegramConnection, sendTelegramMessage } from '@/lib/telegram/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,7 +84,7 @@ async function createInAppNotification(
 async function logDelivery(
   userId: string,
   ruleId: number | null,
-  channel: 'inapp' | 'push' | 'email',
+  channel: 'inapp' | 'push' | 'email' | 'telegram',
   status: 'sent' | 'failed' | 'skipped',
   payload: any,
   error: string | null = null
@@ -99,6 +100,33 @@ async function logDelivery(
       payload,
       error,
     });
+}
+
+async function sendTelegramForRule(args: {
+  rule: any;
+  userId: string;
+  ruleId: number | null;
+  title: string;
+  body: string;
+  url: string | null;
+  telegramText?: string;
+}) {
+  if (!args.rule?.channel_telegram) return;
+  const conn = await getEnabledTelegramConnection(args.userId);
+  if (!conn.chatId) {
+    await logDelivery(args.userId, args.ruleId, 'telegram', 'skipped', { reason: 'no_telegram_connection' }, null);
+    return;
+  }
+  const text = args.telegramText || `${args.title}\n${args.body}${args.url ? `\n${args.url}` : ''}`;
+  const tg = await sendTelegramMessage(conn.chatId, text);
+  await logDelivery(
+    args.userId,
+    args.ruleId,
+    'telegram',
+    tg.success ? 'sent' : 'failed',
+    { chat_id: conn.chatId, username: conn.username },
+    tg.error || null
+  );
 }
 
 /**
@@ -278,6 +306,23 @@ async function checkPriceMoves() {
             await logDelivery(rule.user_id, rule.id, 'email', emailResult.success ? 'sent' : 'failed', { email: profile.email }, emailResult.error || null);
           }
 
+          await sendTelegramForRule({
+            rule,
+            userId: rule.user_id,
+            ruleId: rule.id,
+            title,
+            body,
+            url,
+            telegramText: formatTelegramPriceAlert({
+              country,
+              karat,
+              price: currentPrice,
+              currency: canonicalCurrency,
+              directionLabel,
+              pctChange: absPctChange,
+            }),
+          });
+
           // Update state
           await supabase
             .from('notification_state')
@@ -406,6 +451,15 @@ async function checkThresholdCrossings() {
         });
         await logDelivery(rule.user_id, rule.id, 'email', emailResult.success ? 'sent' : 'failed', { email: profile.email }, emailResult.error || null);
       }
+
+      await sendTelegramForRule({
+        rule,
+        userId: rule.user_id,
+        ruleId: rule.id,
+        title,
+        body,
+        url,
+      });
 
       // Disable rule (one-time)
       await supabase
@@ -557,6 +611,15 @@ async function checkPortfolioPL() {
           await logDelivery(rule.user_id, rule.id, 'email', emailResult.success ? 'sent' : 'failed', { email: profile.email }, emailResult.error || null);
         }
 
+        await sendTelegramForRule({
+          rule,
+          userId: rule.user_id,
+          ruleId: rule.id,
+          title,
+          body,
+          url,
+        });
+
         // Disable rule (one-time)
         await supabase
           .from('notification_rules')
@@ -659,6 +722,15 @@ async function sendDailySummaries() {
         });
         await logDelivery(rule.user_id, rule.id, 'email', emailResult.success ? 'sent' : 'failed', { email: profile.email }, emailResult.error || null);
       }
+
+      await sendTelegramForRule({
+        rule,
+        userId: rule.user_id,
+        ruleId: rule.id,
+        title,
+        body: summaryText,
+        url,
+      });
     }
   }
 }
@@ -753,6 +825,15 @@ async function sendWeeklyOutlooks() {
         });
         await logDelivery(rule.user_id, rule.id, 'email', emailResult.success ? 'sent' : 'failed', { email: profile.email }, emailResult.error || null);
       }
+
+      await sendTelegramForRule({
+        rule,
+        userId: rule.user_id,
+        ruleId: rule.id,
+        title,
+        body: outlookText,
+        url,
+      });
     }
   }
 }
@@ -838,6 +919,15 @@ async function checkMacroEvents() {
         });
         await logDelivery(rule.user_id, rule.id, 'email', emailResult.success ? 'sent' : 'failed', { email: profile.email }, emailResult.error || null);
       }
+
+      await sendTelegramForRule({
+        rule,
+        userId: rule.user_id,
+        ruleId: rule.id,
+        title,
+        body,
+        url,
+      });
     }
   }
 }

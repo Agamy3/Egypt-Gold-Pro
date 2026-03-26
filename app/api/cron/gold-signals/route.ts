@@ -4,6 +4,7 @@ import { getServerClient } from '@/lib/supabase/server';
 import { runGoldSignalsCron } from '@/lib/signals/goldCronEngine';
 import { getProvidedCronSecret, isCronRequestAuthorized } from '@/lib/cron/cronSecret';
 import { tryAdvisoryLock, advisoryUnlock } from '@/lib/db/advisoryLock';
+import { sendTelegramSignalToEnabledUsers } from '@/lib/telegram/service';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -34,6 +35,33 @@ async function handler(req: NextRequest) {
 
   try {
     const result = await runGoldSignalsCron({ supabase, now: new Date() });
+    if (result.ok) {
+      const createdSignal = result.created.find((s) => s.country === 'EG' && (s.action === 'BUY' || s.action === 'SELL'));
+      if (createdSignal) {
+        const { data: latestEg } = await supabase
+          .from('gold_signals')
+          .select('xau_usd, final_confidence0to1, cycle_started_at, meta')
+          .eq('country', 'EG')
+          .eq('cycle_key', result.cycleKey)
+          .order('cycle_started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const xauUsd = latestEg ? Number((latestEg as any).xau_usd) : NaN;
+        const conf = latestEg ? Number((latestEg as any).final_confidence0to1 ?? createdSignal.confidence) : createdSignal.confidence;
+        const meta = (latestEg as any)?.meta || {};
+        if (isFinite(xauUsd) && xauUsd > 0) {
+          await sendTelegramSignalToEnabledUsers({
+            action: createdSignal.action,
+            xauUsd,
+            confidence: isFinite(conf) ? conf : null,
+            country: 'EG',
+            local24: typeof meta.eg_local_24_latest === 'number' ? meta.eg_local_24_latest : null,
+            local21: typeof meta.eg_local_21_latest === 'number' ? meta.eg_local_21_latest : null,
+            timestampIso: (latestEg as any)?.cycle_started_at || new Date().toISOString(),
+          });
+        }
+      }
+    }
     const status = result.ok ? 200 : (result.status ?? 500);
     return withNoStoreHeaders(NextResponse.json(result, { status }));
   } finally {
