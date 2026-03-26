@@ -18,6 +18,27 @@ type TelegramConnectionPrefs = {
   alert_price_enabled: boolean;
 };
 
+function cairoNowInfo(now: Date): { dayKey: string; hour: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || '';
+  return {
+    dayKey: `${get('year')}-${get('month')}-${get('day')}`,
+    hour: Number(get('hour') || '0'),
+  };
+}
+
+function cairoDayKey(dateLike: string | Date): string {
+  const d = typeof dateLike === 'string' ? new Date(dateLike) : dateLike;
+  return cairoNowInfo(d).dayKey;
+}
+
 function botToken(): string | null {
   const t = process.env.TELEGRAM_BOT_TOKEN?.trim();
   return t && t.length > 10 ? t : null;
@@ -233,11 +254,11 @@ export function formatTelegramSignalAlert(args: {
     const pct = typeof args.variancePct === 'number' && isFinite(args.variancePct) ? args.variancePct : delta / args.fair24Local;
     if (lang === 'ar') {
       extra.push(
-        `⚠️ تنويه: فرق السوق الحالي بين 24k العالمي والمحلي = ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${(pct * 100).toFixed(2)}%)`
+        `⚠️ تنويه: فرق السوق وقت الإشارة بين 24k العالمي والمحلي = ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${(pct * 100).toFixed(2)}%)`
       );
     } else {
       extra.push(
-        `⚠️ Disclaimer: Current market variance between global 24k and local 24k = ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${(pct * 100).toFixed(2)}%)`
+        `⚠️ Disclaimer: Market variance at signal time between global 24k and local 24k = ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${(pct * 100).toFixed(2)}%)`
       );
     }
   }
@@ -349,10 +370,66 @@ export async function sendTelegramSignalToEnabledUsers(args: {
   const rows = (data || []).filter((r: any) => r.alert_signals_enabled !== false);
   if (rows.length === 0) return { sent: 0, failed: 0, errors: [] };
 
+  const now = args.timestampIso ? new Date(args.timestampIso) : new Date();
+  const nowCairo = cairoNowInfo(now);
+  const currentZoneLabel = getGoldSignalZone(args.xauUsd)?.label || 'No zone';
+  const userIds = rows.map((r: any) => String(r.user_id));
+
+  const { data: recentDeliveries } = await db.supabase
+    .from('notification_deliveries_log')
+    .select('user_id, created_at, payload, status, channel')
+    .in('user_id', userIds)
+    .eq('channel', 'telegram')
+    .eq('status', 'sent')
+    .order('created_at', { ascending: false })
+    .limit(5000);
+
+  const latestSignalByUser = new Map<string, { createdAt: string; zoneLabel: string | null }>();
+  for (const row of (recentDeliveries || []) as any[]) {
+    const uid = String(row.user_id);
+    if (latestSignalByUser.has(uid)) continue;
+    const payload = (row.payload || {}) as Record<string, unknown>;
+    if (payload.source !== 'gold_signals') continue;
+    latestSignalByUser.set(uid, {
+      createdAt: String(row.created_at),
+      zoneLabel: typeof payload.zone_label === 'string' ? payload.zone_label : null,
+    });
+  }
+
   let sent = 0;
   let failed = 0;
   const errors: string[] = [];
   for (const row of rows as any[]) {
+    const uid = String(row.user_id);
+    const last = latestSignalByUser.get(uid);
+    const zoneChanged = !last?.zoneLabel || last.zoneLabel !== currentZoneLabel;
+    const sentToday = !!last && cairoDayKey(last.createdAt) === nowCairo.dayKey;
+    const inDailyWindow = nowCairo.hour === 11;
+    const shouldSend = zoneChanged || (inDailyWindow && !sentToday);
+    if (!shouldSend) {
+      try {
+        await db.supabase.from('notification_deliveries_log').insert({
+          user_id: row.user_id,
+          rule_id: null,
+          channel: 'telegram',
+          status: 'skipped',
+          payload: {
+            source: 'gold_signals',
+            action: args.action,
+            xau_usd: args.xauUsd,
+            zone_label: currentZoneLabel,
+            reason: 'daily_limit_zone_unchanged',
+            cairo_day: nowCairo.dayKey,
+            cairo_hour: nowCairo.hour,
+          },
+          error: null,
+        });
+      } catch {
+        // best-effort logging only
+      }
+      continue;
+    }
+
     const text = formatTelegramSignalAlert({
       ...args,
       lang: (row.language || 'en') as TelegramLang,
@@ -370,7 +447,7 @@ export async function sendTelegramSignalToEnabledUsers(args: {
         rule_id: null,
         channel: 'telegram',
         status: res.success ? 'sent' : 'failed',
-        payload: { source: 'gold_signals', xau_usd: args.xauUsd, action: args.action },
+        payload: { source: 'gold_signals', xau_usd: args.xauUsd, action: args.action, zone_label: currentZoneLabel },
         error: res.error || null,
       });
     } catch {

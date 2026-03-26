@@ -5,6 +5,8 @@ import { runGoldSignalsCron } from '@/lib/signals/goldCronEngine';
 import { getProvidedCronSecret, isCronRequestAuthorized } from '@/lib/cron/cronSecret';
 import { tryAdvisoryLock, advisoryUnlock } from '@/lib/db/advisoryLock';
 import { sendTelegramSignalToEnabledUsers } from '@/lib/telegram/service';
+import { getMarketMedians } from '@/lib/supabase/queries-norm';
+import { getMultiCurrencyRates } from '@/lib/fx-multi';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -50,15 +52,38 @@ async function handler(req: NextRequest) {
         const conf = latestEg ? Number((latestEg as any).final_confidence0to1 ?? createdSignal.confidence) : createdSignal.confidence;
         const meta = (latestEg as any)?.meta || {};
         if (isFinite(xauUsd) && xauUsd > 0) {
+          // Keep Telegram variance aligned with homepage/current market snapshot values.
+          const [liveMarket, fx] = await Promise.all([
+            getMarketMedians('EG', false, 120).catch(() => null),
+            getMultiCurrencyRates().catch(() => null),
+          ]);
+          const liveLocal24 = liveMarket?.prices?.market24Buy ?? null;
+          const liveLocal21 = liveMarket?.prices?.market21Buy ?? null;
+          const usdEgp = fx?.usd_egp ?? null;
+          const fair24Live =
+            usdEgp && Number.isFinite(usdEgp) && usdEgp > 0
+              ? (xauUsd / 31.1034768) * usdEgp
+              : null;
+          const varianceLive =
+            fair24Live && Number.isFinite(fair24Live) && fair24Live > 0 && liveLocal24 && Number.isFinite(liveLocal24) && liveLocal24 > 0
+              ? (liveLocal24 - fair24Live) / fair24Live
+              : null;
+
           await sendTelegramSignalToEnabledUsers({
             action: createdSignal.action,
             xauUsd,
             confidence: isFinite(conf) ? conf : null,
             country: 'EG',
-            local24: typeof meta.eg_local_24_latest === 'number' ? meta.eg_local_24_latest : null,
-            local21: typeof meta.eg_local_21_latest === 'number' ? meta.eg_local_21_latest : null,
-            variancePct: typeof (latestEg as any)?.variance_pct === 'number' ? Number((latestEg as any).variance_pct) : null,
-            fair24Local: typeof meta.eg_fair_24_latest === 'number' ? meta.eg_fair_24_latest : null,
+            local24: typeof liveLocal24 === 'number' ? liveLocal24 : (typeof meta.eg_local_24_latest === 'number' ? meta.eg_local_24_latest : null),
+            local21: typeof liveLocal21 === 'number' ? liveLocal21 : (typeof meta.eg_local_21_latest === 'number' ? meta.eg_local_21_latest : null),
+            variancePct:
+              typeof varianceLive === 'number'
+                ? varianceLive
+                : (typeof (latestEg as any)?.variance_pct === 'number' ? Number((latestEg as any).variance_pct) : null),
+            fair24Local:
+              typeof fair24Live === 'number'
+                ? fair24Live
+                : (typeof meta.eg_fair_24_latest === 'number' ? meta.eg_fair_24_latest : null),
             timestampIso: (latestEg as any)?.cycle_started_at || new Date().toISOString(),
           });
         }
