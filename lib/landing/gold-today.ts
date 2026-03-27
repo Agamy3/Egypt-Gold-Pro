@@ -2,7 +2,7 @@ import 'server-only';
 
 import db from '@/lib/supabase';
 import { getMarketMedians } from '@/lib/supabase/queries-norm';
-import { getGoldSignalZone } from '@/lib/telegram/signal-zones';
+import { getGoldSignalZone, zoneWhyNow } from '@/lib/telegram/signal-zones';
 
 type Karat = 18 | 21 | 24;
 type SignalAction = 'BUY' | 'SELL' | 'HOLD';
