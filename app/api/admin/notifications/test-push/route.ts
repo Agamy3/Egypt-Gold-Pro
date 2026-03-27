@@ -9,13 +9,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, adminErrorToResponse, AdminAuthError } from '@/lib/auth/admin';
 import { sendPushNotification, type PushSubscription } from '@/lib/push';
 import db from '@/lib/supabase';
+import { ADMIN_BROADCAST_ALL_LIMIT } from '@/lib/admin/broadcast-limits';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 interface TestPushRequest {
-  target: 'me' | 'all' | 'subscriptionId';
+  target: 'me' | 'all' | 'subscriptionId' | 'user';
   subscriptionId?: string;
+  /** When target is user, send to all push_subscriptions for this Supabase user id */
+  userId?: string;
   title?: string;
   body?: string;
   url?: string;
@@ -72,11 +75,18 @@ export async function POST(request: NextRequest) {
     }
 
     const body: TestPushRequest = await request.json();
-    const { target, subscriptionId, title, body: bodyText, url } = body;
+    const { target, subscriptionId, userId: targetUserId, title, body: bodyText, url } = body;
 
     // Validate target
-    if (!['me', 'all', 'subscriptionId'].includes(target)) {
-      return NextResponse.json({ ok: false, error: 'Invalid target. Must be "me", "all", or "subscriptionId"' }, { status: 400 });
+    if (!['me', 'all', 'subscriptionId', 'user'].includes(target)) {
+      return NextResponse.json(
+        { ok: false, error: 'Invalid target. Must be "me", "all", "user", or "subscriptionId"' },
+        { status: 400 }
+      );
+    }
+
+    if (target === 'user' && !targetUserId?.trim()) {
+      return NextResponse.json({ ok: false, error: 'userId is required when target is "user"' }, { status: 400 });
     }
 
     // Rate limiting
@@ -154,12 +164,12 @@ export async function POST(request: NextRequest) {
 
       subscriptions = [data];
     } else if (target === 'all') {
-      // Admin-only: send to latest 50 subscriptions
+      // Admin-only: send to latest N subscriptions
       const { data, error } = await db.supabase
         .from(tableName)
         .select('id, user_id, endpoint, p256dh, auth')
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(ADMIN_BROADCAST_ALL_LIMIT);
 
       if (error) {
         console.error('[TEST-PUSH] Error fetching subscriptions:', error);
@@ -170,6 +180,26 @@ export async function POST(request: NextRequest) {
       
       if (subscriptions.length === 0) {
         return NextResponse.json({ ok: false, error: 'No active subscriptions found' }, { status: 404 });
+      }
+    } else if (target === 'user') {
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('id, user_id, endpoint, p256dh, auth')
+        .eq('user_id', targetUserId!.trim())
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('[TEST-PUSH] Error fetching user subscriptions:', error);
+        return NextResponse.json({ ok: false, error: 'Failed to fetch subscriptions' }, { status: 500 });
+      }
+
+      subscriptions = data || [];
+
+      if (subscriptions.length === 0) {
+        return NextResponse.json(
+          { ok: false, error: 'No push subscriptions found for that user.' },
+          { status: 404 }
+        );
       }
     }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ADMIN_BROADCAST_ALL_LIMIT } from '@/lib/admin/broadcast-limits';
 
 interface TestPushPanelProps {
   defaultTarget?: 'me' | 'all';
@@ -22,6 +23,19 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
   const [tgLang, setTgLang] = useState<'en' | 'ar'>('en');
   const [tgPreview, setTgPreview] = useState<any>(null);
   const [tgDryRun, setTgDryRun] = useState(true);
+
+  const [customLoading, setCustomLoading] = useState(false);
+  const [customTarget, setCustomTarget] = useState<'me' | 'all' | 'user'>('me');
+  const [customUserId, setCustomUserId] = useState('');
+  const [customChanTelegram, setCustomChanTelegram] = useState(true);
+  const [customChanPush, setCustomChanPush] = useState(false);
+  const [customChanInApp, setCustomChanInApp] = useState(false);
+  const [customInAppDryRun, setCustomInAppDryRun] = useState(true);
+  const [customTgText, setCustomTgText] = useState('');
+  const [customPushTitle, setCustomPushTitle] = useState('EgyptGold Pro');
+  const [customPushBody, setCustomPushBody] = useState('');
+  const [customPushUrl, setCustomPushUrl] = useState('/');
+  const [customTgDryRun, setCustomTgDryRun] = useState(true);
 
   const handleTestPush = async () => {
     setLoading(true);
@@ -136,6 +150,118 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
     }
   };
 
+  const handleCustomBroadcast = async () => {
+    if (!customChanTelegram && !customChanPush && !customChanInApp) {
+      setMessage({ type: 'error', text: 'Select at least one channel: Telegram, Push, or In-app.' });
+      return;
+    }
+    if (customChanTelegram && !customTgText.trim()) {
+      setMessage({ type: 'error', text: 'Enter Telegram message text (or turn off Telegram).' });
+      return;
+    }
+    if ((customChanPush || customChanInApp) && !customPushBody.trim()) {
+      setMessage({
+        type: 'error',
+        text: 'Enter notification body (used for push and/or in-app), or turn those channels off.',
+      });
+      return;
+    }
+    if ((customChanPush || customChanInApp) && !customPushTitle.trim()) {
+      setMessage({ type: 'error', text: 'Enter a title for push and/or in-app.' });
+      return;
+    }
+    if (customTarget === 'user' && !customUserId.trim()) {
+      setMessage({ type: 'error', text: 'Enter the target user id (UUID) for “Specific user”.' });
+      return;
+    }
+    const needsConfirm =
+      customTarget === 'all' &&
+      ((customChanTelegram && !customTgDryRun) ||
+        customChanPush ||
+        (customChanInApp && !customInAppDryRun));
+    if (needsConfirm) {
+      const ok = window.confirm(
+        `Send this broadcast to all targets (up to ${ADMIN_BROADCAST_ALL_LIMIT} per channel)? This cannot be undone.`
+      );
+      if (!ok) return;
+    }
+
+    setCustomLoading(true);
+    setMessage(null);
+    const lines: string[] = [];
+    try {
+      if (customChanTelegram) {
+        const res = await fetch('/api/admin/notifications/test-telegram', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            target: customTarget,
+            userId: customTarget === 'user' ? customUserId.trim() : undefined,
+            mode: 'custom',
+            customText: customTgText.trim(),
+            dryRun: customTgDryRun,
+          }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error || `Telegram failed (${res.status})`);
+        lines.push(
+          customTgDryRun
+            ? `Telegram: dry run, ${json.recipients} recipient(s).`
+            : `Telegram: sent ${json.sent}, failed ${json.failed}.`
+        );
+        await handleTelegramStats();
+      }
+
+      if (customChanPush) {
+        const res = await fetch('/api/admin/notifications/test-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            target: customTarget,
+            userId: customTarget === 'user' ? customUserId.trim() : undefined,
+            title: customPushTitle.trim() || 'EgyptGold Pro',
+            body: customPushBody.trim(),
+            url: customPushUrl.trim() || '/',
+          }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error || `Push failed (${res.status})`);
+        lines.push(`Push: sent ${json.sent}, failed ${json.failed}.`);
+      }
+
+      if (customChanInApp) {
+        const res = await fetch('/api/admin/notifications/broadcast-inapp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            target: customTarget,
+            userId: customTarget === 'user' ? customUserId.trim() : undefined,
+            title: customPushTitle.trim() || 'EgyptGold Pro',
+            body: customPushBody.trim(),
+            url: customPushUrl.trim() || '/',
+            dryRun: customInAppDryRun,
+          }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error || `In-app failed (${res.status})`);
+        lines.push(
+          customInAppDryRun
+            ? `In-app: dry run, ${json.recipients} profile(s).`
+            : `In-app: created ${json.inserted} notification(s).`
+        );
+      }
+
+      setMessage({ type: 'success', text: lines.join(' ') });
+    } catch (e) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : 'Custom broadcast failed' });
+    } finally {
+      setCustomLoading(false);
+    }
+  };
+
   const handleSetTelegramWebhook = async () => {
     setTgWebhookLoading(true);
     try {
@@ -167,7 +293,7 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
             disabled={loading || debugLoading}
           >
             <option value="me">Me</option>
-            <option value="all">All (latest 50)</option>
+            <option value="all">All (latest {ADMIN_BROADCAST_ALL_LIMIT})</option>
           </select>
           <button
             type="button"
@@ -296,6 +422,149 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
               {JSON.stringify(tgWebhookInfo, null, 2)}
             </pre>
           )}
+        </div>
+
+        <div className="rounded-lg border border-amber-900/60 bg-amber-950/20 p-4 space-y-3">
+          <div className="text-sm font-semibold text-amber-100">Custom admin broadcast</div>
+          <p className="text-xs text-gray-400">
+            Send your own Telegram text, web push, and/or in-app notification. “All” uses up to{' '}
+            {ADMIN_BROADCAST_ALL_LIMIT} enabled Telegram rows, push subscriptions, or user profiles per channel.
+            Custom Telegram broadcasts to “all” are rate-limited to once per 5 minutes.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-xs text-gray-300">Target:</label>
+            <select
+              value={customTarget}
+              onChange={(e) => setCustomTarget(e.target.value as 'me' | 'all' | 'user')}
+              className="px-3 py-2 rounded-md text-sm bg-gray-800 text-gray-200 border border-gray-700"
+              disabled={customLoading}
+            >
+              <option value="me">Me (admin)</option>
+              <option value="user">Specific user (UUID)</option>
+              <option value="all">All (latest {ADMIN_BROADCAST_ALL_LIMIT})</option>
+            </select>
+            {customTarget === 'user' && (
+              <input
+                type="text"
+                value={customUserId}
+                onChange={(e) => setCustomUserId(e.target.value)}
+                placeholder="user_id UUID"
+                className="px-3 py-2 rounded-md text-sm bg-gray-800 text-gray-200 border border-gray-700 min-w-[16rem] flex-1"
+                disabled={customLoading}
+              />
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-300">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={customChanTelegram}
+                onChange={(e) => setCustomChanTelegram(e.target.checked)}
+                disabled={customLoading}
+              />
+              Telegram
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={customChanPush}
+                onChange={(e) => setCustomChanPush(e.target.checked)}
+                disabled={customLoading}
+              />
+              Web push
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={customChanInApp}
+                onChange={(e) => setCustomChanInApp(e.target.checked)}
+                disabled={customLoading}
+              />
+              In-app center
+            </label>
+          </div>
+          {customChanTelegram && (
+            <div className="space-y-2">
+              <label className="block text-xs text-gray-400">Telegram message (plain text, max 4096)</label>
+              <textarea
+                value={customTgText}
+                onChange={(e) => setCustomTgText(e.target.value)}
+                rows={5}
+                className="w-full px-3 py-2 rounded-md text-sm bg-gray-800 text-gray-200 border border-gray-700 font-mono"
+                placeholder="📢 Your message…"
+                disabled={customLoading}
+              />
+              <label className="text-xs text-gray-400 inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={customTgDryRun}
+                  onChange={(e) => setCustomTgDryRun(e.target.checked)}
+                  disabled={customLoading}
+                />
+                Telegram dry run (no send; still loads recipient count)
+              </label>
+            </div>
+          )}
+          {(customChanPush || customChanInApp) && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="sm:col-span-2 text-xs text-gray-500">
+                {customChanPush && customChanInApp
+                  ? 'Push and in-app share the same title, body, and link.'
+                  : customChanInApp
+                    ? 'In-app notification uses the fields below (same shape as push).'
+                    : null}
+              </div>
+              <div className="sm:col-span-2 space-y-1">
+                <label className="block text-xs text-gray-400">Push title</label>
+                <input
+                  type="text"
+                  value={customPushTitle}
+                  onChange={(e) => setCustomPushTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md text-sm bg-gray-800 text-gray-200 border border-gray-700"
+                  disabled={customLoading}
+                />
+              </div>
+              <div className="sm:col-span-2 space-y-1">
+                <label className="block text-xs text-gray-400">Push body</label>
+                <textarea
+                  value={customPushBody}
+                  onChange={(e) => setCustomPushBody(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-md text-sm bg-gray-800 text-gray-200 border border-gray-700"
+                  disabled={customLoading}
+                />
+              </div>
+              <div className="sm:col-span-2 space-y-1">
+                <label className="block text-xs text-gray-400">Open URL (path or full URL)</label>
+                <input
+                  type="text"
+                  value={customPushUrl}
+                  onChange={(e) => setCustomPushUrl(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md text-sm bg-gray-800 text-gray-200 border border-gray-700"
+                  disabled={customLoading}
+                />
+              </div>
+            </div>
+          )}
+          {customChanInApp && (
+            <label className="text-xs text-gray-400 inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={customInAppDryRun}
+                onChange={(e) => setCustomInAppDryRun(e.target.checked)}
+                disabled={customLoading}
+              />
+              In-app dry run (count profiles only; no rows inserted)
+            </label>
+          )}
+          <button
+            type="button"
+            onClick={handleCustomBroadcast}
+            disabled={customLoading}
+            className="px-4 py-2 rounded-md text-sm font-semibold bg-amber-700 text-white hover:bg-amber-600 disabled:opacity-50"
+          >
+            {customLoading ? 'Sending…' : 'Send custom broadcast'}
+          </button>
         </div>
 
         <div className="text-xs text-gray-500 mt-4">
