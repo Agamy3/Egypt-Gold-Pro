@@ -2,6 +2,8 @@ import 'server-only';
 
 import db from '@/lib/supabase';
 import { getGoldSignalZone, zoneWhyNow } from '@/lib/telegram/signal-zones';
+import { getMarketMedians } from '@/lib/supabase/queries-norm';
+import { getMultiCurrencyRates } from '@/lib/fx-multi';
 
 type Country = 'GLOBAL' | 'EG' | 'AE' | 'SA' | 'US';
 type SignalAction = 'BUY' | 'SELL' | 'HOLD';
@@ -376,6 +378,28 @@ export async function sendTelegramSignalToEnabledUsers(args: {
   const currentZoneLabel = getGoldSignalZone(args.xauUsd)?.label || 'No zone';
   const userIds = rows.map((r: any) => String(r.user_id));
 
+  // Fetch live website-equivalent EG prices so Telegram local prices stay in sync.
+  const [liveMarket, liveFx] = await Promise.all([
+    getMarketMedians('EG', false, 120).catch(() => null),
+    getMultiCurrencyRates().catch(() => null),
+  ]);
+  const liveLocal24 = liveMarket?.prices?.market24Buy ?? null;
+  const liveLocal21 = liveMarket?.prices?.market21Buy ?? null;
+  const liveUsdEgp = liveFx?.usd_egp ?? null;
+  const liveFair24 =
+    typeof liveUsdEgp === 'number' && isFinite(liveUsdEgp) && liveUsdEgp > 0
+      ? (args.xauUsd / 31.1034768) * liveUsdEgp
+      : null;
+  const liveVariancePct =
+    typeof liveLocal24 === 'number' &&
+    isFinite(liveLocal24) &&
+    liveLocal24 > 0 &&
+    typeof liveFair24 === 'number' &&
+    isFinite(liveFair24) &&
+    liveFair24 > 0
+      ? (liveLocal24 - liveFair24) / liveFair24
+      : null;
+
   const { data: recentDeliveries } = await db.supabase
     .from('notification_deliveries_log')
     .select('user_id, created_at, payload, status, channel')
@@ -439,6 +463,10 @@ export async function sendTelegramSignalToEnabledUsers(args: {
 
     const text = formatTelegramSignalAlert({
       ...args,
+      local24: typeof liveLocal24 === 'number' ? liveLocal24 : args.local24 ?? null,
+      local21: typeof liveLocal21 === 'number' ? liveLocal21 : args.local21 ?? null,
+      fair24Local: typeof liveFair24 === 'number' ? liveFair24 : args.fair24Local ?? null,
+      variancePct: typeof liveVariancePct === 'number' ? liveVariancePct : args.variancePct ?? null,
       lang: (row.language || 'en') as TelegramLang,
       preferredKarat: (row.preferred_karat || '21') as PreferredKarat,
     });
