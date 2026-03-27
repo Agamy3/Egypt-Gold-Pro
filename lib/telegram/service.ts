@@ -370,7 +370,8 @@ export async function sendTelegramSignalToEnabledUsers(args: {
   const rows = (data || []).filter((r: any) => r.alert_signals_enabled !== false);
   if (rows.length === 0) return { sent: 0, failed: 0, errors: [] };
 
-  const now = args.timestampIso ? new Date(args.timestampIso) : new Date();
+  // Use actual current time for daily schedule enforcement (not signal event timestamp).
+  const now = new Date();
   const nowCairo = cairoNowInfo(now);
   const currentZoneLabel = getGoldSignalZone(args.xauUsd)?.label || 'No zone';
   const userIds = rows.map((r: any) => String(r.user_id));
@@ -390,9 +391,15 @@ export async function sendTelegramSignalToEnabledUsers(args: {
     if (latestSignalByUser.has(uid)) continue;
     const payload = (row.payload || {}) as Record<string, unknown>;
     if (payload.source !== 'gold_signals') continue;
+    const payloadZone =
+      typeof payload.zone_label === 'string'
+        ? payload.zone_label
+        : (typeof payload.xau_usd === 'number' && isFinite(payload.xau_usd)
+            ? (getGoldSignalZone(payload.xau_usd)?.label || null)
+            : null);
     latestSignalByUser.set(uid, {
       createdAt: String(row.created_at),
-      zoneLabel: typeof payload.zone_label === 'string' ? payload.zone_label : null,
+      zoneLabel: payloadZone,
     });
   }
 

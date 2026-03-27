@@ -78,7 +78,7 @@ export default function Header({ title, subtitle, showLogo = true }: HeaderProps
               <Link href="/" className={`flex items-center gap-3 sm:gap-4 flex-1 min-w-0 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
                 <div className="relative w-12 h-12 sm:w-14 sm:h-14 flex-shrink-0">
                   <Image
-                    src="/brand/logo.png"
+                    src="/brand/logo.svg"
                     alt="EgyptGold Pro"
                     fill
                     className="object-contain"

@@ -107,7 +107,7 @@ export default function MobileDrawer() {
                     <span className="text-gold-400 font-bold text-sm">EGP</span>
                   ) : (
                     <Image
-                      src="/brand/logo.png"
+                      src="/brand/logo.svg"
                       alt="EgyptGold Pro"
                       fill
                       className="object-contain"
