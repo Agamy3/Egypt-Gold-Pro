@@ -20,6 +20,41 @@ type TelegramConnectionPrefs = {
   alert_price_enabled: boolean;
 };
 
+type LiveEgSnapshotForTelegram = {
+  local24: number | null;
+  local21: number | null;
+  fair24: number | null;
+  variancePct: number | null;
+};
+
+function appBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com').replace(/\/$/, '');
+}
+
+async function fetchLiveEgSnapshotForTelegram(): Promise<LiveEgSnapshotForTelegram | null> {
+  try {
+    const res = await fetch(`${appBaseUrl()}/api/marketSnapshot?country=EG&currency=EGP`, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as any;
+    if (!json || typeof json !== 'object') return null;
+    const local24 = Number(json?.market?.median?.market24Buy);
+    const local21 = Number(json?.market?.median?.market21Buy);
+    const fair24 = Number(json?.pricing?.fairValue?.fair24);
+    const variancePct = Number(json?.pricing?.variance?.variancePct);
+    return {
+      local24: isFinite(local24) && local24 > 0 ? local24 : null,
+      local21: isFinite(local21) && local21 > 0 ? local21 : null,
+      fair24: isFinite(fair24) && fair24 > 0 ? fair24 : null,
+      variancePct: isFinite(variancePct) ? variancePct : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function cairoNowInfo(now: Date): { dayKey: string; hour: number } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Cairo',
@@ -102,10 +137,6 @@ export async function getEnabledTelegramConnection(userId: string): Promise<{
     alertSignalsEnabled: data.alert_signals_enabled !== false,
     alertPriceEnabled: data.alert_price_enabled !== false,
   };
-}
-
-function appBaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com').replace(/\/$/, '');
 }
 
 function actionLink(type: 'signals' | 'gold' | 'portfolio' | 'home'): string {
@@ -378,19 +409,24 @@ export async function sendTelegramSignalToEnabledUsers(args: {
   const currentZoneLabel = getGoldSignalZone(args.xauUsd)?.label || 'No zone';
   const userIds = rows.map((r: any) => String(r.user_id));
 
-  // Fetch live website-equivalent EG prices so Telegram local prices stay in sync.
-  const [liveMarket, liveFx] = await Promise.all([
-    getMarketMedians('EG', false, 120).catch(() => null),
-    getMultiCurrencyRates().catch(() => null),
-  ]);
-  const liveLocal24 = liveMarket?.prices?.market24Buy ?? null;
-  const liveLocal21 = liveMarket?.prices?.market21Buy ?? null;
-  const liveUsdEgp = liveFx?.usd_egp ?? null;
-  const liveFair24 =
-    typeof liveUsdEgp === 'number' && isFinite(liveUsdEgp) && liveUsdEgp > 0
-      ? (args.xauUsd / 31.1034768) * liveUsdEgp
-      : null;
-  const liveVariancePct =
+  // Primary source: same API payload as homepage for exact parity.
+  const liveSnapshot = await fetchLiveEgSnapshotForTelegram();
+
+  // Fallback source: direct medians + FX if API fetch fails.
+  const [liveMarket, liveFx] = liveSnapshot
+    ? [null, null]
+    : await Promise.all([
+        getMarketMedians('EG', false, 120).catch(() => null),
+        getMultiCurrencyRates().catch(() => null),
+      ]);
+  const liveLocal24 = liveSnapshot?.local24 ?? liveMarket?.prices?.market24Buy ?? null;
+  const liveLocal21 = liveSnapshot?.local21 ?? liveMarket?.prices?.market21Buy ?? null;
+  const liveFair24 = liveSnapshot?.fair24 ?? (
+    typeof liveFx?.usd_egp === 'number' && isFinite(liveFx.usd_egp) && liveFx.usd_egp > 0
+      ? (args.xauUsd / 31.1034768) * liveFx.usd_egp
+      : null
+  );
+  const liveVariancePct = liveSnapshot?.variancePct ?? (
     typeof liveLocal24 === 'number' &&
     isFinite(liveLocal24) &&
     liveLocal24 > 0 &&
@@ -398,7 +434,8 @@ export async function sendTelegramSignalToEnabledUsers(args: {
     isFinite(liveFair24) &&
     liveFair24 > 0
       ? (liveLocal24 - liveFair24) / liveFair24
-      : null;
+      : null
+  );
 
   const { data: recentDeliveries } = await db.supabase
     .from('notification_deliveries_log')
