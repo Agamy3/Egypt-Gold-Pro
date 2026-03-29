@@ -337,6 +337,9 @@ export async function GET(request: Request) {
       errors.push({ source: 'PricingCalculation', message: errorMessage });
     }
 
+    const egTrust = country === 'EG' ? marketData.egyptMarketTrust : undefined;
+    const egMarketUntrusted = country === 'EG' && egTrust && !egTrust.homepageSafeToUse;
+
     const hasMarketData = convertedPrices.market21Buy !== null || convertedPrices.market24Buy !== null;
     const hasVarianceData = impliedOunce?.impliedOunceUsd !== null && 
       !fxUnavailable &&
@@ -350,7 +353,8 @@ export async function GET(request: Request) {
     const referenceUnavailable = 
       (impliedOunce?.impliedOunceUsd === null) ||
       fxUnavailable ||
-      localMarketMissing;
+      localMarketMissing ||
+      (!!egMarketUntrusted && hasMarketData);
 
     // Aggregate sourcesUsed from query
     const sourcesUsed = marketData.sourcesUsed || {};
@@ -381,6 +385,17 @@ export async function GET(request: Request) {
       market: {
         median: convertedPrices, // Return converted prices
         canonicalMedian: canonicalPrices, // Also return canonical prices for reference
+        ...(country === 'EG' && egTrust
+          ? {
+              health: {
+                aggregatedFresh: egTrust.aggregatedFresh,
+                sourceBacked: egTrust.sourceBacked,
+                sameRunBacked: egTrust.sameRunBacked,
+                meetsThreshold: egTrust.meetsThreshold,
+                homepageSafeToUse: egTrust.homepageSafeToUse,
+              },
+            }
+          : {}),
         sources: marketSources.map(s => ({
           source: s.source,
           status: s.status,
@@ -451,6 +466,7 @@ export async function GET(request: Request) {
         referenceUnavailable: referenceUnavailable,
         fxUnavailable: fxUnavailable,
         buyOnlyVariance: !hasSellData && hasVarianceData,
+        egyptLocalMarketUntrusted: !!egMarketUntrusted,
       },
       errors: errors.length > 0 ? errors : undefined,
     }));

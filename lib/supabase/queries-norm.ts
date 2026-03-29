@@ -7,6 +7,8 @@
 
 import db from '../supabase';
 import { Currency } from '../fx-multi';
+import { EG_WEB_SOURCES, getEgyptAggregationMinSources, MARKET_HEALTH_FRESHNESS_MS } from '../gold-ingestion-config';
+import { isFreshTimestamp, verifyEgAggregatedNormRow } from '../market-ingestion-health';
 
 export interface MarketPrices {
   market21Buy: number | null;
@@ -22,6 +24,22 @@ export interface MarketPrices {
 /**
  * Get median market prices by karat from normalized schema
  */
+export type EgyptMarketReadTrust = {
+  aggregatedFresh: boolean;
+  sourceBacked: boolean;
+  sameRunBacked: boolean;
+  meetsThreshold: boolean;
+  homepageSafeToUse: boolean;
+};
+
+const EG_TRUST_OFF: EgyptMarketReadTrust = {
+  aggregatedFresh: false,
+  sourceBacked: false,
+  sameRunBacked: false,
+  meetsThreshold: false,
+  homepageSafeToUse: false,
+};
+
 export async function getMarketMedians(
   country: 'EG' | 'AE' | 'SA' | 'US',
   trustedMode: boolean = false,
@@ -32,6 +50,7 @@ export async function getMarketMedians(
   sourcesUsed: Record<string, string[]>;
   lastUpdated: number;
   canonicalCurrency: Currency;
+  egyptMarketTrust?: EgyptMarketReadTrust;
 }> {
   const supabase = db.supabase;
   const windowMs = windowMinutes * 60 * 1000;
@@ -41,7 +60,9 @@ export async function getMarketMedians(
   // Order by created_at DESC to get most recent data first (better for aggregation)
   let query = supabase
     .from('market_snapshots_norm')
-    .select('source, karat, price, currency, created_at')
+    .select(
+      'source, karat, price, currency, created_at, ingestion_run_id, is_degraded, source_write_count, fresh_source_count, degraded_reason'
+    )
     .eq('country', country)
     .gte('created_at', windowStart)
     .in('karat', [14, 18, 21, 22, 24])
@@ -111,6 +132,7 @@ export async function getMarketMedians(
       sourcesUsed: {},
       lastUpdated: 0,
       canonicalCurrency,
+      ...(country === 'EG' ? { egyptMarketTrust: EG_TRUST_OFF } : {}),
     };
   }
 
@@ -135,6 +157,10 @@ export async function getMarketMedians(
   let maxTimestamp = 0;
   const contributingSources = new Set<string>();
 
+  const nowMs = Date.now();
+  const aggVerifyCache = new Map<string, boolean>();
+  let usedVerifiedAggregated = false;
+
   // Calculate median for each karat
   const karatConfigs = [
     { karat: 21, buyKey: 'market21Buy' as const, sellKey: 'market21Sell' as const },
@@ -156,9 +182,20 @@ export async function getMarketMedians(
     // Check for aggregated/series_aggregate sources first (prioritized fallbacks)
     const aggregatedRow = validRows.find((r: Record<string, unknown>) => r.source === 'aggregated');
     const seriesAggregateRow = validRows.find((r: Record<string, unknown>) => r.source === 'series_aggregate');
-    
-    // Prioritize aggregated over series_aggregate, but use series_aggregate if aggregated not available
-    const priorityRow = aggregatedRow || seriesAggregateRow;
+
+    let priorityRow: Record<string, unknown> | undefined;
+    if (country === 'EG' && aggregatedRow) {
+      const ok = await verifyEgAggregatedNormRow(aggregatedRow as Record<string, unknown>, nowMs, aggVerifyCache);
+      if (ok) {
+        priorityRow = aggregatedRow;
+        usedVerifiedAggregated = true;
+      }
+    } else if (aggregatedRow) {
+      priorityRow = aggregatedRow;
+    }
+    if (!priorityRow && seriesAggregateRow) {
+      priorityRow = seriesAggregateRow;
+    }
     if (priorityRow) {
       const price = Number(priorityRow.price);
       if (isFinite(price) && price > 0) {
@@ -217,12 +254,28 @@ export async function getMarketMedians(
     canonicalCurrency,
   });
 
+  let egyptMarketTrust: EgyptMarketReadTrust | undefined;
+  if (country === 'EG') {
+    const minSrc = getEgyptAggregationMinSources();
+    const realSources = [...contributingSources].filter((s) => EG_WEB_SOURCES.includes(s));
+    const lastFresh = maxTimestamp > 0 && isFreshTimestamp(maxTimestamp, MARKET_HEALTH_FRESHNESS_MS, nowMs);
+    const meetsThreshold = realSources.length >= minSrc || usedVerifiedAggregated;
+    egyptMarketTrust = {
+      aggregatedFresh: usedVerifiedAggregated,
+      sourceBacked: realSources.length > 0 || usedVerifiedAggregated,
+      sameRunBacked: usedVerifiedAggregated,
+      meetsThreshold,
+      homepageSafeToUse: lastFresh && meetsThreshold,
+    };
+  }
+
   return {
     prices,
     activeSourceCount: contributingSources.size,
     sourcesUsed,
     lastUpdated: maxTimestamp,
     canonicalCurrency,
+    ...(egyptMarketTrust ? { egyptMarketTrust } : {}),
   };
 }
 

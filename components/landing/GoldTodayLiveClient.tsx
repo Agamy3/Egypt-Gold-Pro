@@ -53,6 +53,12 @@ export default function GoldTodayLiveClient({ initialData }: Props) {
   return (
     <section className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-6" dir="rtl">
       <h1 className="text-2xl sm:text-3xl font-bold text-gold-400 mb-3">أسعار الذهب اليوم في مصر (تحديث لحظي)</h1>
+      {data.marketTrust && !data.marketTrust.homepageSafeToUse ? (
+        <div className="mb-4 rounded-lg border border-amber-700/80 bg-amber-950/35 px-3 py-2 text-sm text-amber-100/95 leading-6">
+          تنبيه: أسعار السوق المحلي أدناه قد لا تعكس بيانات لحظية موثوقة (عدد غير كافٍ من المصادر المحدثة، أو تجميع غير
+          مدعوم بقراءات حديثة من نفس دورة الجمع). يُنصح بالتحقق قبل أي قرار.
+        </div>
+      ) : null}
       <div className="text-sm text-gray-300 mb-4">
         آخر تحديث منذ <span className="font-semibold text-white">{freshness}</span> دقيقة
       </div>

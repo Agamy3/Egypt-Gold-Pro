@@ -18,6 +18,11 @@ interface WriteEgyptSnapshotParams {
   trusted: boolean;
   createdAtMs: number;
   rawHash?: string | null;
+  ingestionRunId?: string | null;
+  isDegraded?: boolean;
+  sourceWriteCount?: number | null;
+  freshSourceCount?: number | null;
+  degradedReason?: string | null;
   prices: {
     14?: PriceData;
     18?: PriceData;
@@ -96,6 +101,11 @@ export async function writeEgyptSnapshotToSupabase(
       httpStatus: null,
       url: null,
       rawResponseSnippet: null,
+      ingestion_run_id: params.ingestionRunId ?? null,
+      is_degraded: params.isDegraded ?? false,
+      source_write_count: params.sourceWriteCount ?? null,
+      fresh_source_count: params.freshSourceCount ?? null,
+      degraded_reason: params.degradedReason ?? null,
     };
 
     // Add buy prices for each karat (only if valid)

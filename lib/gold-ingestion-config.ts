@@ -28,6 +28,23 @@ export const SOURCE_WEIGHTS: Record<string, number> = {
 
 export const STALE_AFTER_MS = 5 * 60 * 1000; // 5 minutes
 
+/** Egypt local: max age for treating persisted snapshots as “current” on homepage / health views. */
+export const MARKET_HEALTH_FRESHNESS_MS =
+  Math.max(1, Number(process.env.MARKET_HEALTH_FRESHNESS_HOURS ?? 6)) * 60 * 60 * 1000;
+
+/** Sources that participate in Egypt weighted aggregation (same keys as SOURCE_WEIGHTS). */
+export const EG_WEB_SOURCES = Object.keys(SOURCE_WEIGHTS);
+
+/**
+ * Minimum number of Egypt sources that must persist in the same ingestion run before
+ * aggregated rows are considered non-degraded. Default 2; clamp 1..5.
+ */
+export function getEgyptAggregationMinSources(): number {
+  const fromEnv = Number(process.env.EG_AGGREGATION_MIN_SOURCES);
+  const base = Number.isFinite(fromEnv) ? Math.floor(fromEnv) : 2;
+  return Math.min(EG_WEB_SOURCES.length, Math.max(1, base));
+}
+
 export const KARATS = [24, 22, 21, 18, 14] as const;
 export type Karat = typeof KARATS[number];
 

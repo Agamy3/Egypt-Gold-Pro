@@ -4,18 +4,25 @@
  * Orchestrates fetching, validation, staleness tracking, and weighted averages
  */
 
-import db from './supabase';
 import { writeEgyptSnapshotToSupabase } from './supabase/writeMarketSnapshot';
 import { writeMarketSnapshotNorm } from './supabase/writeMarketSnapshotNorm';
 import { updateSourceStaleness, isSourceStale as isSourceStaleSupabase, getLastOkBuy as getLastOkBuySupabase } from './supabase/sourceStaleness';
 import { processSource, type SourcePriceResult } from './gold-sources-adapters-regex';
-import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, Karat } from './gold-ingestion-config';
+import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, Karat, getEgyptAggregationMinSources } from './gold-ingestion-config';
 import { computeConfidence } from './gold-ingestion-utils';
 
 /**
  * Worker-safe base64 encoder for stable raw_hash values.
  * Cloudflare Workers may not provide Node.js `Buffer`.
  */
+function newIngestionRunId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  const { randomUUID } = require('node:crypto') as typeof import('node:crypto');
+  return randomUUID();
+}
+
 function base64Encode(input: string): string {
   // Prefer Workers/Web `btoa` when available.
   if (typeof btoa === 'function' && typeof TextEncoder !== 'undefined') {
@@ -539,7 +546,17 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   return { results, totalInserted };
 }
 
-export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWritten: number; aggregatedSnapshotWritten: boolean }> {
+export async function runIngestionCycle(): Promise<
+  IngestionResult & {
+    sourcesWritten: number;
+    aggregatedSnapshotWritten: boolean;
+    ingestionRunId: string;
+    aggregatedMarkedDegraded: boolean;
+  }
+> {
+  const ingestionRunId = newIngestionRunId();
+  console.log('[Ingestion] run started', { ingestionRunId });
+
   const sources = Object.keys(SOURCE_WEIGHTS);
   console.log(`[Ingestion] Starting Egypt cycle with ${sources.length} sources:`, sources);
   
@@ -603,96 +620,16 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
     14: result.our_price_buy['14'],
   });
 
-  // Store source results in database
+  // Store source results in database (sources first; aggregated only after persistence threshold is known)
   const now = Date.now();
   let sourcesWritten = 0;
 
-  console.log('[Ingestion] Write policy: per-source and aggregated writes proceed from parsed prices only; source_staleness age never gates writes.', {
-    hasValidAggregated: hasValidAggregatedPrices(result),
+  console.log('[Ingestion] source writes phase start', {
+    ingestionRunId,
+    parsedSourcesOk: result.num_sources_ok,
+    parsedSourcesErrors: result.num_sources_errors,
   });
 
-  // IMPORTANT: Write aggregated snapshot FIRST so homepage / norm queries get a row even if per-source loops time out or fail.
-  let aggregatedWritten = false;
-  if (result.our_price_buy && Object.keys(result.our_price_buy).length > 0) {
-    try {
-      const aggregatedValid = hasValidAggregatedPrices(result);
-      console.log('[Ingestion] Aggregated snapshot eligibility:', { aggregatedValid, our_price_buy: result.our_price_buy });
-      if (!aggregatedValid) {
-        console.warn('[Ingestion] Skipping aggregated snapshot write: no positive karat prices', {
-          accepted: false,
-          reason: 'aggregated_prices_invalid',
-          prices: result.our_price_buy,
-        });
-      } else {
-        const aggregatedHash = base64Encode(JSON.stringify(result)).substring(0, 32);
-        const price14 = result.our_price_buy['14'] ?? null;
-        const price18 = result.our_price_buy['18'] ?? null;
-        const price21 = result.our_price_buy['21'] ?? null;
-        const price24 = result.our_price_buy['24'] ?? null;
-
-        console.log(`[Ingestion] Attempting aggregated snapshot write (first):`, { price14, price18, price21, price24 });
-
-        const wideAggregatedResult = await writeEgyptSnapshotToSupabase({
-          source: 'aggregated',
-          trusted: false,
-          createdAtMs: now,
-          rawHash: aggregatedHash,
-          prices: {
-            14: { buy: price14 },
-            18: { buy: price18 },
-            21: { buy: price21 },
-            24: { buy: price24 },
-          },
-        });
-
-        const normAggregatedResult = await writeMarketSnapshotNorm({
-          country: 'EG',
-          source: 'aggregated',
-          trusted: false,
-          createdAt: now,
-          rawHash: aggregatedHash,
-          prices: {
-            14: { buy: price14 },
-            18: { buy: price18 },
-            21: { buy: price21 },
-            24: { buy: price24 },
-          },
-        });
-
-        const aggregatedWriteAccepted = wideAggregatedResult.ok || normAggregatedResult.ok;
-        if (aggregatedWriteAccepted) {
-          aggregatedWritten = true;
-          console.log(`[Ingestion] ✓ Wrote aggregated snapshot: wide=${wideAggregatedResult.inserted || 0}, norm=${normAggregatedResult.inserted || 0} row(s)`, {
-            prices24: price24,
-            prices21: price21,
-            prices18: price18,
-            prices14: price14,
-            accepted: true,
-            reason: (wideAggregatedResult.inserted || normAggregatedResult.inserted) ? 'inserted_rows' : 'ok_zero_rows_idempotent_or_dedup',
-            wideOk: wideAggregatedResult.ok,
-            wideInserted: wideAggregatedResult.inserted || 0,
-            normOk: normAggregatedResult.ok,
-            normInserted: normAggregatedResult.inserted || 0,
-          });
-        } else {
-          const errorMsg = normAggregatedResult.error || wideAggregatedResult.error || 'Unknown error';
-          console.error(`[Ingestion] ✗ Failed to write aggregated snapshot:`, errorMsg, {
-            attempted: { price14, price18, price21, price24 },
-            accepted: false,
-            reason: 'both_writers_not_ok',
-            wide: wideAggregatedResult.error,
-            norm: normAggregatedResult.error,
-          });
-        }
-      }
-    } catch (aggregatedError) {
-      console.error(`[Ingestion] Exception writing aggregated snapshot:`, aggregatedError);
-    }
-  } else {
-    console.warn('[Ingestion] No aggregated prices to write:', result.our_price_buy);
-  }
-
-  // Write individual source snapshots
   for (const sourceResult of sourceResults) {
     const rawHash = base64Encode(JSON.stringify(sourceResult)).substring(0, 32);
     
@@ -727,6 +664,11 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
             trusted: isTrusted,
             createdAtMs: now,
             rawHash,
+            ingestionRunId,
+            isDegraded: false,
+            sourceWriteCount: null,
+            freshSourceCount: null,
+            degradedReason: null,
             prices: {
               14: { buy: getEffectivePrice(sourceResult, 14) },
               18: { buy: getEffectivePrice(sourceResult, 18) },
@@ -741,6 +683,11 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
             trusted: isTrusted,
             createdAt: now,
             rawHash,
+            ingestionRunId,
+            isDegraded: false,
+            sourceWriteCount: null,
+            freshSourceCount: null,
+            degradedReason: null,
             prices: {
               14: { buy: getEffectivePrice(sourceResult, 14) },
               18: { buy: getEffectivePrice(sourceResult, 18) },
@@ -794,11 +741,142 @@ export async function runIngestionCycle(): Promise<IngestionResult & { sourcesWr
     }
   }
 
-  console.log(`[Ingestion] Completed: ${sourcesWritten} individual sources written, aggregated: ${aggregatedWritten ? 'YES' : 'NO'}`);
+  console.log('[Ingestion] source writes completed', {
+    ingestionRunId,
+    sourcesWritten,
+    parsedSourcesOk: result.num_sources_ok,
+  });
+
+  const minSources = getEgyptAggregationMinSources();
+  const meetsThreshold = sourcesWritten >= minSources;
+
+  let aggregatedWritten = false;
+  let aggregatedMarkedDegraded = false;
+
+  if (!hasValidAggregatedPrices(result)) {
+    console.warn('[Ingestion] aggregated write skipped: no positive karat prices', {
+      ingestionRunId,
+      our_price_buy: result.our_price_buy,
+    });
+  } else if (!meetsThreshold) {
+    aggregatedMarkedDegraded = true;
+    console.warn('[Ingestion] aggregated write marked degraded: insufficient persisted sources', {
+      ingestionRunId,
+      sourcesWritten,
+      minSourcesRequired: minSources,
+    });
+  } else {
+    console.log('[Ingestion] aggregated write: threshold met', {
+      ingestionRunId,
+      sourcesWritten,
+      minSourcesRequired: minSources,
+    });
+  }
+
+  if (hasValidAggregatedPrices(result)) {
+    try {
+      const aggregatedHash = base64Encode(JSON.stringify(result)).substring(0, 32);
+      const price14 = result.our_price_buy['14'] ?? null;
+      const price18 = result.our_price_buy['18'] ?? null;
+      const price21 = result.our_price_buy['21'] ?? null;
+      const price24 = result.our_price_buy['24'] ?? null;
+
+      const isDegraded = !meetsThreshold;
+      const degradedReason = isDegraded
+        ? `insufficient_persisted_sources:${sourcesWritten}<${minSources}`
+        : null;
+
+      console.log('[Ingestion] aggregated snapshot write attempt', {
+        ingestionRunId,
+        isDegraded,
+        price14,
+        price18,
+        price21,
+        price24,
+      });
+
+      const wideAggregatedResult = await writeEgyptSnapshotToSupabase({
+        source: 'aggregated',
+        trusted: false,
+        createdAtMs: now,
+        rawHash: aggregatedHash,
+        ingestionRunId,
+        isDegraded,
+        sourceWriteCount: sourcesWritten,
+        freshSourceCount: result.num_sources_ok,
+        degradedReason,
+        prices: {
+          14: { buy: price14 },
+          18: { buy: price18 },
+          21: { buy: price21 },
+          24: { buy: price24 },
+        },
+      });
+
+      const normAggregatedResult = await writeMarketSnapshotNorm({
+        country: 'EG',
+        source: 'aggregated',
+        trusted: false,
+        createdAt: now,
+        rawHash: aggregatedHash,
+        ingestionRunId,
+        isDegraded,
+        sourceWriteCount: sourcesWritten,
+        freshSourceCount: result.num_sources_ok,
+        degradedReason,
+        prices: {
+          14: { buy: price14 },
+          18: { buy: price18 },
+          21: { buy: price21 },
+          24: { buy: price24 },
+        },
+      });
+
+      const aggregatedWriteAccepted = wideAggregatedResult.ok || normAggregatedResult.ok;
+      if (aggregatedWriteAccepted) {
+        aggregatedWritten = true;
+        console.log(
+          `[Ingestion] aggregated snapshot persisted: wide=${wideAggregatedResult.inserted || 0}, norm=${normAggregatedResult.inserted || 0}`,
+          {
+            ingestionRunId,
+            isDegraded,
+            sourcesWritten,
+            wideOk: wideAggregatedResult.ok,
+            normOk: normAggregatedResult.ok,
+          }
+        );
+      } else {
+        const errorMsg = normAggregatedResult.error || wideAggregatedResult.error || 'Unknown error';
+        console.error(`[Ingestion] aggregated snapshot failed`, errorMsg, {
+          ingestionRunId,
+          wide: wideAggregatedResult.error,
+          norm: normAggregatedResult.error,
+        });
+      }
+    } catch (aggregatedError) {
+      console.error(`[Ingestion] Exception writing aggregated snapshot:`, aggregatedError);
+    }
+  }
+
+  console.log(`[Ingestion] Completed: ${sourcesWritten} sources persisted, aggregated: ${aggregatedWritten ? 'YES' : 'NO'}`, {
+    ingestionRunId,
+    aggregatedMarkedDegraded,
+  });
+
+  console.log('[Ingestion] freshness evaluation summary', {
+    ingestionRunId,
+    marketNowMs: Date.now(),
+    persistedSources: sourcesWritten,
+    aggregationThreshold: minSources,
+    meetsThreshold,
+  });
+
   return {
     ...result,
     sourcesWritten,
     aggregatedSnapshotWritten: aggregatedWritten,
+    ingestionRunId,
+    aggregatedMarkedDegraded,
   };
 }
 

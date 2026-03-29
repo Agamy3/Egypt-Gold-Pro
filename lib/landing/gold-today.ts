@@ -1,7 +1,7 @@
 import 'server-only';
 
 import db from '@/lib/supabase';
-import { getMarketMedians } from '@/lib/supabase/queries-norm';
+import { getMarketMedians, type EgyptMarketReadTrust } from '@/lib/supabase/queries-norm';
 import { getGoldSignalZone, zoneWhyNow } from '@/lib/telegram/signal-zones';
 
 type Karat = 18 | 21 | 24;
@@ -27,6 +27,8 @@ export type GoldTodayData = {
       direction: 'up' | 'down' | 'flat';
     }
   >;
+  /** Present for Egypt: when false, local medians are not fully trusted for “live market” messaging. */
+  marketTrust: EgyptMarketReadTrust | null;
 };
 
 function strengthFromConfidence(conf: number | null): string {
@@ -139,6 +141,7 @@ export async function getGoldTodayLandingData(): Promise<GoldTodayData> {
     asOf: new Date(asOfMs).toISOString(),
     freshnessMinutes: Math.max(0, Math.floor((Date.now() - asOfMs) / 60000)),
     sourcesCount: market.activeSourceCount || 0,
+    marketTrust: market.egyptMarketTrust ?? null,
     confidence,
     signal: {
       action: signalAction,

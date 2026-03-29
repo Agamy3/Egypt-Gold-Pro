@@ -20,6 +20,12 @@ interface WriteMarketSnapshotNormParams {
   trusted: boolean;
   createdAt: number; // epoch milliseconds
   rawHash?: string | null;
+  /** Present for Egypt web-ingestion cycles (sources + aggregated share one id). */
+  ingestionRunId?: string | null;
+  isDegraded?: boolean;
+  sourceWriteCount?: number | null;
+  freshSourceCount?: number | null;
+  degradedReason?: string | null;
   prices: {
     14?: PriceData;
     18?: PriceData;
@@ -85,6 +91,14 @@ export async function writeMarketSnapshotNorm(
     
     // Build rows: one per karat with valid buy price
     // Note: market_snapshots_norm table does NOT have a 'market' column - only country, karat, price, currency, source, trusted, created_at, raw_hash
+    const batchMeta = {
+      ingestion_run_id: params.ingestionRunId ?? null,
+      is_degraded: params.isDegraded ?? false,
+      source_write_count: params.sourceWriteCount ?? null,
+      fresh_source_count: params.freshSourceCount ?? null,
+      degraded_reason: params.degradedReason ?? null,
+    };
+
     const rows: Array<{
       country: string;
       karat: number;
@@ -94,6 +108,11 @@ export async function writeMarketSnapshotNorm(
       trusted: boolean;
       created_at: string;
       raw_hash: string | null;
+      ingestion_run_id: string | null;
+      is_degraded: boolean;
+      source_write_count: number | null;
+      fresh_source_count: number | null;
+      degraded_reason: string | null;
     }> = [];
 
     // Only include karats that exist in schema constraint
@@ -113,6 +132,7 @@ export async function writeMarketSnapshotNorm(
           trusted: params.trusted,
           created_at: createdAtISO,
           raw_hash: params.rawHash || null,
+          ...batchMeta,
         });
       }
     }
@@ -238,6 +258,11 @@ export async function writeMarketSnapshotNorm(
                         currency: row.currency,
                         source: row.source,
                         trusted: row.trusted,
+                        ingestion_run_id: row.ingestion_run_id,
+                        is_degraded: row.is_degraded,
+                        source_write_count: row.source_write_count,
+                        fresh_source_count: row.fresh_source_count,
+                        degraded_reason: row.degraded_reason,
                       })
                       .eq('id', existingResult.data.id)
                       .select('id');
