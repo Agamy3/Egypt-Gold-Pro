@@ -83,6 +83,9 @@ interface MarketSnapshot {
     lowConfidence: boolean;
     referenceUnavailable: boolean;
     fxUnavailable?: boolean;
+    fairValueUnavailable?: boolean;
+    varianceUnavailable?: boolean;
+    marketReferenceDegraded?: boolean;
     buyOnlyVariance?: boolean;
   };
   country?: string;

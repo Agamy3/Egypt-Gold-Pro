@@ -300,6 +300,9 @@ export async function GET(request: Request) {
       };
     }
 
+    const egTrust = country === 'EG' ? marketData.egyptMarketTrust : undefined;
+    const egMarketUntrusted = country === 'EG' && egTrust && !egTrust.homepageSafeToUse;
+
     // Build sources array (simplified for now)
     const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
     const now = Date.now();
@@ -337,24 +340,40 @@ export async function GET(request: Request) {
       errors.push({ source: 'PricingCalculation', message: errorMessage });
     }
 
-    const egTrust = country === 'EG' ? marketData.egyptMarketTrust : undefined;
-    const egMarketUntrusted = country === 'EG' && egTrust && !egTrust.homepageSafeToUse;
+    // Fair value / variance vs spot: omit misleading parity when Egypt read-path is not trusted,
+    // but keep USD/gram from global spot for the pricing-details card.
+    let pricingForApi = pricing;
+    if (pricingForApi && country === 'EG' && egMarketUntrusted) {
+      pricingForApi = {
+        ...pricingForApi,
+        localMarketParity: { local24: null, local21: null },
+        fairValue: { fair24: null, fair21: null },
+        variance: {
+          variancePct: null,
+          premiumLocal: null,
+          classification: 'N/A' as const,
+        },
+      };
+    }
 
-    const hasMarketData = convertedPrices.market21Buy !== null || convertedPrices.market24Buy !== null;
-    const hasVarianceData = impliedOunce?.impliedOunceUsd !== null && 
+    const hasVarianceData =
+      impliedOunce?.impliedOunceUsd !== null &&
       !fxUnavailable &&
+      !egMarketUntrusted &&
       (convertedPrices.market21Buy !== null || convertedPrices.market24Buy !== null);
     const hasSellData = convertedPrices.market21Sell !== null || convertedPrices.market24Sell !== null;
-    const localMarketMissing = convertedPrices.market21Buy === null && convertedPrices.market24Buy === null;
-    
-    // referenceUnavailable: true only if required inputs missing
-    // Required: impliedOunceUsd AND real FX rate AND (market21Buy OR market24Buy)
-    // Do NOT mark unavailable just because implied FX can't be computed
-    const referenceUnavailable = 
-      (impliedOunce?.impliedOunceUsd === null) ||
-      fxUnavailable ||
-      localMarketMissing ||
-      (!!egMarketUntrusted && hasMarketData);
+
+    // Top-level "reference" = local market median prices for primary karats (cards), not global spot/FX.
+    const hasUsableLocalMarketMedians =
+      convertedPrices.market21Buy !== null ||
+      convertedPrices.market24Buy !== null ||
+      convertedPrices.market18Buy !== null;
+    const referenceUnavailable = !hasUsableLocalMarketMedians;
+
+    const marketReferenceDegraded = country === 'EG' && !!egMarketUntrusted;
+    const fairValueUnavailable =
+      impliedOunce?.impliedOunceUsd === null || fxUnavailable || marketReferenceDegraded;
+    const varianceUnavailable = fairValueUnavailable;
 
     // Aggregate sourcesUsed from query
     const sourcesUsed = marketData.sourcesUsed || {};
@@ -407,33 +426,33 @@ export async function GET(request: Request) {
         activeUnderlyingSources: activeUnderlyingSources,
         sourcesUsed: sourcesUsed,
       },
-      pricing: pricing ? {
-        usdPerGram24: pricing.usdPerGram24,
-        usdPerGram21: pricing.usdPerGram21,
-        usdEgpGold: pricing.usdLocalRate, // Map to usdEgpGold for backward compatibility (but it's actually canonical currency rate)
-        localMarketParity: pricing.localMarketParity,
+      pricing: pricingForApi ? {
+        usdPerGram24: pricingForApi.usdPerGram24,
+        usdPerGram21: pricingForApi.usdPerGram21,
+        usdEgpGold: pricingForApi.usdLocalRate, // Map to usdEgpGold for backward compatibility (but it's actually canonical currency rate)
+        localMarketParity: pricingForApi.localMarketParity,
         // Convert fair values to selected currency if different from canonical
         fairValue: (currency !== canonicalCurrency && fxRates) ? {
-          fair24: pricing.fairValue.fair24 !== null 
-            ? convertMoney(pricing.fairValue.fair24, canonicalCurrency, currency, {
+          fair24: pricingForApi.fairValue.fair24 !== null 
+            ? convertMoney(pricingForApi.fairValue.fair24, canonicalCurrency, currency, {
                 usd_egp: fxRates.usd_egp,
                 usd_aed: fxRates.usd_aed,
                 usd_sar: fxRates.usd_sar,
               })
             : null,
-          fair21: pricing.fairValue.fair21 !== null
-            ? convertMoney(pricing.fairValue.fair21, canonicalCurrency, currency, {
+          fair21: pricingForApi.fairValue.fair21 !== null
+            ? convertMoney(pricingForApi.fairValue.fair21, canonicalCurrency, currency, {
                 usd_egp: fxRates.usd_egp,
                 usd_aed: fxRates.usd_aed,
                 usd_sar: fxRates.usd_sar,
               })
             : null,
-        } : pricing.fairValue,
+        } : pricingForApi.fairValue,
         // Map premiumLocal to premiumEGP for backward compatibility, but it's actually in canonical currency
         variance: {
-          variancePct: pricing.variance.variancePct,
-          premiumEGP: pricing.variance.premiumLocal, // Keep backward compatibility (actually in canonical currency)
-          classification: pricing.variance.classification,
+          variancePct: pricingForApi.variance.variancePct,
+          premiumEGP: pricingForApi.variance.premiumLocal, // Keep backward compatibility (actually in canonical currency)
+          classification: pricingForApi.variance.classification,
         },
         fx: {
           usdEgp: usdEgp,
@@ -465,6 +484,9 @@ export async function GET(request: Request) {
         lowConfidence: activeSources === 1,
         referenceUnavailable: referenceUnavailable,
         fxUnavailable: fxUnavailable,
+        fairValueUnavailable: fairValueUnavailable,
+        varianceUnavailable: varianceUnavailable,
+        marketReferenceDegraded: marketReferenceDegraded,
         buyOnlyVariance: !hasSellData && hasVarianceData,
         egyptLocalMarketUntrusted: !!egMarketUntrusted,
       },
@@ -513,6 +535,10 @@ export async function GET(request: Request) {
         warnings: {
           lowConfidence: false,
           referenceUnavailable: true,
+          fxUnavailable: true,
+          fairValueUnavailable: true,
+          varianceUnavailable: true,
+          marketReferenceDegraded: false,
           buyOnlyVariance: false,
         },
       },

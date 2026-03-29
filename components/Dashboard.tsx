@@ -80,6 +80,9 @@ interface DashboardProps {
       lowConfidence: boolean;
       referenceUnavailable: boolean;
       fxUnavailable?: boolean;
+      fairValueUnavailable?: boolean;
+      varianceUnavailable?: boolean;
+      marketReferenceDegraded?: boolean;
       buyOnlyVariance?: boolean;
     };
   };
@@ -538,10 +541,22 @@ export default function Dashboard({ snapshot }: DashboardProps) {
               )}
             </>
           ) : (
-            <div className="text-gray-400">
-              {snapshot.warnings.fxUnavailable 
-                ? (lang === 'ar' ? 'القيمة العادلة غير متاحة (يُطلب سعر الصرف)' : 'Fair value not available (FX rate required)')
-                : (lang === 'ar' ? 'القيمة العادلة غير متاحة للمقارنة' : 'Fair value not available for comparison')}
+            <div className="space-y-2 text-gray-400">
+              {snapshot.warnings.marketReferenceDegraded ? (
+                <p className={`text-sm ${lang === 'ar' ? 'text-right' : ''}`}>
+                  {lang === 'ar'
+                    ? 'مقارنة العلاوة مقابل القيمة العادلة غير معروضة: مرجع السوق المحلي غير مكتمل الثقة (مصادر/عتبة التحديث).'
+                    : 'Premium vs fair value is not shown while the local market reference is below trust thresholds (sources/freshness).'}
+                </p>
+              ) : snapshot.warnings.fxUnavailable ? (
+                <p className={lang === 'ar' ? 'text-right' : ''}>
+                  {lang === 'ar' ? 'القيمة العادلة غير متاحة (يُطلب سعر الصرف)' : 'Fair value not available (FX rate required)'}
+                </p>
+              ) : (
+                <p className={lang === 'ar' ? 'text-right' : ''}>
+                  {lang === 'ar' ? 'القيمة العادلة غير متاحة للمقارنة' : 'Fair value not available for comparison'}
+                </p>
+              )}
             </div>
           )}
         </div>
