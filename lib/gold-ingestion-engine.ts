@@ -8,7 +8,7 @@ import { writeEgyptSnapshotToSupabase } from './supabase/writeMarketSnapshot';
 import { writeMarketSnapshotNorm } from './supabase/writeMarketSnapshotNorm';
 import { updateSourceStaleness, isSourceStale as isSourceStaleSupabase, getLastOkBuy as getLastOkBuySupabase } from './supabase/sourceStaleness';
 import { processSource, type SourcePriceResult } from './gold-sources-adapters-regex';
-import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, Karat, getEgyptAggregationMinSources } from './gold-ingestion-config';
+import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, getEgyptAggregationMinSources } from './gold-ingestion-config';
 import { computeConfidence } from './gold-ingestion-utils';
 
 /**
@@ -19,8 +19,28 @@ function newIngestionRunId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
     return globalThis.crypto.randomUUID();
   }
-  const { randomUUID } = require('node:crypto') as typeof import('node:crypto');
-  return randomUUID();
+
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj?.getRandomValues) {
+    throw new Error('Secure random UUID generation is not available in this runtime');
+  }
+
+  const bytes = new Uint8Array(16);
+  cryptoObj.getRandomValues(bytes);
+
+  // RFC 4122 version 4 UUID
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'));
+
+  return [
+    hex.slice(0, 4).join(''),
+    hex.slice(4, 6).join(''),
+    hex.slice(6, 8).join(''),
+    hex.slice(8, 10).join(''),
+    hex.slice(10, 16).join(''),
+  ].join('-');
 }
 
 function base64Encode(input: string): string {
@@ -276,7 +296,15 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
     result.sources_used[karatStr] = sources;
 
     // Build breakdown
-    const breakdown: Record<string, any> = {};
+    const breakdown: Record<string, {
+      buy: number | null;
+      sell: number | null;
+      valid: boolean;
+      stale: boolean;
+      reason: string | null;
+      note: string | null;
+    }> = {};
+
     for (const sourceResult of sourceResults) {
       const source = sourceResult.source;
       const effectivePrice = getEffectivePrice(sourceResult, karat);
@@ -879,4 +907,3 @@ export async function runIngestionCycle(): Promise<
     aggregatedMarkedDegraded,
   };
 }
-
