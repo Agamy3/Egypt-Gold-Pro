@@ -1,26 +1,55 @@
 /**
  * Gold Ingestion Engine
- * 
+ *
  * Orchestrates fetching, validation, staleness tracking, and weighted averages
  */
 
 import { writeEgyptSnapshotToSupabase } from './supabase/writeMarketSnapshot';
 import { writeMarketSnapshotNorm } from './supabase/writeMarketSnapshotNorm';
-import { updateSourceStaleness, isSourceStale as isSourceStaleSupabase, getLastOkBuy as getLastOkBuySupabase } from './supabase/sourceStaleness';
+import {
+  updateSourceStaleness,
+  isSourceStale as isSourceStaleSupabase,
+  getLastOkBuy as getLastOkBuySupabase,
+} from './supabase/sourceStaleness';
 import { processSource, type SourcePriceResult } from './gold-sources-adapters-regex';
-import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, Karat, getEgyptAggregationMinSources } from './gold-ingestion-config';
+import {
+  SOURCE_WEIGHTS,
+  STALE_AFTER_MS,
+  KARATS,
+  getEgyptAggregationMinSources,
+} from './gold-ingestion-config';
 import { computeConfidence } from './gold-ingestion-utils';
 
 /**
- * Worker-safe base64 encoder for stable raw_hash values.
- * Cloudflare Workers may not provide Node.js `Buffer`.
+ * Worker-safe UUID generator.
+ * Prefers crypto.randomUUID(), falls back to RFC 4122 v4 via getRandomValues().
  */
 function newIngestionRunId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
     return globalThis.crypto.randomUUID();
   }
-  const { randomUUID } = require('node:crypto') as typeof import('node:crypto');
-  return randomUUID();
+
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj?.getRandomValues) {
+    throw new Error('Secure random UUID generation is not available in this runtime');
+  }
+
+  const bytes = new Uint8Array(16);
+  cryptoObj.getRandomValues(bytes);
+
+  // RFC 4122 version 4 UUID
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'));
+
+  return [
+    hex.slice(0, 4).join(''),
+    hex.slice(4, 6).join(''),
+    hex.slice(6, 8).join(''),
+    hex.slice(8, 10).join(''),
+    hex.slice(10, 16).join(''),
+  ].join('-');
 }
 
 function base64Encode(input: string): string {
@@ -51,22 +80,31 @@ export interface IngestionResult {
   timestamp: string;
   our_price_buy: Record<string, number | null>;
   our_price_sell?: Record<string, number | null>;
-  confidence: Record<string, {
-    level: 'LOW' | 'MED' | 'HIGH';
-    num_sources: number;
-    stddev: number | null;
-    weight_sum: number;
-    cv: number | null;
-  }>;
+  confidence: Record<
+    string,
+    {
+      level: 'LOW' | 'MED' | 'HIGH';
+      num_sources: number;
+      stddev: number | null;
+      weight_sum: number;
+      cv: number | null;
+    }
+  >;
   sources_used: Record<string, string[]>;
-  breakdown: Record<string, Record<string, {
-    buy: number | null;
-    sell: number | null;
-    valid: boolean;
-    stale: boolean;
-    reason: string | null;
-    note: string | null;
-  }>>;
+  breakdown: Record<
+    string,
+    Record<
+      string,
+      {
+        buy: number | null;
+        sell: number | null;
+        valid: boolean;
+        stale: boolean;
+        reason: string | null;
+        note: string | null;
+      }
+    >
+  >;
   errors: string[];
   num_sources_ok: number;
   num_sources_errors: number;
@@ -75,17 +113,28 @@ export interface IngestionResult {
 /**
  * Update staleness for source+karat (uses Supabase, with country support)
  */
-async function updateStaleness(source: string, karat: number, price: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<void> {
+async function updateStaleness(
+  source: string,
+  karat: number,
+  price: number,
+  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'
+): Promise<void> {
   const now = Date.now();
-  
+
   // Update in Supabase (non-fatal)
   // Only update staleness for valid karats (14, 18, 21, 22, 24)
   if (![14, 18, 21, 22, 24].includes(karat)) {
     return;
   }
-  
+
   try {
-    const updateResult = await updateSourceStaleness(country, source, karat as 14 | 18 | 21 | 22 | 24, now, price);
+    const updateResult = await updateSourceStaleness(
+      country,
+      source,
+      karat as 14 | 18 | 21 | 22 | 24,
+      now,
+      price
+    );
     if (!updateResult.ok) {
       console.warn('[Ingestion] Staleness update failed:', {
         source,
@@ -105,7 +154,11 @@ async function updateStaleness(source: string, karat: number, price: number, cou
 /**
  * Check if source+karat is stale (uses Supabase, with country support)
  */
-async function isStale(source: string, karat: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<boolean> {
+async function isStale(
+  source: string,
+  karat: number,
+  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'
+): Promise<boolean> {
   // Only check staleness for valid karats
   if (![14, 18, 21, 22, 24].includes(karat)) {
     return true; // Unknown karat = stale
@@ -121,7 +174,11 @@ async function isStale(source: string, karat: number, country: 'EG' | 'AE' | 'SA
 /**
  * Get last valid buy price for source+karat (uses Supabase, with country support)
  */
-async function getLastOkBuy(source: string, karat: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<number | null> {
+async function getLastOkBuy(
+  source: string,
+  karat: number,
+  country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'
+): Promise<number | null> {
   // Only query for valid karats
   if (![14, 18, 21, 22, 24].includes(karat)) {
     return null;
@@ -187,7 +244,7 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
         const buy = sourceResult.prices[karat];
         const sell = sourceResult.sells?.[karat];
         const price = buy ?? sell;
-        const hasValidPrice = typeof price === 'number' && isFinite(price) && price > 0;
+        const hasValidPrice = typeof price === "number" && isFinite(price) && price > 0;
 
         if (!hasValidPrice) {
           console.log('[Aggregation] Source price check:', {
@@ -228,7 +285,7 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
       result.num_sources_errors++;
       // Always include at least one error per failed source
       if (sourceResult.errors.length > 0) {
-        result.errors.push(...sourceResult.errors.map(e => `${sourceResult.source}: ${e}`));
+        result.errors.push(...sourceResult.errors.map((e) => `${sourceResult.source}: ${e}`));
       } else {
         result.errors.push(`${sourceResult.source}: no_valid_prices`);
       }
@@ -254,9 +311,9 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
     }
 
     const data = karatData[karat];
-    const prices = data.map(d => d.price);
-    const weights = data.map(d => d.weight);
-    const sources = data.map(d => d.source);
+    const prices = data.map((d) => d.price);
+    const weights = data.map((d) => d.weight);
+    const sources = data.map((d) => d.source);
 
     const weightSum = weights.reduce((a, b) => a + b, 0);
     const weightedSum = data.reduce((sum, d) => sum + d.price * d.weight, 0);
@@ -276,7 +333,18 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
     result.sources_used[karatStr] = sources;
 
     // Build breakdown
-    const breakdown: Record<string, any> = {};
+    const breakdown: Record<
+      string,
+      {
+        buy: number | null;
+        sell: number | null;
+        valid: boolean;
+        stale: boolean;
+        reason: string | null;
+        note: string | null;
+      }
+    > = {};
+
     for (const sourceResult of sourceResults) {
       const source = sourceResult.source;
       const effectivePrice = getEffectivePrice(sourceResult, karat);
@@ -309,9 +377,6 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
 }
 
 /**
- * Run one ingestion cycle
- */
-/**
  * Run multi-country ingestion cycle
  * Fetches data for EG, AE, SA, US
  */
@@ -324,7 +389,9 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   const now = Date.now();
 
   // Import multi-country adapters and helpers
-  const { fetchUAEGoldPrices, fetchSaudiGoldPrices, fetchUSASpotPrices } = await import('./gold-sources-adapters-multicountry');
+  const { fetchUAEGoldPrices, fetchSaudiGoldPrices, fetchUSASpotPrices } = await import(
+    './gold-sources-adapters-multicountry'
+  );
   const { getLatestGoldSpot } = await import('./supabase/goldSpot');
   const { getImpliedOunceWithCache } = await import('./goldapi');
   const { getMultiCurrencyRates } = await import('./fx-multi');
@@ -334,14 +401,14 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   console.log('[Ingestion] Processing Egypt (EG)...');
   try {
     const egResult = await runIngestionCycle();
-    results['EG'] = {
+    results.EG = {
       inserted: egResult.sourcesWritten + (egResult.aggregatedSnapshotWritten ? 1 : 0),
       errors: egResult.errors,
     };
-    totalInserted += results['EG'].inserted;
+    totalInserted += results.EG.inserted;
   } catch (error) {
     console.error('[Ingestion] Egypt ingestion failed:', error);
-    results['EG'] = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
+    results.EG = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
   }
 
   // 2. USA (derive from spot price)
@@ -350,7 +417,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     const spotData = await getLatestGoldSpot();
     const spotPrice = spotData?.xau_spot_usd_oz ?? null;
     const usResult = await fetchUSASpotPrices(spotPrice);
-    
+
     if (usResult.valid && Object.keys(usResult.prices).length > 0) {
       const rawHash = base64Encode(JSON.stringify(usResult)).substring(0, 32);
       const writeResult = await writeMarketSnapshotNorm({
@@ -368,23 +435,23 @@ export async function runMultiCountryIngestionCycle(): Promise<{
           14: { buy: usResult.prices[14] || null },
         },
       });
-      results['US'] = {
+      results.US = {
         inserted: writeResult.inserted || 0,
         errors: writeResult.ok ? [] : [writeResult.error || 'Write failed'],
       };
-      totalInserted += results['US'].inserted;
+      totalInserted += results.US.inserted;
     } else {
-      results['US'] = { inserted: 0, errors: usResult.errors };
+      results.US = { inserted: 0, errors: usResult.errors };
     }
   } catch (error) {
     console.error('[Ingestion] USA ingestion failed:', error);
-    results['US'] = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
+    results.US = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
   }
 
   // Fetch impliedOunce and FX for parity computation
   let impliedOunceUsd: number | null = null;
   let fxRates: { usd_aed: number | null; usd_sar: number | null } | null = null;
-  
+
   try {
     const impliedOunceResult = await getImpliedOunceWithCache();
     if (impliedOunceResult.data?.impliedOunceUsd) {
@@ -393,7 +460,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   } catch (error) {
     console.warn('[Ingestion] Failed to fetch impliedOunce for parity:', error);
   }
-  
+
   try {
     const fx = await getMultiCurrencyRates();
     fxRates = {
@@ -409,7 +476,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   let aeScraperInserted = 0;
   try {
     const aeResult = await fetchUAEGoldPrices();
-    
+
     if (aeResult.valid && Object.keys(aeResult.prices).length > 0) {
       const rawHash = base64Encode(JSON.stringify(aeResult)).substring(0, 32);
       const writeResult = await writeMarketSnapshotNorm({
@@ -441,9 +508,9 @@ export async function runMultiCountryIngestionCycle(): Promise<{
         currency: 'AED',
         usdRate: fxRates.usd_aed,
       });
-      
+
       const parityHash = generateParityHash('AE', 'global_parity', impliedOunceUsd, fxRates.usd_aed, now);
-      
+
       const writeResult = await writeMarketSnapshotNorm({
         country: 'AE',
         source: 'global_parity',
@@ -457,7 +524,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
           14: { buy: parityPrices[14] },
         },
       });
-      
+
       aeParityInserted = writeResult.inserted || 0;
       console.log('[Ingest] parity inserted', { country: 'AE', inserted: aeParityInserted });
     } catch (error) {
@@ -467,18 +534,18 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     console.warn('[Ingestion] Cannot compute AE parity: missing impliedOunce or FX rate');
   }
 
-  results['AE'] = {
+  results.AE = {
     inserted: aeScraperInserted + aeParityInserted,
     errors: [],
   };
-  totalInserted += results['AE'].inserted;
+  totalInserted += results.AE.inserted;
 
   // 4. Saudi Arabia - Try scraper first, then ALWAYS write parity
   console.log('[Ingestion] Processing Saudi Arabia (SA)...');
   let saScraperInserted = 0;
   try {
     const saResult = await fetchSaudiGoldPrices();
-    
+
     if (saResult.valid && Object.keys(saResult.prices).length > 0) {
       const rawHash = base64Encode(JSON.stringify(saResult)).substring(0, 32);
       const writeResult = await writeMarketSnapshotNorm({
@@ -510,9 +577,9 @@ export async function runMultiCountryIngestionCycle(): Promise<{
         currency: 'SAR',
         usdRate: fxRates.usd_sar,
       });
-      
+
       const parityHash = generateParityHash('SA', 'global_parity', impliedOunceUsd, fxRates.usd_sar, now);
-      
+
       const writeResult = await writeMarketSnapshotNorm({
         country: 'SA',
         source: 'global_parity',
@@ -526,7 +593,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
           14: { buy: parityPrices[14] },
         },
       });
-      
+
       saParityInserted = writeResult.inserted || 0;
       console.log('[Ingest] parity inserted', { country: 'SA', inserted: saParityInserted });
     } catch (error) {
@@ -536,11 +603,11 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     console.warn('[Ingestion] Cannot compute SA parity: missing impliedOunce or FX rate');
   }
 
-  results['SA'] = {
+  results.SA = {
     inserted: saScraperInserted + saParityInserted,
     errors: [],
   };
-  totalInserted += results['SA'].inserted;
+  totalInserted += results.SA.inserted;
 
   console.log(`[Ingestion] Multi-country cycle complete: ${totalInserted} total rows inserted`, results);
   return { results, totalInserted };
@@ -559,13 +626,15 @@ export async function runIngestionCycle(): Promise<
 
   const sources = Object.keys(SOURCE_WEIGHTS);
   console.log(`[Ingestion] Starting Egypt cycle with ${sources.length} sources:`, sources);
-  
+
   // Fetch all sources in parallel
   const sourceResults = await Promise.all(
     sources.map(async (source) => {
       try {
         const result = await processSource(source);
-        console.log(`[Ingestion] Source ${source}: valid=${result.valid}, prices=${Object.keys(result.prices).length}, errors=${result.errors.length}`);
+        console.log(
+          `[Ingestion] Source ${source}: valid=${result.valid}, prices=${Object.keys(result.prices).length}, errors=${result.errors.length}`
+        );
         return result;
       } catch (error) {
         console.error(`[Ingestion] Error processing source ${source}:`, error);
@@ -592,9 +661,7 @@ export async function runIngestionCycle(): Promise<
           if (lastOk !== null) {
             const dropPct = (lastOk - effectivePrice) / lastOk;
             if (dropPct > 0.60) {
-              sourceResult.errors.push(
-                `Karat ${karat}: suspicious 60%+ drop (${lastOk} -> ${effectivePrice})`
-              );
+              sourceResult.errors.push(`Karat ${karat}: suspicious 60%+ drop (${lastOk} -> ${effectivePrice})`);
               sourceResult.notes.push(`Rejected ${karat}K due to large drop`);
               delete sourceResult.prices[karat];
               if (sourceResult.sells) {
@@ -603,7 +670,7 @@ export async function runIngestionCycle(): Promise<
               continue;
             }
           }
-          
+
           await updateStaleness(sourceResult.source, karat, effectivePrice);
         }
       }
@@ -611,7 +678,7 @@ export async function runIngestionCycle(): Promise<
   }
 
   // Compute weighted averages
-  console.log(`[Ingestion] Computing weighted averages from ${sourceResults.filter(s => s.valid).length} valid sources`);
+  console.log(`[Ingestion] Computing weighted averages from ${sourceResults.filter((s) => s.valid).length} valid sources`);
   const result = await computeWeightedAverage(sourceResults);
   console.log(`[Ingestion] Weighted averages computed:`, {
     24: result.our_price_buy['24'],
@@ -632,18 +699,18 @@ export async function runIngestionCycle(): Promise<
 
   for (const sourceResult of sourceResults) {
     const rawHash = base64Encode(JSON.stringify(sourceResult)).substring(0, 32);
-    
+
     try {
       // Write to Supabase using the unified client
       // Check if source is trusted (e.g., goldbullioneg)
       const isTrusted = sourceResult.source === 'goldbullioneg';
-      
+
       const hasValidPrices =
         getEffectivePrice(sourceResult, 24) !== null ||
         getEffectivePrice(sourceResult, 21) !== null ||
         getEffectivePrice(sourceResult, 18) !== null ||
         getEffectivePrice(sourceResult, 14) !== null;
-      
+
       if (hasValidPrices) {
         const snapshotPreview = {
           source: sourceResult.source,
@@ -676,7 +743,7 @@ export async function runIngestionCycle(): Promise<
               24: { buy: getEffectivePrice(sourceResult, 24) },
             },
           });
-          
+
           const normResult = await writeMarketSnapshotNorm({
             country: 'EG',
             source: sourceResult.source,
@@ -695,19 +762,22 @@ export async function runIngestionCycle(): Promise<
               24: { buy: getEffectivePrice(sourceResult, 24) },
             },
           });
-          
+
           const sourceWriteAccepted = wideResult.ok || normResult.ok;
           if (sourceWriteAccepted) {
             sourcesWritten++;
-            console.log(`[Ingestion] Wrote snapshot for ${sourceResult.source}: wide=${wideResult.inserted || 0}, norm=${normResult.inserted || 0} row(s)`, {
-              source: sourceResult.source,
-              accepted: true,
-              reason: (wideResult.inserted || normResult.inserted) ? 'inserted_rows' : 'ok_zero_rows_idempotent_or_dedup',
-              wideOk: wideResult.ok,
-              wideInserted: wideResult.inserted || 0,
-              normOk: normResult.ok,
-              normInserted: normResult.inserted || 0,
-            });
+            console.log(
+              `[Ingestion] Wrote snapshot for ${sourceResult.source}: wide=${wideResult.inserted || 0}, norm=${normResult.inserted || 0} row(s)`,
+              {
+                source: sourceResult.source,
+                accepted: true,
+                reason: wideResult.inserted || normResult.inserted ? 'inserted_rows' : 'ok_zero_rows_idempotent_or_dedup',
+                wideOk: wideResult.ok,
+                wideInserted: wideResult.inserted || 0,
+                normOk: normResult.ok,
+                normInserted: normResult.inserted || 0,
+              }
+            );
           } else {
             console.error(`[Ingestion] Write skipped/failed for ${sourceResult.source}:`, {
               source: sourceResult.source,
@@ -782,9 +852,7 @@ export async function runIngestionCycle(): Promise<
       const price24 = result.our_price_buy['24'] ?? null;
 
       const isDegraded = !meetsThreshold;
-      const degradedReason = isDegraded
-        ? `insufficient_persisted_sources:${sourcesWritten}<${minSources}`
-        : null;
+      const degradedReason = isDegraded ? `insufficient_persisted_sources:${sourcesWritten}<${minSources}` : null;
 
       console.log('[Ingestion] aggregated snapshot write attempt', {
         ingestionRunId,
@@ -879,4 +947,3 @@ export async function runIngestionCycle(): Promise<
     aggregatedMarkedDegraded,
   };
 }
-
