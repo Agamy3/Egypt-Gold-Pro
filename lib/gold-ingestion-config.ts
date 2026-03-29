@@ -22,7 +22,6 @@ export const SOURCE_WEIGHTS: Record<string, number> = {
   banklive: 1.0,
   gold_era: 0.9,
   dokangold: 0.8,
-  goldrate24: 0.5,
   goldbullioneg: 0.7,
 };
 
@@ -52,7 +51,6 @@ export const SOURCE_URLS: Record<string, string> = {
   banklive: 'https://banklive.net/ar/gold-price-today-in-egypt',
   gold_era: 'https://egypt.gold-era.com/ar/%D8%B3%D8%B9%D8%B1-%D8%A7%D9%84%D8%B0%D9%87%D8%A8/',
   dokangold: 'https://dokangold.com/ar/eg/gold-14k-price',
-  goldrate24: 'https://www.goldrate24.com/ar/%D8%A7%D8%B3%D8%B9%D8%A7%D8%B1-%D8%A7%D9%84%D8%B0%D9%87%D8%A8/%D8%A7%D9%84%D8%B4%D8%B1%D9%82-%D8%A7%D9%84%D8%A3%D9%88%D8%B7/%D9%85%D8%B5%D8%B1/',
   goldbullioneg: 'https://goldbullioneg.com/%D8%A3%D8%B3%D8%B9%D8%A7%D8%B1-%D8%A7%D9%84%D8%B0%D9%87%D8%A8/',
 };
 
