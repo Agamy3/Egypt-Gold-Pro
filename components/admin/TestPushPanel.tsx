@@ -13,6 +13,8 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
   const [target, setTarget] = useState<'me' | 'all'>(defaultTarget);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [debugResult, setDebugResult] = useState<any>(null);
+  const [ingestLoading, setIngestLoading] = useState(false);
+  const [ingestResult, setIngestResult] = useState<any>(null);
   const [tgLoading, setTgLoading] = useState(false);
   const [tgStatsLoading, setTgStatsLoading] = useState(false);
   const [tgStats, setTgStats] = useState<any>(null);
@@ -83,6 +85,31 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
       setMessage({ type: 'error', text: e instanceof Error ? e.message : 'Debug cycle failed' });
     } finally {
       setDebugLoading(false);
+    }
+  };
+
+  const handleRunEgyptIngestion = async () => {
+    setIngestLoading(true);
+    setMessage(null);
+    setIngestResult(null);
+    try {
+      const res = await fetch('/api/admin/ingestion/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ country: 'EG' }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Ingestion failed (${res.status})`);
+      setIngestResult(json);
+      setMessage({
+        type: 'success',
+        text: `EG ingestion completed. sourcesWritten=${json.sourcesWritten}, aggregatedSnapshotWritten=${json.aggregatedSnapshotWritten}, ingestionRunId=${json.ingestionRunId}`,
+      });
+    } catch (e) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : 'Ingestion failed' });
+    } finally {
+      setIngestLoading(false);
     }
   };
 
@@ -359,6 +386,31 @@ export default function TestPushPanel({ defaultTarget = 'me' }: TestPushPanelPro
             </pre>
           </div>
         )}
+
+        <div className="rounded-lg border border-sky-900/60 bg-sky-950/20 p-4 space-y-3">
+          <div className="text-sm font-semibold text-sky-100">Market ingestion</div>
+          <p className="text-xs text-gray-400">
+            Trigger a fresh Egypt (EG) market ingestion run. This writes new rows into Supabase when sources are available.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleRunEgyptIngestion}
+              disabled={ingestLoading}
+              className="px-4 py-2 rounded-md text-sm font-semibold bg-sky-700 text-white hover:bg-sky-600 disabled:opacity-50"
+            >
+              {ingestLoading ? 'Running…' : 'Run EG ingestion now'}
+            </button>
+            {ingestResult?.ingestionRunId && (
+              <span className="text-xs text-gray-300 font-mono">run: {String(ingestResult.ingestionRunId).slice(0, 8)}</span>
+            )}
+          </div>
+          {ingestResult && (
+            <pre className="max-h-64 overflow-auto rounded bg-black/40 p-3 text-xs text-gray-200">
+              {JSON.stringify(ingestResult, null, 2)}
+            </pre>
+          )}
+        </div>
 
         <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-4 space-y-3">
           <div className="text-sm font-semibold text-gray-100">Telegram Test + Zone Preview</div>
