@@ -11,6 +11,8 @@ import { processSource, type SourcePriceResult } from './gold-sources-adapters-r
 import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, getEgyptAggregationMinSources } from './gold-ingestion-config';
 import { computeConfidence } from './gold-ingestion-utils';
 
+const IS_CLOUDFLARE_WORKER = typeof (globalThis as any).WebSocketPair !== 'undefined';
+
 /**
  * Worker-safe base64 encoder for stable raw_hash values.
  * Cloudflare Workers may not provide Node.js `Buffer`.
@@ -156,6 +158,9 @@ async function updateStaleness(source: string, karat: number, price: number, cou
  * Check if source+karat is stale (uses Supabase, with country support)
  */
 async function isStale(source: string, karat: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<boolean> {
+  if (IS_CLOUDFLARE_WORKER && country === 'EG') {
+    return false;
+  }
   // Only check staleness for valid karats
   if (![14, 18, 21, 22, 24].includes(karat)) {
     return true; // Unknown karat = stale
@@ -172,6 +177,9 @@ async function isStale(source: string, karat: number, country: 'EG' | 'AE' | 'SA
  * Get last valid buy price for source+karat (uses Supabase, with country support)
  */
 async function getLastOkBuy(source: string, karat: number, country: 'EG' | 'AE' | 'SA' | 'US' = 'EG'): Promise<number | null> {
+  if (IS_CLOUDFLARE_WORKER && country === 'EG') {
+    return null;
+  }
   // Only query for valid karats
   if (![14, 18, 21, 22, 24].includes(karat)) {
     return null;
@@ -642,32 +650,36 @@ export async function runIngestionCycle(): Promise<
   );
 
   // Update staleness tracking for valid prices
-  for (const sourceResult of sourceResults) {
-    if (hasAnyEffectivePrice(sourceResult)) {
-      for (const karat of KARATS) {
-        const effectivePrice = getEffectivePrice(sourceResult, karat);
-        if (effectivePrice !== null) {
-          // Check for sudden drops (60% drop from last known)
-          const lastOk = await getLastOkBuy(sourceResult.source, karat);
-          if (lastOk !== null) {
-            const dropPct = (lastOk - effectivePrice) / lastOk;
-            if (dropPct > 0.60) {
-              sourceResult.errors.push(
-                `Karat ${karat}: suspicious 60%+ drop (${lastOk} -> ${effectivePrice})`
-              );
-              sourceResult.notes.push(`Rejected ${karat}K due to large drop`);
-              delete sourceResult.prices[karat];
-              if (sourceResult.sells) {
-                delete sourceResult.sells[karat];
+  if (!IS_CLOUDFLARE_WORKER) {
+    for (const sourceResult of sourceResults) {
+      if (hasAnyEffectivePrice(sourceResult)) {
+        for (const karat of KARATS) {
+          const effectivePrice = getEffectivePrice(sourceResult, karat);
+          if (effectivePrice !== null) {
+            // Check for sudden drops (60% drop from last known)
+            const lastOk = await getLastOkBuy(sourceResult.source, karat);
+            if (lastOk !== null) {
+              const dropPct = (lastOk - effectivePrice) / lastOk;
+              if (dropPct > 0.60) {
+                sourceResult.errors.push(
+                  `Karat ${karat}: suspicious 60%+ drop (${lastOk} -> ${effectivePrice})`
+                );
+                sourceResult.notes.push(`Rejected ${karat}K due to large drop`);
+                delete sourceResult.prices[karat];
+                if (sourceResult.sells) {
+                  delete sourceResult.sells[karat];
+                }
+                continue;
               }
-              continue;
             }
+            
+            await updateStaleness(sourceResult.source, karat, effectivePrice);
           }
-          
-          await updateStaleness(sourceResult.source, karat, effectivePrice);
         }
       }
     }
+  } else {
+    console.warn('[Ingestion] EG staleness DB operations disabled in Cloudflare Worker runtime');
   }
 
   // Compute weighted averages
@@ -748,23 +760,25 @@ export async function runIngestionCycle(): Promise<
         console.log('[Ingestion] Preparing snapshot insert (wide+norm):', snapshotPreview);
 
         try {
-          const wideResult = await writeEgyptSnapshotToSupabase({
-            source: sourceResult.source,
-            trusted: isTrusted,
-            createdAtMs: now,
-            rawHash,
-            ingestionRunId,
-            isDegraded: false,
-            sourceWriteCount: null,
-            freshSourceCount: null,
-            degradedReason: null,
-            prices: {
-              14: { buy: price14 },
-              18: { buy: price18 },
-              21: { buy: price21 },
-              24: { buy: price24 },
-            },
-          });
+          const wideResult = IS_CLOUDFLARE_WORKER
+            ? { ok: false, inserted: 0, error: 'wide_disabled_in_worker' }
+            : await writeEgyptSnapshotToSupabase({
+                source: sourceResult.source,
+                trusted: isTrusted,
+                createdAtMs: now,
+                rawHash,
+                ingestionRunId,
+                isDegraded: false,
+                sourceWriteCount: null,
+                freshSourceCount: null,
+                degradedReason: null,
+                prices: {
+                  14: { buy: price14 },
+                  18: { buy: price18 },
+                  21: { buy: price21 },
+                  24: { buy: price24 },
+                },
+              });
           
           const normResult = await writeMarketSnapshotNorm({
             country: 'EG',
@@ -909,23 +923,25 @@ export async function runIngestionCycle(): Promise<
         degradedReason,
       });
 
-      const wideAggregatedResult = await writeEgyptSnapshotToSupabase({
-        source: 'aggregated',
-        trusted: false,
-        createdAtMs: now,
-        rawHash: aggregatedHash,
-        ingestionRunId,
-        isDegraded,
-        sourceWriteCount: sourcesWritten,
-        freshSourceCount: result.num_sources_ok,
-        degradedReason,
-        prices: {
-          14: { buy: price14 },
-          18: { buy: price18 },
-          21: { buy: price21 },
-          24: { buy: price24 },
-        },
-      });
+      const wideAggregatedResultFinal = IS_CLOUDFLARE_WORKER
+        ? { ok: false, inserted: 0, error: 'wide_disabled_in_worker' }
+        : await writeEgyptSnapshotToSupabase({
+            source: 'aggregated',
+            trusted: false,
+            createdAtMs: now,
+            rawHash: aggregatedHash,
+            ingestionRunId,
+            isDegraded,
+            sourceWriteCount: sourcesWritten,
+            freshSourceCount: result.num_sources_ok,
+            degradedReason,
+            prices: {
+              14: { buy: price14 },
+              18: { buy: price18 },
+              21: { buy: price21 },
+              24: { buy: price24 },
+            },
+          });
 
       const normAggregatedResult = await writeMarketSnapshotNorm({
         country: 'EG',
@@ -946,32 +962,32 @@ export async function runIngestionCycle(): Promise<
         },
       });
 
-      aggregatedWriteDiagnostics.wideOk = wideAggregatedResult.ok;
-      aggregatedWriteDiagnostics.wideInserted = typeof wideAggregatedResult.inserted === 'number' ? wideAggregatedResult.inserted : 0;
-      aggregatedWriteDiagnostics.wideError = wideAggregatedResult.ok ? null : wideAggregatedResult.error || null;
+      aggregatedWriteDiagnostics.wideOk = wideAggregatedResultFinal.ok;
+      aggregatedWriteDiagnostics.wideInserted = typeof wideAggregatedResultFinal.inserted === 'number' ? wideAggregatedResultFinal.inserted : 0;
+      aggregatedWriteDiagnostics.wideError = wideAggregatedResultFinal.ok ? null : wideAggregatedResultFinal.error || null;
       aggregatedWriteDiagnostics.normOk = normAggregatedResult.ok;
       aggregatedWriteDiagnostics.normInserted = typeof normAggregatedResult.inserted === 'number' ? normAggregatedResult.inserted : 0;
       aggregatedWriteDiagnostics.normError = normAggregatedResult.ok ? null : normAggregatedResult.error || null;
 
-      const aggregatedWriteAccepted = wideAggregatedResult.ok || normAggregatedResult.ok;
+      const aggregatedWriteAccepted = wideAggregatedResultFinal.ok || normAggregatedResult.ok;
       if (aggregatedWriteAccepted) {
         aggregatedWritten = true;
         console.log(
-          `[Ingestion] aggregated snapshot persisted: wide=${wideAggregatedResult.inserted || 0}, norm=${normAggregatedResult.inserted || 0}`,
+          `[Ingestion] aggregated snapshot persisted: wide=${wideAggregatedResultFinal.inserted || 0}, norm=${normAggregatedResult.inserted || 0}`,
           {
             ingestionRunId,
             isDegraded,
             sourcesWritten,
-            wideOk: wideAggregatedResult.ok,
+            wideOk: wideAggregatedResultFinal.ok,
             normOk: normAggregatedResult.ok,
             degradedReason,
           }
         );
       } else {
-        const errorMsg = normAggregatedResult.error || wideAggregatedResult.error || 'Unknown error';
+        const errorMsg = normAggregatedResult.error || wideAggregatedResultFinal.error || 'Unknown error';
         console.error(`[Ingestion] aggregated snapshot failed`, errorMsg, {
           ingestionRunId,
-          wide: wideAggregatedResult.error,
+          wide: wideAggregatedResultFinal.error,
           norm: normAggregatedResult.error,
         });
       }
