@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { adminErrorToResponse, requireAdmin } from '@/lib/auth/admin';
 import { getEgyptMarketIngestionDiagnostics } from '@/lib/market-ingestion-health';
+import { getLatestEgyptIngestionStatus } from '@/lib/market-ingestion-status';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -18,12 +19,18 @@ export async function GET() {
 
   const nowMs = Date.now();
   const diagnostics = await getEgyptMarketIngestionDiagnostics(nowMs);
+  const ingestion = await getLatestEgyptIngestionStatus(nowMs);
   const t = diagnostics.trust;
 
   return NextResponse.json({
     ok: true,
+    serverTime: new Date(nowMs).toISOString(),
     serverNowIso: diagnostics.serverNowIso,
     serverNowMs: diagnostics.serverNowMs,
+    ingestion: {
+      ...ingestion,
+      expectedFrequencyMinutes: 1,
+    },
     aggregatedFresh: t.aggregatedFresh,
     sourceBacked: t.sourceBacked,
     sameRunBacked: t.sameRunBacked,

@@ -36,6 +36,8 @@ export async function POST(req: NextRequest) {
         {
           ok: true,
           country: country as Country,
+          supabaseKeyType: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon',
+          usingServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
           sourcesWritten: res.sourcesWritten,
           aggregatedSnapshotWritten: res.aggregatedSnapshotWritten,
           ingestionRunId: res.ingestionRunId,

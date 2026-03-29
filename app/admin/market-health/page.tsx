@@ -1,4 +1,5 @@
 import Header from '@/components/layout/Header';
+import EgyptIngestionStatusPanel from '@/components/admin/EgyptIngestionStatusPanel';
 import { getServerUser } from '@/lib/supabase/server-auth';
 import { isAdminUser } from '@/lib/auth/admin';
 import { getEgyptMarketIngestionDiagnostics } from '@/lib/market-ingestion-health';
@@ -38,6 +39,7 @@ export default async function AdminMarketHealthPage() {
     <main className="flex-1 min-w-0">
       <Header title="Market ingestion health" subtitle="Egypt local sources vs aggregated (same-run)" />
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        <EgyptIngestionStatusPanel />
         <div className={`rounded-xl border px-4 py-3 ${badgeClass(d.healthBadge)}`}>
           <div className="text-sm font-semibold uppercase tracking-wide">Health</div>
           <div className="text-2xl font-bold mt-1">{d.healthBadge}</div>

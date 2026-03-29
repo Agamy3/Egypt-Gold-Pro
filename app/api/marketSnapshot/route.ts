@@ -10,9 +10,12 @@ import { getImpliedOunceWithCache } from '@/lib/goldapi';
 import { calculatePricing } from '@/lib/pricing';
 import { getMultiCurrencyRates, convertMoney, getCountryCurrency, Currency } from '@/lib/fx-multi';
 import { getMarketMedians, getActiveSourceCountNorm } from '@/lib/supabase/queries-norm';
+import { getLatestEgyptIngestionStatus } from '@/lib/market-ingestion-status';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+let lastSelfHealTriggerAt = 0;
 
 function withNoStoreHeaders(res: NextResponse) {
   res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -302,6 +305,48 @@ export async function GET(request: Request) {
 
     const egTrust = country === 'EG' ? marketData.egyptMarketTrust : undefined;
     const egMarketUntrusted = country === 'EG' && egTrust && !egTrust.homepageSafeToUse;
+
+    if (country === 'EG' && egTrust && !egTrust.homepageSafeToUse) {
+      try {
+        const status = await getLatestEgyptIngestionStatus();
+        const nowMs = Date.now();
+        const ageMin = status.ageMinutes;
+        const ingestionOlderThan2m = ageMin == null ? true : ageMin > 2;
+        const spamGuardOk = nowMs - lastSelfHealTriggerAt > 60_000;
+        const shouldSelfHeal = status.status === 'delayed' || status.status === 'stale' || status.status === 'dead';
+
+        console.log('[IngestionStatus] EG status in marketSnapshot:', {
+          lastIngestionAt: status.lastIngestionAt,
+          ageMinutes: status.ageMinutes,
+          status: status.status,
+          homepageSafeToUse: egTrust.homepageSafeToUse,
+        });
+
+        if (shouldSelfHeal && ingestionOlderThan2m && spamGuardOk) {
+          lastSelfHealTriggerAt = nowMs;
+          console.warn('[SelfHeal] triggered ingestion due to stale Egypt market', {
+            reason: status.status,
+            lastIngestionAt: status.lastIngestionAt,
+            ageMinutes: status.ageMinutes,
+          });
+          import('@/lib/gold-ingestion-engine')
+            .then(({ runIngestionCycle }) => runIngestionCycle())
+            .catch((err) => {
+              console.error('[SelfHeal] ingestion trigger failed:', err);
+            });
+        } else {
+          console.log('[SelfHeal] skipped', {
+            shouldSelfHeal,
+            reason: status.status,
+            ingestionOlderThan2m,
+            spamGuardOk,
+            lastSelfHealTriggerAt,
+          });
+        }
+      } catch (e) {
+        console.error('[SelfHeal] status check failed:', e);
+      }
+    }
 
     // Build sources array (simplified for now)
     const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
