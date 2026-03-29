@@ -735,6 +735,7 @@ export async function runIngestionCycle(): Promise<
               wideInserted: wideResult.inserted || 0,
               normOk: normResult.ok,
               normInserted: normResult.inserted || 0,
+              ingestionRunId,
             });
           } else {
             console.error(`[Ingestion] Write skipped/failed for ${sourceResult.source}:`, {
@@ -743,12 +744,14 @@ export async function runIngestionCycle(): Promise<
               reason: 'both_writers_not_ok',
               wide: wideResult.error,
               norm: normResult.error,
+              ingestionRunId,
             });
           }
         } catch (supabaseError) {
           console.error(`[Ingestion] Write exception for ${sourceResult.source}:`, {
             message: supabaseError instanceof Error ? supabaseError.message : String(supabaseError),
             error: supabaseError,
+            ingestionRunId,
           });
         }
       } else {
@@ -821,6 +824,9 @@ export async function runIngestionCycle(): Promise<
         price18,
         price21,
         price24,
+        sourceWriteCount: sourcesWritten,
+        freshSourceCount: result.num_sources_ok,
+        degradedReason,
       });
 
       const wideAggregatedResult = await writeEgyptSnapshotToSupabase({
@@ -871,6 +877,7 @@ export async function runIngestionCycle(): Promise<
             sourcesWritten,
             wideOk: wideAggregatedResult.ok,
             normOk: normAggregatedResult.ok,
+            degradedReason,
           }
         );
       } else {

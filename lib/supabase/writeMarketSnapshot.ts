@@ -108,6 +108,17 @@ export async function writeEgyptSnapshotToSupabase(
       degraded_reason: params.degradedReason ?? null,
     };
 
+    console.log('[Supabase] writeEgyptSnapshotToSupabase payload meta:', {
+      source: params.source,
+      createdAt,
+      rawHashPrefix: params.rawHash ? String(params.rawHash).slice(0, 8) : null,
+      ingestionRunId: params.ingestionRunId ?? null,
+      isDegraded: params.isDegraded ?? false,
+      sourceWriteCount: params.sourceWriteCount ?? null,
+      freshSourceCount: params.freshSourceCount ?? null,
+      degradedReason: params.degradedReason ?? null,
+    });
+
     // Add buy prices for each karat (only if valid)
     const karats: (14 | 18 | 21 | 24)[] = [14, 18, 21, 24];
     for (const karat of karats) {
@@ -161,6 +172,11 @@ export async function writeEgyptSnapshotToSupabase(
           market18Buy: row.market18Buy,
           market14Buy: row.market14Buy,
           errorValue: row.error,
+          ingestionRunId: row.ingestion_run_id,
+          isDegraded: row.is_degraded,
+          sourceWriteCount: row.source_write_count,
+          freshSourceCount: row.fresh_source_count,
+          degradedReason: row.degraded_reason,
         });
 
         const result = await supabase

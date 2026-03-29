@@ -88,6 +88,18 @@ export async function writeMarketSnapshotNorm(
     const supabase = db.supabase;
     const currency = getCountryCurrency(params.country);
     const createdAtISO = new Date(params.createdAt).toISOString();
+
+    console.log('[Supabase] writeMarketSnapshotNorm payload meta:', {
+      country: params.country,
+      source: params.source,
+      createdAt: createdAtISO,
+      rawHashPrefix: params.rawHash ? String(params.rawHash).slice(0, 8) : null,
+      ingestionRunId: params.ingestionRunId ?? null,
+      isDegraded: params.isDegraded ?? false,
+      sourceWriteCount: params.sourceWriteCount ?? null,
+      freshSourceCount: params.freshSourceCount ?? null,
+      degradedReason: params.degradedReason ?? null,
+    });
     
     // Build rows: one per karat with valid buy price
     // Note: market_snapshots_norm table does NOT have a 'market' column - only country, karat, price, currency, source, trusted, created_at, raw_hash
@@ -156,6 +168,11 @@ export async function writeMarketSnapshotNorm(
         karat: r.karat,
         price: r.price,
         rawHashPrefix: r.raw_hash ? String(r.raw_hash).slice(0, 8) : null,
+        ingestionRunId: r.ingestion_run_id,
+        isDegraded: r.is_degraded,
+        sourceWriteCount: r.source_write_count,
+        freshSourceCount: r.fresh_source_count,
+        degradedReason: r.degraded_reason,
       })),
     });
     

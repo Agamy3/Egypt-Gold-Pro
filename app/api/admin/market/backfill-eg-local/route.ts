@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
       return a.length % 2 === 0 ? (a[mid - 1] + a[mid]) / 2 : a[mid];
     };
 
-    // Write aggregated bucket medians into normalized table as source='aggregated'
+    // Write aggregated bucket medians into normalized table as source='series_aggregate'
     for (const [t, b] of buckets.entries()) {
       const created_at = new Date(t).toISOString();
       const pushAgg = (karat: 14 | 18 | 21 | 24, value: number | null) => {
@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
           karat,
           price: value,
           currency: 'EGP',
-          source: 'aggregated',
+          source: 'series_aggregate',
           trusted: false,
           created_at,
           raw_hash,
