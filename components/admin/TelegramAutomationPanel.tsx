@@ -35,6 +35,17 @@ type LogsRes = {
   rows: any[];
 };
 
+type RunNowRes = {
+  ok: boolean;
+  automation: 'gold_signals' | 'notify_rules';
+  attempted: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  message: string;
+  error?: string;
+};
+
 type TgDiagnosticsRes = {
   ok: boolean;
   error?: string;
@@ -146,9 +157,12 @@ export default function TelegramAutomationPanel() {
         cache: 'no-store',
         body: JSON.stringify({ key }),
       });
-      const json = await res.json().catch(() => null);
+      const json = (await res.json().catch(() => null)) as RunNowRes | null;
       if (!res.ok || !json?.ok) throw new Error(json?.error || `Run failed (${res.status})`);
-      setMessage({ type: 'success', text: `Run completed for ${key}.` });
+
+      const summary = `${json.message} (attempted=${json.attempted}, sent=${json.sent}, skipped=${json.skipped}, failed=${json.failed})`;
+      const type = json.failed > 0 ? 'error' : 'success';
+      setMessage({ type, text: summary });
       await loadAll();
     } catch (e) {
       setMessage({ type: 'error', text: e instanceof Error ? e.message : 'Run failed' });

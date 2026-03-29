@@ -19,39 +19,89 @@ function withNoStoreHeaders(res: NextResponse) {
   return res;
 }
 
-async function runGoldSignalsWithTelegram(supabase: ReturnType<typeof getServerClient>) {
-  const cron = await runGoldSignalsCron({ supabase, now: new Date() });
-  if (!cron.ok) return { ok: false as const, error: cron.error, detail: cron };
+type RunKey = 'gold_signals' | 'notify_rules';
 
-  const canSend = await isTelegramAutomationEnabled(supabase, 'gold_signals');
-  if (!canSend) {
+type RunResult = {
+  ok: boolean;
+  automation: RunKey;
+  attempted: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  message: string;
+  error?: string;
+  detail?: unknown;
+};
+
+async function runGoldSignalsWithTelegram(supabase: ReturnType<typeof getServerClient>): Promise<RunResult> {
+  const cron = await runGoldSignalsCron({ supabase, now: new Date() });
+  if (!cron.ok) {
     return {
-      ok: true as const,
-      telegramSkipped: true,
-      cron,
+      ok: false,
+      automation: 'gold_signals',
+      attempted: 0,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+      message: 'Gold signals cron failed',
+      error: cron.error,
+      detail: cron,
     };
   }
 
-  const createdSignal = cron.created.find((s) => s.country === 'EG' && (s.action === 'BUY' || s.action === 'SELL'));
-  if (!createdSignal) {
-    return { ok: true as const, telegramSkipped: true, reason: 'no_buy_sell_created', cron };
+  const canSend = await isTelegramAutomationEnabled(supabase, 'gold_signals').catch(() => true);
+  if (!canSend) {
+    return {
+      ok: true,
+      automation: 'gold_signals',
+      attempted: 0,
+      sent: 0,
+      skipped: 1,
+      failed: 0,
+      message: 'Telegram gold signals automation is disabled',
+      detail: { cron },
+    };
   }
 
+  // IMPORTANT: runGoldSignalsCron can return createdCount=0 if the cycle already exists.
+  // For manual admin runs we still want to attempt sending the *latest* EG final_action.
   const { data: latestEg } = await supabase
     .from('gold_signals')
-    .select('xau_usd, final_confidence0to1, variance_pct, cycle_started_at, meta')
+    .select('cycle_key, xau_usd, final_action, final_confidence0to1, variance_pct, cycle_started_at, meta')
     .eq('country', 'EG')
-    .eq('cycle_key', cron.cycleKey)
     .order('cycle_started_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
+  const finalAction = latestEg ? String((latestEg as any).final_action ?? '').toUpperCase() : '';
+  if (finalAction !== 'BUY' && finalAction !== 'SELL') {
+    return {
+      ok: true,
+      automation: 'gold_signals',
+      attempted: 0,
+      sent: 0,
+      skipped: 1,
+      failed: 0,
+      message: `No BUY/SELL signal to send (final_action=${finalAction || 'missing'})`,
+      detail: { cron, latestEg },
+    };
+  }
+
   const xauUsd = latestEg ? Number((latestEg as any).xau_usd) : NaN;
-  const conf = latestEg ? Number((latestEg as any).final_confidence0to1 ?? createdSignal.confidence) : createdSignal.confidence;
+  const conf = latestEg ? Number((latestEg as any).final_confidence0to1 ?? null) : null;
   const meta = (latestEg as any)?.meta || {};
 
   if (!isFinite(xauUsd) || xauUsd <= 0) {
-    return { ok: true as const, telegramSkipped: true, reason: 'missing_xau_usd', cron };
+    return {
+      ok: true,
+      automation: 'gold_signals',
+      attempted: 0,
+      sent: 0,
+      skipped: 1,
+      failed: 0,
+      message: 'Missing XAUUSD price on latest EG signal',
+      detail: { cron, latestEg },
+    };
   }
 
   const [liveMarket, fx] = await Promise.all([
@@ -69,9 +119,9 @@ async function runGoldSignalsWithTelegram(supabase: ReturnType<typeof getServerC
       : null;
 
   const telegram = await sendTelegramSignalToEnabledUsers({
-    action: createdSignal.action,
+    action: finalAction as 'BUY' | 'SELL',
     xauUsd,
-    confidence: isFinite(conf) ? conf : null,
+    confidence: isFinite(conf as number) ? (conf as number) : null,
     country: 'EG',
     local24: typeof liveLocal24 === 'number' ? liveLocal24 : (typeof meta.eg_local_24_latest === 'number' ? meta.eg_local_24_latest : null),
     local21: typeof liveLocal21 === 'number' ? liveLocal21 : (typeof meta.eg_local_21_latest === 'number' ? meta.eg_local_21_latest : null),
@@ -86,16 +136,34 @@ async function runGoldSignalsWithTelegram(supabase: ReturnType<typeof getServerC
     timestampIso: (latestEg as any)?.cycle_started_at || new Date().toISOString(),
   });
 
-  return { ok: true as const, cron, telegram };
+  const attempted = (telegram.sent ?? 0) + (telegram.failed ?? 0);
+  const skipped = attempted === 0 ? 1 : 0;
+  const msg =
+    attempted === 0
+      ? 'No eligible users to send to (or all sends skipped by per-user rules)'
+      : telegram.failed > 0
+        ? `Telegram sent with failures (sent=${telegram.sent}, failed=${telegram.failed})`
+        : `Telegram sent (sent=${telegram.sent})`;
+
+  return {
+    ok: true,
+    automation: 'gold_signals',
+    attempted,
+    sent: telegram.sent,
+    skipped,
+    failed: telegram.failed,
+    message: msg,
+    detail: { cron, latestEg, telegram },
+  };
 }
 
-async function runNotifyCronViaFetch(): Promise<{ ok: boolean; status: number; body: any }> {
+async function runNotifyCronViaFetch(origin: string): Promise<{ ok: boolean; status: number; body: any }> {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
     return { ok: false, status: 500, body: { error: 'CRON_SECRET not configured' } };
   }
 
-  const base = (process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const base = origin.replace(/\/$/, '');
   const res = await fetch(`${base}/api/cron/notify`, {
     method: 'GET',
     headers: {
@@ -111,7 +179,7 @@ async function runNotifyCronViaFetch(): Promise<{ ok: boolean; status: number; b
 export async function POST(req: NextRequest) {
   try {
     await requireAdmin();
-    const body = (await req.json().catch(() => null)) as { key?: 'gold_signals' | 'notify_rules' } | null;
+    const body = (await req.json().catch(() => null)) as { key?: RunKey } | null;
     const key = body?.key;
 
     if (key !== 'gold_signals' && key !== 'notify_rules') {
@@ -122,13 +190,67 @@ export async function POST(req: NextRequest) {
 
     if (key === 'gold_signals') {
       const r = await runGoldSignalsWithTelegram(supabase);
-      return withNoStoreHeaders(NextResponse.json({ ok: r.ok, result: r }, { status: r.ok ? 200 : 500 }));
+      return withNoStoreHeaders(NextResponse.json(r, { status: r.ok ? 200 : 500 }));
     }
 
-    const notify = await runNotifyCronViaFetch();
-    return withNoStoreHeaders(
-      NextResponse.json({ ok: notify.ok, status: notify.status, result: notify.body }, { status: notify.ok ? 200 : 502 })
-    );
+    const startedAtIso = new Date().toISOString();
+    const origin = req.nextUrl?.origin || new URL(req.url).origin;
+    const notify = await runNotifyCronViaFetch(origin);
+    if (!notify.ok) {
+      const r: RunResult = {
+        ok: false,
+        automation: 'notify_rules',
+        attempted: 1,
+        sent: 0,
+        skipped: 0,
+        failed: 1,
+        message: 'Notify cron failed',
+        error:
+          notify.body && (notify.body.error || notify.body.details)
+            ? String(notify.body.error || notify.body.details)
+            : `HTTP ${notify.status}`,
+        detail: notify.body,
+      };
+      return withNoStoreHeaders(NextResponse.json(r, { status: 502 }));
+    }
+
+    const { data: rows } = await supabase
+      .from('notification_deliveries_log')
+      .select('status')
+      .eq('channel', 'telegram')
+      .eq('payload->>source', 'notify_rules')
+      .gte('created_at', startedAtIso)
+      .limit(5000);
+
+    let sent = 0;
+    let failed = 0;
+    let skipped = 0;
+    for (const r of (rows ?? []) as Array<{ status?: unknown }>) {
+      const s = String(r.status || '');
+      if (s === 'sent') sent += 1;
+      else if (s === 'failed') failed += 1;
+      else if (s === 'skipped') skipped += 1;
+    }
+    const attempted = sent + failed + skipped;
+    const message =
+      attempted === 0
+        ? 'Notify cron executed but no Telegram deliveries were produced (no eligible alerts/users or all channels disabled)'
+        : failed > 0
+          ? `Notify cron executed with Telegram failures (sent=${sent}, failed=${failed}, skipped=${skipped})`
+          : `Notify cron executed (sent=${sent}, skipped=${skipped})`;
+
+    const r: RunResult = {
+      ok: true,
+      automation: 'notify_rules',
+      attempted,
+      sent,
+      skipped,
+      failed,
+      message,
+      detail: notify.body,
+    };
+
+    return withNoStoreHeaders(NextResponse.json(r, { status: 200 }));
   } catch (e) {
     return withNoStoreHeaders(adminErrorToResponse(e));
   }
