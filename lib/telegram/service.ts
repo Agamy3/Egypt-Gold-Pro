@@ -4,6 +4,7 @@ import db from '@/lib/supabase';
 import { getGoldSignalZone, zoneWhyNow } from '@/lib/telegram/signal-zones';
 import { getMarketMedians } from '@/lib/supabase/queries-norm';
 import { getMultiCurrencyRates } from '@/lib/fx-multi';
+import { isTelegramAutomationEnabled } from '@/lib/telegram/automationSettings';
 
 type Country = 'GLOBAL' | 'EG' | 'AE' | 'SA' | 'US';
 type SignalAction = 'BUY' | 'SELL' | 'HOLD';
@@ -395,6 +396,11 @@ export async function sendTelegramSignalToEnabledUsers(args: {
   sourcesCount?: number | null;
   timestampIso?: string;
 }): Promise<{ sent: number; failed: number; errors: string[] }> {
+  const enabled = await isTelegramAutomationEnabled(db.supabase, 'gold_signals').catch(() => true);
+  if (!enabled) {
+    return { sent: 0, failed: 0, errors: [] };
+  }
+
   const { data, error } = await db.supabase
     .from('user_telegram_connections')
     .select('user_id, telegram_chat_id, language, preferred_karat, alert_signals_enabled')

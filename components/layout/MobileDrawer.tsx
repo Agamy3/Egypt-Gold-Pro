@@ -76,6 +76,7 @@ export default function MobileDrawer() {
         { href: '/admin/alpaca-paper', labelEn: 'Alpaca Paper', labelAr: 'ألباكا (تجريبي)' },
         { href: '/admin/news', labelEn: 'News Admin', labelAr: 'إدارة الأخبار' },
         { href: '/admin/notifications', labelEn: 'Notifications', labelAr: 'الإشعارات' },
+        { href: '/admin/telegram', labelEn: 'Telegram', labelAr: 'تيليجرام' },
         { href: '/admin/billing', labelEn: 'Billing', labelAr: 'الفوترة' },
       ]
     : [];

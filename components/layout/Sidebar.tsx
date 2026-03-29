@@ -197,6 +197,12 @@ export default function Sidebar() {
           icon: <span>🔔</span>,
         },
         {
+          href: '/admin/telegram',
+          labelEn: 'Telegram',
+          labelAr: 'تيليجرام',
+          icon: <span>📨</span>,
+        },
+        {
           href: '/admin/billing',
           labelEn: 'Billing',
           labelAr: 'الفوترة',

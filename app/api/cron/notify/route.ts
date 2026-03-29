@@ -19,6 +19,7 @@ import { getCountryCurrency, getMultiCurrencyRates, convertMoney } from '@/lib/f
 import { sendPushNotification } from '@/lib/push';
 import { sendNotificationEmail, formatPriceChangeEmail } from '@/lib/email/resend';
 import { formatTelegramPriceAlert, getEnabledTelegramConnection, sendTelegramMessage } from '@/lib/telegram/service';
+import { isTelegramAutomationEnabled } from '@/lib/telegram/automationSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,13 +121,33 @@ async function sendTelegramForRule(args: {
   };
 }) {
   if (!args.rule?.channel_telegram) return;
+  const supabase = getServerClient();
+  const enabled = await isTelegramAutomationEnabled(supabase, 'notify_rules').catch(() => true);
+  if (!enabled) {
+    await logDelivery(
+      args.userId,
+      args.ruleId,
+      'telegram',
+      'skipped',
+      { source: 'notify_rules', reason: 'telegram_automation_disabled' },
+      null
+    );
+    return;
+  }
   const conn = await getEnabledTelegramConnection(args.userId);
   if (!conn.chatId) {
-    await logDelivery(args.userId, args.ruleId, 'telegram', 'skipped', { reason: 'no_telegram_connection' }, null);
+    await logDelivery(args.userId, args.ruleId, 'telegram', 'skipped', { source: 'notify_rules', reason: 'no_telegram_connection' }, null);
     return;
   }
   if (args.priceAlertData && conn.alertPriceEnabled === false) {
-    await logDelivery(args.userId, args.ruleId, 'telegram', 'skipped', { reason: 'telegram_price_alerts_disabled' }, null);
+    await logDelivery(
+      args.userId,
+      args.ruleId,
+      'telegram',
+      'skipped',
+      { source: 'notify_rules', reason: 'telegram_price_alerts_disabled' },
+      null
+    );
     return;
   }
   const text = args.telegramText
@@ -143,7 +164,7 @@ async function sendTelegramForRule(args: {
     args.ruleId,
     'telegram',
     tg.success ? 'sent' : 'failed',
-    { chat_id: conn.chatId, username: conn.username },
+    { source: 'notify_rules', chat_id: conn.chatId, username: conn.username },
     tg.error || null
   );
 }
