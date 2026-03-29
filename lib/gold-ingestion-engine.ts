@@ -92,6 +92,36 @@ export interface IngestionResult {
   num_sources_errors: number;
 }
 
+export type SourceWriteDiagnostics = {
+  source: string;
+  valid: boolean;
+  hasValidPrices: boolean;
+  prices: {
+    14: number | null;
+    18: number | null;
+    21: number | null;
+    24: number | null;
+  };
+  wideOk: boolean | null;
+  wideInserted: number | null;
+  wideError: string | null;
+  normOk: boolean | null;
+  normInserted: number | null;
+  normError: string | null;
+  countedAsWritten: boolean;
+  skippedReason: string | null;
+};
+
+export type AggregatedWriteDiagnostics = {
+  attempted: boolean;
+  wideOk: boolean | null;
+  wideInserted: number | null;
+  wideError: string | null;
+  normOk: boolean | null;
+  normInserted: number | null;
+  normError: string | null;
+};
+
 /**
  * Update staleness for source+karat (uses Supabase, with country support)
  */
@@ -580,6 +610,8 @@ export async function runIngestionCycle(): Promise<
     aggregatedSnapshotWritten: boolean;
     ingestionRunId: string;
     aggregatedMarkedDegraded: boolean;
+    sourceWriteDiagnostics: SourceWriteDiagnostics[];
+    aggregatedWriteDiagnostics: AggregatedWriteDiagnostics;
   }
 > {
   const ingestionRunId = newIngestionRunId();
@@ -651,6 +683,16 @@ export async function runIngestionCycle(): Promise<
   // Store source results in database (sources first; aggregated only after persistence threshold is known)
   const now = Date.now();
   let sourcesWritten = 0;
+  const sourceWriteDiagnostics: SourceWriteDiagnostics[] = [];
+  const aggregatedWriteDiagnostics: AggregatedWriteDiagnostics = {
+    attempted: false,
+    wideOk: null,
+    wideInserted: null,
+    wideError: null,
+    normOk: null,
+    normInserted: null,
+    normError: null,
+  };
 
   console.log('[Ingestion] source writes phase start', {
     ingestionRunId,
@@ -660,28 +702,47 @@ export async function runIngestionCycle(): Promise<
 
   for (const sourceResult of sourceResults) {
     const rawHash = base64Encode(JSON.stringify(sourceResult)).substring(0, 32);
+    const price14 = getEffectivePrice(sourceResult, 14);
+    const price18 = getEffectivePrice(sourceResult, 18);
+    const price21 = getEffectivePrice(sourceResult, 21);
+    const price24 = getEffectivePrice(sourceResult, 24);
+    const hasValidPrices = price24 !== null || price21 !== null || price18 !== null || price14 !== null;
+
+    const diag: SourceWriteDiagnostics = {
+      source: sourceResult.source,
+      valid: !!sourceResult.valid,
+      hasValidPrices,
+      prices: {
+        14: price14,
+        18: price18,
+        21: price21,
+        24: price24,
+      },
+      wideOk: null,
+      wideInserted: null,
+      wideError: null,
+      normOk: null,
+      normInserted: null,
+      normError: null,
+      countedAsWritten: false,
+      skippedReason: null,
+    };
     
     try {
       // Write to Supabase using the unified client
       // Check if source is trusted (e.g., goldbullioneg)
       const isTrusted = sourceResult.source === 'goldbullioneg';
-      
-      const hasValidPrices =
-        getEffectivePrice(sourceResult, 24) !== null ||
-        getEffectivePrice(sourceResult, 21) !== null ||
-        getEffectivePrice(sourceResult, 18) !== null ||
-        getEffectivePrice(sourceResult, 14) !== null;
-      
+
       if (hasValidPrices) {
         const snapshotPreview = {
           source: sourceResult.source,
           createdAt: now,
           rawHashPrefix: rawHash.substring(0, 8),
           prices: {
-            21: getEffectivePrice(sourceResult, 21),
-            24: getEffectivePrice(sourceResult, 24),
-            18: getEffectivePrice(sourceResult, 18),
-            14: getEffectivePrice(sourceResult, 14),
+            21: price21,
+            24: price24,
+            18: price18,
+            14: price14,
           },
         };
         console.log('[Ingestion] Preparing snapshot insert (wide+norm):', snapshotPreview);
@@ -698,10 +759,10 @@ export async function runIngestionCycle(): Promise<
             freshSourceCount: null,
             degradedReason: null,
             prices: {
-              14: { buy: getEffectivePrice(sourceResult, 14) },
-              18: { buy: getEffectivePrice(sourceResult, 18) },
-              21: { buy: getEffectivePrice(sourceResult, 21) },
-              24: { buy: getEffectivePrice(sourceResult, 24) },
+              14: { buy: price14 },
+              18: { buy: price18 },
+              21: { buy: price21 },
+              24: { buy: price24 },
             },
           });
           
@@ -717,16 +778,24 @@ export async function runIngestionCycle(): Promise<
             freshSourceCount: null,
             degradedReason: null,
             prices: {
-              14: { buy: getEffectivePrice(sourceResult, 14) },
-              18: { buy: getEffectivePrice(sourceResult, 18) },
-              21: { buy: getEffectivePrice(sourceResult, 21) },
-              24: { buy: getEffectivePrice(sourceResult, 24) },
+              14: { buy: price14 },
+              18: { buy: price18 },
+              21: { buy: price21 },
+              24: { buy: price24 },
             },
           });
+
+          diag.wideOk = wideResult.ok;
+          diag.wideInserted = typeof wideResult.inserted === 'number' ? wideResult.inserted : 0;
+          diag.wideError = wideResult.ok ? null : wideResult.error || null;
+          diag.normOk = normResult.ok;
+          diag.normInserted = typeof normResult.inserted === 'number' ? normResult.inserted : 0;
+          diag.normError = normResult.ok ? null : normResult.error || null;
           
           const sourceWriteAccepted = wideResult.ok || normResult.ok;
           if (sourceWriteAccepted) {
             sourcesWritten++;
+            diag.countedAsWritten = true;
             console.log(`[Ingestion] Wrote snapshot for ${sourceResult.source}: wide=${wideResult.inserted || 0}, norm=${normResult.inserted || 0} row(s)`, {
               source: sourceResult.source,
               accepted: true,
@@ -738,6 +807,7 @@ export async function runIngestionCycle(): Promise<
               ingestionRunId,
             });
           } else {
+            diag.skippedReason = 'both_writers_not_ok';
             console.error(`[Ingestion] Write skipped/failed for ${sourceResult.source}:`, {
               source: sourceResult.source,
               accepted: false,
@@ -748,6 +818,11 @@ export async function runIngestionCycle(): Promise<
             });
           }
         } catch (supabaseError) {
+          diag.skippedReason = 'write_exception';
+          diag.wideOk = diag.wideOk ?? false;
+          diag.normOk = diag.normOk ?? false;
+          diag.wideError = diag.wideError ?? (supabaseError instanceof Error ? supabaseError.message : String(supabaseError));
+          diag.normError = diag.normError ?? (supabaseError instanceof Error ? supabaseError.message : String(supabaseError));
           console.error(`[Ingestion] Write exception for ${sourceResult.source}:`, {
             message: supabaseError instanceof Error ? supabaseError.message : String(supabaseError),
             error: supabaseError,
@@ -755,20 +830,24 @@ export async function runIngestionCycle(): Promise<
           });
         }
       } else {
+        diag.skippedReason = 'no_effective_prices';
         console.log(`[Ingestion] Skipping ${sourceResult.source}: valid=${sourceResult.valid}, hasValidPrices=${hasValidPrices}`, {
           source: sourceResult.source,
           accepted: false,
           reason: 'no_effective_prices',
           prices: {
-            24: getEffectivePrice(sourceResult, 24),
-            21: getEffectivePrice(sourceResult, 21),
-            18: getEffectivePrice(sourceResult, 18),
-            14: getEffectivePrice(sourceResult, 14),
+            24: price24,
+            21: price21,
+            18: price18,
+            14: price14,
           },
         });
       }
     } catch (e) {
+      diag.skippedReason = diag.skippedReason ?? 'write_loop_exception';
       console.error(`[Ingestion] Failed to store snapshot for ${sourceResult.source}:`, e);
+    } finally {
+      sourceWriteDiagnostics.push(diag);
     }
   }
 
@@ -806,6 +885,7 @@ export async function runIngestionCycle(): Promise<
 
   if (hasValidAggregatedPrices(result)) {
     try {
+      aggregatedWriteDiagnostics.attempted = true;
       const aggregatedHash = base64Encode(JSON.stringify(result)).substring(0, 32);
       const price14 = result.our_price_buy['14'] ?? null;
       const price18 = result.our_price_buy['18'] ?? null;
@@ -866,6 +946,13 @@ export async function runIngestionCycle(): Promise<
         },
       });
 
+      aggregatedWriteDiagnostics.wideOk = wideAggregatedResult.ok;
+      aggregatedWriteDiagnostics.wideInserted = typeof wideAggregatedResult.inserted === 'number' ? wideAggregatedResult.inserted : 0;
+      aggregatedWriteDiagnostics.wideError = wideAggregatedResult.ok ? null : wideAggregatedResult.error || null;
+      aggregatedWriteDiagnostics.normOk = normAggregatedResult.ok;
+      aggregatedWriteDiagnostics.normInserted = typeof normAggregatedResult.inserted === 'number' ? normAggregatedResult.inserted : 0;
+      aggregatedWriteDiagnostics.normError = normAggregatedResult.ok ? null : normAggregatedResult.error || null;
+
       const aggregatedWriteAccepted = wideAggregatedResult.ok || normAggregatedResult.ok;
       if (aggregatedWriteAccepted) {
         aggregatedWritten = true;
@@ -889,6 +976,12 @@ export async function runIngestionCycle(): Promise<
         });
       }
     } catch (aggregatedError) {
+      aggregatedWriteDiagnostics.attempted = true;
+      aggregatedWriteDiagnostics.wideOk = aggregatedWriteDiagnostics.wideOk ?? false;
+      aggregatedWriteDiagnostics.normOk = aggregatedWriteDiagnostics.normOk ?? false;
+      const msg = aggregatedError instanceof Error ? aggregatedError.message : String(aggregatedError);
+      aggregatedWriteDiagnostics.wideError = aggregatedWriteDiagnostics.wideError ?? msg;
+      aggregatedWriteDiagnostics.normError = aggregatedWriteDiagnostics.normError ?? msg;
       console.error(`[Ingestion] Exception writing aggregated snapshot:`, aggregatedError);
     }
   }
@@ -912,5 +1005,7 @@ export async function runIngestionCycle(): Promise<
     aggregatedSnapshotWritten: aggregatedWritten,
     ingestionRunId,
     aggregatedMarkedDegraded,
+    sourceWriteDiagnostics,
+    aggregatedWriteDiagnostics,
   };
 }
