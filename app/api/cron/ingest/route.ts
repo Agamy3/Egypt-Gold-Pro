@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { runIngestionCycle, runMultiCountryIngestionCycle } from '@/lib/gold-ingestion-engine';
+import { runMultiCountryIngestionCycle } from '@/lib/gold-ingestion-engine';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -60,36 +60,24 @@ export async function GET(request: NextRequest) {
     // Run multi-country ingestion (EG, AE, SA, US)
     console.log('[Cron] Starting multi-country ingestion cycle...');
     const multiCountryResult = await runMultiCountryIngestionCycle();
-    
-    // Also run Egypt-specific cycle for backward compatibility and aggregated data
-    console.log('[Cron] Running Egypt-specific cycle for aggregated data...');
-    const egResult = await runIngestionCycle();
-    
+
     // Aggregate results
     const allErrors: Array<{ source: string; error: string }> = [];
     for (const [country, result] of Object.entries(multiCountryResult.results)) {
       result.errors.forEach(err => allErrors.push({ source: country, error: err }));
     }
-    egResult.errors.forEach(err => allErrors.push({ source: 'EG', error: err }));
     
     const results = {
-      inserted: multiCountryResult.totalInserted + (egResult.sourcesWritten || 0),
+      inserted: multiCountryResult.totalInserted,
       countriesProcessed: Object.keys(multiCountryResult.results).length,
       countryResults: multiCountryResult.results,
-      egAggregated: egResult.aggregatedSnapshotWritten,
-      egSourcesWritten: egResult.sourcesWritten,
-      numSourcesOk: egResult.num_sources_ok,
-      numSourcesErrors: egResult.num_sources_errors,
       errors: allErrors.length > 0 ? allErrors : undefined,
       timestamp: Date.now(),
-      confidence: egResult.confidence,
-      prices: egResult.our_price_buy,
     };
 
     console.log('[Cron] Multi-country ingestion complete:', {
       totalInserted: multiCountryResult.totalInserted,
       countries: Object.keys(multiCountryResult.results),
-      egSourcesOk: egResult.num_sources_ok,
     });
 
     return NextResponse.json(results, { status: 200 });

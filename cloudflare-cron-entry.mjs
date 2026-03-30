@@ -68,20 +68,41 @@ export default {
     }
 
     for (const path of paths) {
-      let req;
-      try {
-        req = cronRequest(path, env);
-      } catch (e) {
-        console.error('[cf-cron] build request failed', path, e);
-        continue;
-      }
-      try {
-        const res = await nextApp.fetch(req, env, ctx);
-        const text = res.headers.get('content-type')?.includes('json') ? await res.clone().text().catch(() => '') : '';
-        console.log('[cf-cron]', cronExpr, path, res.status, text.slice(0, 200));
-      } catch (e) {
-        console.error('[cf-cron] fetch failed', path, e);
-      }
+      ctx.waitUntil(
+        (async () => {
+          let req;
+          try {
+            req = cronRequest(path, env);
+          } catch (e) {
+            console.error('[cf-cron] build request failed', path, e);
+            return;
+          }
+
+          const startedAt = Date.now();
+          try {
+            const timeoutMs = 55_000;
+            const res = await Promise.race([
+              nextApp.fetch(req, env, ctx),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error(`timeout_after_${timeoutMs}ms`)), timeoutMs)
+              ),
+            ]);
+            const text =
+              res?.headers?.get('content-type')?.includes('json')
+                ? await res.clone().text().catch(() => '')
+                : '';
+            console.log('[cf-cron]', cronExpr, path, res.status, {
+              tookMs: Date.now() - startedAt,
+              bodyPreview: text.slice(0, 200),
+            });
+          } catch (e) {
+            console.error('[cf-cron] fetch failed', cronExpr, path, {
+              tookMs: Date.now() - startedAt,
+              error: e instanceof Error ? e.message : String(e),
+            });
+          }
+        })()
+      );
     }
   },
 };
