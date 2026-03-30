@@ -48,11 +48,11 @@ export async function getLatestEgyptIngestionStatus(nowMs: number = Date.now()):
 
   // Frequency-aware thresholds.
   // - healthy: within ~1 run interval (+1 minute buffer)
-  // - delayed: within ~2 run intervals
+  // - delayed: within ~4 run intervals
   // - stale: within ~12 run intervals (caps near 1 hour when expected=5)
   // - dead: beyond that
   const healthyMax = expected + 1;
-  const delayedMax = expected * 2;
+  const delayedMax = expected * 4;
   const staleMax = expected * 12;
 
   let status: EgyptIngestionStatus['status'] = 'dead';
