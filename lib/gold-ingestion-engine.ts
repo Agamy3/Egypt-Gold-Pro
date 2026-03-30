@@ -259,8 +259,8 @@ export async function computeWeightedAverage(
       for (const karat of KARATS) {
         const buy = sourceResult.prices[karat];
         const sell = sourceResult.sells?.[karat];
-        const price = buy ?? sell;
-        const hasValidPrice = typeof price === 'number' && isFinite(price) && price > 0;
+        const effective = getEffectivePrice(sourceResult, karat);
+        const hasValidPrice = typeof effective === 'number' && isFinite(effective) && effective > 0;
 
         if (!hasValidPrice) {
           console.log('[Aggregation] Source price check:', {
@@ -268,7 +268,7 @@ export async function computeWeightedAverage(
             karat,
             buy: buy ?? null,
             sell: sell ?? null,
-            chosenPrice: hasValidPrice ? price : null,
+            chosenPrice: hasValidPrice ? effective : null,
             accepted: false,
             reason: 'no_valid_price',
           });
@@ -282,7 +282,7 @@ export async function computeWeightedAverage(
           karat,
           buy: buy ?? null,
           sell: sell ?? null,
-          chosenPrice: price,
+          chosenPrice: effective,
           stale,
           accepted: true,
           reason: stale ? 'stale_but_used' : null,
@@ -293,7 +293,7 @@ export async function computeWeightedAverage(
         }
         karatData[karat].push({
           source: sourceResult.source,
-          price,
+          price: effective,
           weight,
         });
       }
