@@ -10,6 +10,8 @@ import { updateSourceStaleness, isSourceStale as isSourceStaleSupabase, getLastO
 import { processSource, type SourcePriceResult } from './gold-sources-adapters-regex';
 import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, getEgyptAggregationMinSources } from './gold-ingestion-config';
 import { computeConfidence } from './gold-ingestion-utils';
+import db from './supabase';
+import { getEffectiveIngestionConfig } from './ingestion/adminIngestionSettings';
 
 const IS_CLOUDFLARE_WORKER = typeof (globalThis as any).WebSocketPair !== 'undefined';
 
@@ -221,7 +223,10 @@ export function hasValidAggregatedPrices(ingestion: Pick<IngestionResult, 'our_p
 /**
  * Compute weighted average prices and confidence per karat
  */
-export async function computeWeightedAverage(sourceResults: SourcePriceResult[]): Promise<IngestionResult> {
+export async function computeWeightedAverage(
+  sourceResults: SourcePriceResult[],
+  opts?: { aggregationEnabledSources?: Set<string> }
+): Promise<IngestionResult> {
   const result: IngestionResult = {
     timestamp: new Date().toISOString(),
     our_price_buy: {},
@@ -237,6 +242,9 @@ export async function computeWeightedAverage(sourceResults: SourcePriceResult[])
   const karatData: Record<number, Array<{ source: string; price: number; weight: number }>> = {};
 
   for (const sourceResult of sourceResults) {
+    if (opts?.aggregationEnabledSources && !opts.aggregationEnabledSources.has(sourceResult.source)) {
+      continue;
+    }
     if (hasAnyEffectivePrice(sourceResult)) {
       result.num_sources_ok++;
       const weight = SOURCE_WEIGHTS[sourceResult.source] || 0.5;
@@ -389,6 +397,9 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   let totalInserted = 0;
   const now = Date.now();
 
+  const effective = await getEffectiveIngestionConfig(db.supabase);
+  console.log('[IngestionConfig] countries enabled', effective.countriesEnabled);
+
   // Import multi-country adapters and helpers
   const { fetchUAEGoldPrices, fetchSaudiGoldPrices, fetchUSASpotPrices } = await import('./gold-sources-adapters-multicountry');
   const { getLatestGoldSpot } = await import('./supabase/goldSpot');
@@ -398,16 +409,21 @@ export async function runMultiCountryIngestionCycle(): Promise<{
 
   // 1. EGYPT (existing pipeline)
   console.log('[Ingestion] Processing Egypt (EG)...');
-  try {
-    const egResult = await runIngestionCycle();
-    results['EG'] = {
-      inserted: egResult.sourcesWritten + (egResult.aggregatedSnapshotWritten ? 1 : 0),
-      errors: egResult.errors,
-    };
-    totalInserted += results['EG'].inserted;
-  } catch (error) {
-    console.error('[Ingestion] Egypt ingestion failed:', error);
-    results['EG'] = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
+  if (!effective.countriesEnabled.EG) {
+    console.warn('[IngestionConfig] EG disabled by admin');
+    results['EG'] = { inserted: 0, errors: [] };
+  } else {
+    try {
+      const egResult = await runIngestionCycle();
+      results['EG'] = {
+        inserted: egResult.sourcesWritten + (egResult.aggregatedSnapshotWritten ? 1 : 0),
+        errors: egResult.errors,
+      };
+      totalInserted += results['EG'].inserted;
+    } catch (error) {
+      console.error('[Ingestion] Egypt ingestion failed:', error);
+      results['EG'] = { inserted: 0, errors: [error instanceof Error ? error.message : String(error)] };
+    }
   }
 
   // 2. USA (derive from spot price)
@@ -472,6 +488,10 @@ export async function runMultiCountryIngestionCycle(): Promise<{
 
   // 3. UAE - Try scraper first, then ALWAYS write parity
   console.log('[Ingestion] Processing UAE (AE)...');
+  if (!effective.countriesEnabled.AE) {
+    console.warn('[IngestionConfig] AE disabled by admin');
+    results['AE'] = { inserted: 0, errors: [] };
+  } else {
   let aeScraperInserted = 0;
   try {
     const aeResult = await fetchUAEGoldPrices();
@@ -538,9 +558,14 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     errors: [],
   };
   totalInserted += results['AE'].inserted;
+  }
 
   // 4. Saudi Arabia - Try scraper first, then ALWAYS write parity
   console.log('[Ingestion] Processing Saudi Arabia (SA)...');
+  if (!effective.countriesEnabled.SA) {
+    console.warn('[IngestionConfig] SA disabled by admin');
+    results['SA'] = { inserted: 0, errors: [] };
+  } else {
   let saScraperInserted = 0;
   try {
     const saResult = await fetchSaudiGoldPrices();
@@ -607,6 +632,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     errors: [],
   };
   totalInserted += results['SA'].inserted;
+  }
 
   console.log(`[Ingestion] Multi-country cycle complete: ${totalInserted} total rows inserted`, results);
   return { results, totalInserted };
@@ -620,12 +646,53 @@ export async function runIngestionCycle(): Promise<
     aggregatedMarkedDegraded: boolean;
     sourceWriteDiagnostics: SourceWriteDiagnostics[];
     aggregatedWriteDiagnostics: AggregatedWriteDiagnostics;
+    enabledIngestionSources: string[];
+    enabledAggregationSources: string[];
+    countriesEnabled: { EG: boolean; AE: boolean; SA: boolean };
   }
 > {
   const ingestionRunId = newIngestionRunId();
   console.log('[Ingestion] run started', { ingestionRunId });
 
-  const sources = Object.keys(SOURCE_WEIGHTS);
+  const effective = await getEffectiveIngestionConfig(db.supabase);
+  const enabledIngestionSources = effective.egypt.ingestionSourcesEnabled;
+  const enabledAggregationSources = effective.egypt.aggregationSourcesEnabled;
+
+  console.log('[IngestionConfig] EG ingestion sources enabled', enabledIngestionSources);
+  console.log('[IngestionConfig] EG aggregation sources enabled', enabledAggregationSources);
+
+  if (!effective.countriesEnabled.EG) {
+    console.warn('[IngestionConfig] EG disabled by admin');
+    return {
+      timestamp: new Date().toISOString(),
+      our_price_buy: {},
+      confidence: {},
+      sources_used: {},
+      breakdown: {},
+      errors: ['EG ingestion disabled by admin'],
+      num_sources_ok: 0,
+      num_sources_errors: 0,
+      sourcesWritten: 0,
+      aggregatedSnapshotWritten: false,
+      ingestionRunId,
+      aggregatedMarkedDegraded: false,
+      sourceWriteDiagnostics: [],
+      aggregatedWriteDiagnostics: {
+        attempted: false,
+        wideOk: null,
+        wideInserted: null,
+        wideError: null,
+        normOk: null,
+        normInserted: null,
+        normError: null,
+      },
+      enabledIngestionSources,
+      enabledAggregationSources,
+      countriesEnabled: effective.countriesEnabled,
+    };
+  }
+
+  const sources = enabledIngestionSources;
   console.log(`[Ingestion] Starting Egypt cycle with ${sources.length} sources:`, sources);
   
   // Fetch all sources in parallel
@@ -684,7 +751,9 @@ export async function runIngestionCycle(): Promise<
 
   // Compute weighted averages
   console.log(`[Ingestion] Computing weighted averages from ${sourceResults.filter(s => s.valid).length} valid sources`);
-  const result = await computeWeightedAverage(sourceResults);
+  const result = await computeWeightedAverage(sourceResults, {
+    aggregationEnabledSources: new Set(enabledAggregationSources),
+  });
   console.log(`[Ingestion] Weighted averages computed:`, {
     24: result.our_price_buy['24'],
     21: result.our_price_buy['21'],
@@ -1023,5 +1092,8 @@ export async function runIngestionCycle(): Promise<
     aggregatedMarkedDegraded,
     sourceWriteDiagnostics,
     aggregatedWriteDiagnostics,
+    enabledIngestionSources,
+    enabledAggregationSources,
+    countriesEnabled: effective.countriesEnabled,
   };
 }
