@@ -199,6 +199,13 @@ async function getLastOkBuy(source: string, karat: number, country: 'EG' | 'AE' 
  * prefer buy, fallback to sell when buy is missing.
  */
 function getEffectivePrice(sourceResult: SourcePriceResult, karat: number): number | null {
+  if (sourceResult.source === 'gold_era') {
+    const sell = sourceResult.sells?.[karat];
+    if (typeof sell === 'number' && isFinite(sell) && sell > 0) return sell;
+    const buy = sourceResult.prices[karat];
+    if (typeof buy === 'number' && isFinite(buy) && buy > 0) return buy;
+    return null;
+  }
   const buy = sourceResult.prices[karat];
   if (typeof buy === 'number' && isFinite(buy) && buy > 0) return buy;
   const sell = sourceResult.sells?.[karat];

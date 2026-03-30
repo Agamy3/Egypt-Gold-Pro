@@ -204,6 +204,8 @@ function parseGoldEra(html: string, ctx?: ParseDebugContext): ParsedPrices {
   if (ctx && !ctx.rowSamples) ctx.rowSamples = [];
   if (ctx && !ctx.numbersFoundSample) ctx.numbersFoundSample = [];
 
+  let debugMethodUsed: 'table_headers' | 'table_positional' | 'regex' | null = null;
+
   try {
     const tables = $('table');
     for (const el of tables.toArray()) {
@@ -216,8 +218,6 @@ function parseGoldEra(html: string, ctx?: ParseDebugContext): ParsedPrices {
 
       const sellIdx = headers.findIndex((h) => h.includes('sell') || h.includes('بيع'));
       const buyIdx = headers.findIndex((h) => h.includes('buy') || h.includes('شراء'));
-      if (sellIdx === -1 || buyIdx === -1) continue;
-
       const rows = table.find('tr').toArray().slice(1);
       for (const rowEl of rows) {
         const cells = $(rowEl)
@@ -231,20 +231,55 @@ function parseGoldEra(html: string, ctx?: ParseDebugContext): ParsedPrices {
         if (!karatMatch?.[1]) continue;
         const karat = Number(karatMatch[1]) as (typeof KARATS)[number];
 
-        const sellText = cells[sellIdx] ?? '';
-        const buyText = cells[buyIdx] ?? '';
-        const sell = parseFloat(normalizeNumber(sellText));
-        const buy = parseFloat(normalizeNumber(buyText));
-        if (!isNaN(sell) && !isNaN(buy) && sell > 0 && buy > 0 && validatePrice(karat, buy)) {
-          prices[karat] = { buy, sell };
-          if (ctx) {
-            ctx.selectorHits = ctx.selectorHits || {};
-            ctx.selectorHits[`gold_era_table_k${karat}`] = 1;
-            if (ctx.rowSamples && ctx.rowSamples.length < 8) {
-              ctx.rowSamples.push({ karat, text: rowText.substring(0, 200) });
-            }
-            if (ctx.numbersFoundSample && ctx.numbersFoundSample.length < 8) {
-              ctx.numbersFoundSample.push({ karat, numbers: [sell, buy] });
+        let buy: number | null = null;
+        let sell: number | null = null;
+
+        // Preferred: header-based mapping.
+        if (sellIdx !== -1 && buyIdx !== -1) {
+          const sellText = cells[sellIdx] ?? '';
+          const buyText = cells[buyIdx] ?? '';
+          const s = parseFloat(normalizeNumber(sellText));
+          const b = parseFloat(normalizeNumber(buyText));
+          if (!isNaN(s) && !isNaN(b) && s > 0 && b > 0) {
+            sell = s;
+            buy = b;
+            debugMethodUsed = debugMethodUsed ?? 'table_headers';
+          }
+        }
+
+        // Fallback: positional mapping (karat, then two numeric columns). Enforce sell >= buy.
+        if (buy === null || sell === null) {
+          const numeric = cells
+            .map((t) => parseFloat(normalizeNumber(t)))
+            .filter((n) => !isNaN(n) && n > 0);
+          if (numeric.length >= 2) {
+            const a = numeric[0];
+            const b = numeric[1];
+            sell = Math.max(a, b);
+            buy = Math.min(a, b);
+            debugMethodUsed = debugMethodUsed ?? 'table_positional';
+          }
+        }
+
+        if (buy !== null && sell !== null) {
+          // Final safety: if we ever see buy > sell, swap.
+          if (buy > sell) {
+            const tmp = buy;
+            buy = sell;
+            sell = tmp;
+          }
+
+          if (validatePrice(karat, buy)) {
+            prices[karat] = { buy, sell };
+            if (ctx) {
+              ctx.selectorHits = ctx.selectorHits || {};
+              ctx.selectorHits[`gold_era_table_k${karat}`] = 1;
+              if (ctx.rowSamples && ctx.rowSamples.length < 8) {
+                ctx.rowSamples.push({ karat, text: rowText.substring(0, 200) });
+              }
+              if (ctx.numbersFoundSample && ctx.numbersFoundSample.length < 8) {
+                ctx.numbersFoundSample.push({ karat, numbers: [sell, buy] });
+              }
             }
           }
         }
@@ -277,13 +312,14 @@ function parseGoldEra(html: string, ctx?: ParseDebugContext): ParsedPrices {
         const num2 = parseFloat(num2Str);
         
         if (!isNaN(num1) && !isNaN(num2) && num1 > 0 && num2 > 0) {
-          // GoldEra format: first number is SELL, second is BUY
-          // Based on snippet: "عيار 246,749£6,691£" -> sell=6749, buy=6691
-          const sell = num1;
-          const buy = num2;
+          // GoldEra table shows: Sell then Buy, but content extraction can reorder.
+          // Enforce sell >= buy to avoid flipped columns.
+          const sell = Math.max(num1, num2);
+          const buy = Math.min(num1, num2);
           
           if (validatePrice(karat, buy)) {
             prices[karat] = { buy, sell };
+            debugMethodUsed = debugMethodUsed ?? 'regex';
             
             if (ctx) {
               ctx.selectorHits = ctx.selectorHits || {};
@@ -319,6 +355,7 @@ function parseGoldEra(html: string, ctx?: ParseDebugContext): ParsedPrices {
 
   if (Object.keys(prices).length > 0) {
     console.log('[GoldEra] parsed', {
+      method: debugMethodUsed,
       k24: prices[24] ?? null,
       k21: prices[21] ?? null,
       k18: prices[18] ?? null,
