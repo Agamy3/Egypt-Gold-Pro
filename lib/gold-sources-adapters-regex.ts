@@ -117,8 +117,9 @@ function parseBankLive(text: string): { prices: Record<number, number>; errors: 
   return { prices, errors };
 }
 
-function parseGoldEra(text: string): { prices: Record<number, number>; errors: string[] } {
+function parseGoldEra(text: string): { prices: Record<number, number>; sells: Record<number, number>; errors: string[] } {
   const prices: Record<number, number> = {};
+  const sells: Record<number, number> = {};
   const errors: string[] = [];
   for (const karat of KARATS) {
     const pattern = new RegExp(`عيار\\s*${karat}\\s*([\\d,]+)\\s*£\\s*([\\d,]+)\\s*£`, 'i');
@@ -128,11 +129,12 @@ function parseGoldEra(text: string): { prices: Record<number, number>; errors: s
       const buy = normalizeNumber(match[2]);
       if (sell !== null && buy !== null && buy > 0 && sell > 0 && validatePrice(karat, buy)) {
         prices[karat] = buy;
+        sells[karat] = sell;
       }
     }
   }
   if (Object.keys(prices).length === 0) errors.push('no_prices_found');
-  return { prices, errors };
+  return { prices, sells, errors };
 }
 
 function parseDokanGold(text: string): { prices: Record<number, number>; sells?: Record<number, number>; errors: string[] } {
@@ -315,6 +317,9 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
               })();
 
               result.prices = parsed.prices;
+              if ('sells' in parsed && parsed.sells && Object.keys(parsed.sells).length > 0) {
+                result.sells = parsed.sells as Record<number, number>;
+              }
               result.errors.push(...(parsed.errors || []));
             }
           } catch (jinaErr) {
@@ -345,6 +350,9 @@ export async function processSource(source: string): Promise<SourcePriceResult> 
           })();
 
           result.prices = parsed.prices;
+          if ('sells' in parsed && parsed.sells && Object.keys(parsed.sells).length > 0) {
+            result.sells = parsed.sells as Record<number, number>;
+          }
           result.errors.push(...(parsed.errors || []));
           result.method = 'regex';
         }
