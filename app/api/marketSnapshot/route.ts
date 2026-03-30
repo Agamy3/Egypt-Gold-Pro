@@ -16,6 +16,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 let lastSelfHealTriggerAt = 0;
+let lastMultiCountrySelfHealTriggerAt = 0;
 
 function withNoStoreHeaders(res: NextResponse) {
   res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -44,6 +45,8 @@ export async function GET(request: Request) {
   
   // Always use all sources (trusted mode toggle removed)
   const TRUSTED_ONLY_MODE = false;
+
+  const marketWindowMinutes = country === 'EG' ? 120 : 24 * 60;
   
   try {
     // Fetch Egypt Market Implied Ounce with individual error handling
@@ -115,10 +118,9 @@ export async function GET(request: Request) {
                           (canonicalCurrency === 'SAR' && (fxRates.usd_sar === null || !Number.isFinite(fxRates.usd_sar) || fxRates.usd_sar <= 0));
 
     // Fetch market prices from normalized schema (country-aware)
-    // Use 120 minute window to capture more data (increased from 60 for better coverage)
     let marketData;
     try {
-      marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 120);
+      marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, marketWindowMinutes);
       
       // If no data in Supabase for any country, trigger ingestion (but don't wait for it)
       if (marketData.activeSourceCount === 0 && marketData.lastUpdated === 0) {
@@ -160,6 +162,36 @@ export async function GET(request: Request) {
       };
     }
 
+    // Non-Egypt: if DB is empty, run one synchronous multi-country ingestion then re-query.
+    if (country !== 'EG') {
+      const mp = marketData.prices;
+      const localMissing =
+        (mp.market21Buy === null || mp.market21Buy === undefined) &&
+        (mp.market24Buy === null || mp.market24Buy === undefined);
+
+      const shouldTrySyncIngest = (localMissing || marketData.activeSourceCount === 0) && marketData.lastUpdated === 0;
+      const nowMs = Date.now();
+      const spamGuardOk = nowMs - lastMultiCountrySelfHealTriggerAt > 120_000;
+
+      if (shouldTrySyncIngest && spamGuardOk) {
+        lastMultiCountrySelfHealTriggerAt = nowMs;
+        try {
+          console.warn('[MarketSnapshot] Non-EG norm data missing; running synchronous multi-country ingestion', {
+            country,
+            localMissing,
+            activeSourceCount: marketData.activeSourceCount,
+            lastUpdated: marketData.lastUpdated,
+            marketWindowMinutes,
+          });
+          const { runMultiCountryIngestionCycle } = await import('@/lib/gold-ingestion-engine');
+          await runMultiCountryIngestionCycle();
+          marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, marketWindowMinutes);
+        } catch (multiErr) {
+          console.error('[MarketSnapshot] Non-EG synchronous multi-country ingestion failed:', multiErr);
+        }
+      }
+    }
+
     // Egypt: normalized table empty — run one full ingestion synchronously, then re-query; if still empty, merge live aggregates into this response.
     if (country === 'EG') {
       const mp = marketData.prices;
@@ -175,7 +207,7 @@ export async function GET(request: Request) {
           });
           const { runIngestionCycle } = await import('@/lib/gold-ingestion-engine');
           const ing = await runIngestionCycle();
-          marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, 120);
+          marketData = await getMarketMedians(country, TRUSTED_ONLY_MODE, marketWindowMinutes);
           const p2 = marketData.prices;
           const stillMissing =
             (p2.market21Buy === null || p2.market21Buy === undefined) &&
@@ -232,7 +264,7 @@ export async function GET(request: Request) {
     // Get active source count from normalized schema (use same 120min window for consistency)
     let activeSources = marketData.activeSourceCount;
     try {
-      activeSources = await getActiveSourceCountNorm(country, TRUSTED_ONLY_MODE, 120);
+      activeSources = await getActiveSourceCountNorm(country, TRUSTED_ONLY_MODE, marketWindowMinutes);
     } catch (error) {
       console.error(`[MarketSnapshot] Failed to get active source count for ${country} -`, error);
       // Use the count from marketData as fallback
