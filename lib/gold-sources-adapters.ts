@@ -203,6 +203,58 @@ function parseGoldEra(html: string, ctx?: ParseDebugContext): ParsedPrices {
   
   if (ctx && !ctx.rowSamples) ctx.rowSamples = [];
   if (ctx && !ctx.numbersFoundSample) ctx.numbersFoundSample = [];
+
+  try {
+    const tables = $('table');
+    for (const el of tables.toArray()) {
+      const table = $(el);
+      const headerRow = table.find('tr').first();
+      const headers = headerRow
+        .find('th, td')
+        .toArray()
+        .map((h) => $(h).text().replace(/\s+/g, ' ').trim().toLowerCase());
+
+      const sellIdx = headers.findIndex((h) => h.includes('sell') || h.includes('بيع'));
+      const buyIdx = headers.findIndex((h) => h.includes('buy') || h.includes('شراء'));
+      if (sellIdx === -1 || buyIdx === -1) continue;
+
+      const rows = table.find('tr').toArray().slice(1);
+      for (const rowEl of rows) {
+        const cells = $(rowEl)
+          .find('td, th')
+          .toArray()
+          .map((c) => $(c).text().replace(/\s+/g, ' ').trim());
+
+        if (cells.length === 0) continue;
+        const rowText = cells.join(' ');
+        const karatMatch = rowText.match(/\b(24|22|21|18|14)\b/);
+        if (!karatMatch?.[1]) continue;
+        const karat = Number(karatMatch[1]) as (typeof KARATS)[number];
+
+        const sellText = cells[sellIdx] ?? '';
+        const buyText = cells[buyIdx] ?? '';
+        const sell = parseFloat(normalizeNumber(sellText));
+        const buy = parseFloat(normalizeNumber(buyText));
+        if (!isNaN(sell) && !isNaN(buy) && sell > 0 && buy > 0 && validatePrice(karat, buy)) {
+          prices[karat] = { buy, sell };
+          if (ctx) {
+            ctx.selectorHits = ctx.selectorHits || {};
+            ctx.selectorHits[`gold_era_table_k${karat}`] = 1;
+            if (ctx.rowSamples && ctx.rowSamples.length < 8) {
+              ctx.rowSamples.push({ karat, text: rowText.substring(0, 200) });
+            }
+            if (ctx.numbersFoundSample && ctx.numbersFoundSample.length < 8) {
+              ctx.numbersFoundSample.push({ karat, numbers: [sell, buy] });
+            }
+          }
+        }
+      }
+
+      if (Object.keys(prices).length > 0) break;
+    }
+  } catch (e) {
+    // fall through to regex
+  }
   
   // Get body text for regex parsing
   $('script, style, noscript, svg, iframe, header, nav, footer').remove();
@@ -263,6 +315,15 @@ function parseGoldEra(html: string, ctx?: ParseDebugContext): ParsedPrices {
         // Continue to next karat
       }
     }
+  }
+
+  if (Object.keys(prices).length > 0) {
+    console.log('[GoldEra] parsed', {
+      k24: prices[24] ?? null,
+      k21: prices[21] ?? null,
+      k18: prices[18] ?? null,
+      k14: prices[14] ?? null,
+    });
   }
   
   if (Object.keys(prices).length > 0 && ctx) {
