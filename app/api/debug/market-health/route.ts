@@ -4,6 +4,14 @@ import { adminErrorToResponse, requireAdmin } from '@/lib/auth/admin';
 import { getEgyptMarketIngestionDiagnostics } from '@/lib/market-ingestion-health';
 import { getLatestEgyptIngestionStatus } from '@/lib/market-ingestion-status';
 
+const IS_CLOUDFLARE_WORKER = typeof (globalThis as any).WebSocketPair !== 'undefined';
+
+function getExpectedFrequencyMinutes(): number {
+  const raw = Number(process.env.EG_EXPECTED_INGEST_FREQUENCY_MINUTES);
+  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  return IS_CLOUDFLARE_WORKER ? 5 : 1;
+}
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -29,7 +37,7 @@ export async function GET() {
     serverNowMs: diagnostics.serverNowMs,
     ingestion: {
       ...ingestion,
-      expectedFrequencyMinutes: 1,
+      expectedFrequencyMinutes: getExpectedFrequencyMinutes(),
     },
     aggregatedFresh: t.aggregatedFresh,
     sourceBacked: t.sourceBacked,

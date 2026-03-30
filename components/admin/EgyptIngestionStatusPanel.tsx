@@ -35,11 +35,15 @@ export default function EgyptIngestionStatusPanel() {
   const warnings = useMemo(() => {
     const age = ingestion?.ageMinutes;
     if (age == null) return { delayed: false, dead: true };
+
+    const expected = ingestion?.expectedFrequencyMinutes ?? 1;
+    const delayedAfter = expected * 2;
+    const deadAfter = expected * 12;
     return {
-      delayed: age > 5,
-      dead: age > 60,
+      delayed: age > delayedAfter,
+      dead: age > deadAfter,
     };
-  }, [ingestion?.ageMinutes]);
+  }, [ingestion?.ageMinutes, ingestion?.expectedFrequencyMinutes]);
 
   const load = async () => {
     setLoading(true);
@@ -105,7 +109,8 @@ export default function EgyptIngestionStatusPanel() {
           <span className="text-white">{ingestion?.ageMinutes != null ? `${ingestion.ageMinutes} minutes ago` : '—'}</span>
         </div>
         <div>
-          Expected: <span className="text-white">Every 1 minute</span>
+          Expected:{' '}
+          <span className="text-white">Every {ingestion?.expectedFrequencyMinutes ?? 1} minute</span>
         </div>
         <div className="text-xs text-gray-500">
           Server time: <code className="text-gray-400">{data?.serverTime ?? '—'}</code>
