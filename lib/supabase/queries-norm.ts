@@ -10,6 +10,8 @@ import { Currency } from '../fx-multi';
 import { EG_WEB_SOURCES, getEgyptAggregationMinSources, MARKET_HEALTH_FRESHNESS_MS } from '../gold-ingestion-config';
 import { isFreshTimestamp, verifyEgAggregatedNormRow } from '../market-ingestion-health';
 
+const MARKET_DEBUG = process.env.MARKET_DEBUG === '1' || process.env.NODE_ENV === 'development';
+
 export interface MarketPrices {
   market21Buy: number | null;
   market21Sell: number | null;
@@ -136,7 +138,9 @@ export async function getMarketMedians(
     };
   }
 
-  console.log(`[getMarketMedians] Found ${dataToUse.length} rows for country ${country}`);
+  if (MARKET_DEBUG) {
+    console.log(`[getMarketMedians] Found ${dataToUse.length} rows for country ${country}`);
+  }
 
   // Get canonical currency (first row's currency)
   const canonicalCurrency = (dataToUse[0]?.currency || 
@@ -211,7 +215,9 @@ export async function getMarketMedians(
           : (typeof priorityRow.created_at === 'number' ? priorityRow.created_at : 0);
         maxTimestamp = Math.max(maxTimestamp, createdAt);
         
-        console.log(`[getMarketMedians] Using ${priorityRow.source} price for ${karat}K:`, price);
+        if (MARKET_DEBUG) {
+          console.log(`[getMarketMedians] Using ${priorityRow.source} price for ${karat}K:`, price);
+        }
         continue;
       }
     }
@@ -245,14 +251,16 @@ export async function getMarketMedians(
     }
   }
 
-  console.log('[getMarketMedians] Result:', { 
-    country,
-    activeSourceCount: contributingSources.size, 
-    lastUpdated: maxTimestamp,
-    has21k: prices.market21Buy !== null,
-    has24k: prices.market24Buy !== null,
-    canonicalCurrency,
-  });
+  if (MARKET_DEBUG) {
+    console.log('[getMarketMedians] Result:', {
+      country,
+      activeSourceCount: contributingSources.size,
+      lastUpdated: maxTimestamp,
+      has21k: prices.market21Buy !== null,
+      has24k: prices.market24Buy !== null,
+      canonicalCurrency,
+    });
+  }
 
   let egyptMarketTrust: EgyptMarketReadTrust | undefined;
   if (country === 'EG') {
