@@ -6,7 +6,15 @@
  * matching `triggers.crons` (same strings as keys below).
  */
 // Resolved after `npm run cf:build` — produces `.open-next/worker.js`
-import nextApp from './.open-next/worker.js';
+// IMPORTANT: Keep OpenNext lazy-loaded so scheduled cron events don't pay the CPU cost
+// of importing the full Next bundle on cold start.
+let _nextAppPromise;
+async function getNextApp() {
+  if (!_nextAppPromise) {
+    _nextAppPromise = import('./.open-next/worker.js').then((m) => m.default);
+  }
+  return _nextAppPromise;
+}
 
 /** @type {Record<string, string[]>} */
 const CRON_PATHS = {
@@ -45,7 +53,10 @@ function cronRequest(path, env) {
 }
 
 export default {
-  fetch: nextApp.fetch.bind(nextApp),
+  async fetch(request, env, ctx) {
+    const nextApp = await getNextApp();
+    return nextApp.fetch(request, env, ctx);
+  },
 
   /**
    * @param {ScheduledEvent} event
@@ -88,15 +99,14 @@ export default {
             console.log('[cf-cron] dispatch start', { cron: cronExpr, path });
             const timeoutMs = 55_000;
             const res = await Promise.race([
-              nextApp.fetch(req, env, ctx),
+              fetch(req),
               new Promise((_, reject) =>
                 setTimeout(() => reject(new Error(`timeout_after_${timeoutMs}ms`)), timeoutMs)
               ),
             ]);
-            const text =
-              res?.headers?.get('content-type')?.includes('json')
-                ? await res.clone().text().catch(() => '')
-                : '';
+            const text = res?.headers?.get('content-type')?.includes('json')
+              ? await res.clone().text().catch(() => '')
+              : '';
             console.log('[cf-cron]', cronExpr, path, res.status, {
               tookMs: Date.now() - startedAt,
               bodyPreview: text.slice(0, 200),
