@@ -56,6 +56,13 @@ export default {
   async scheduled(event, env, ctx) {
     const cronExpr = event.cron;
     const paths = CRON_PATHS[cronExpr];
+    console.log('[cf-cron] scheduled event', {
+      cron: cronExpr,
+      mapped: Boolean(paths?.length),
+      paths: paths?.length ?? 0,
+      hasSecret: Boolean(env.CRON_SECRET && String(env.CRON_SECRET).trim() !== ''),
+      baseUrl: baseUrlFromEnv(env),
+    });
     if (!paths?.length) {
       console.warn('[cf-cron] No routes mapped for cron:', cronExpr);
       return;
@@ -79,6 +86,7 @@ export default {
 
           const startedAt = Date.now();
           try {
+            console.log('[cf-cron] dispatch start', { cron: cronExpr, path });
             const timeoutMs = 55_000;
             const res = await Promise.race([
               nextApp.fetch(req, env, ctx),

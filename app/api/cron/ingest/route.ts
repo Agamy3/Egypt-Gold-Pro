@@ -13,6 +13,9 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
+  const reqId = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
+  const startedAt = Date.now();
+
   // Guard: Check CRON_SECRET (with dev mode exception)
   const cronSecret = process.env.CRON_SECRET;
   const isDevelopment = process.env.NODE_ENV === 'development';
@@ -21,10 +24,23 @@ export async function GET(request: NextRequest) {
     request.headers.get('authorization')?.replace('Bearer ', '') ||
     request.nextUrl.searchParams.get('secret');
 
+  console.log('[Cron][ingest] request', {
+    reqId,
+    isDevelopment,
+    hasCronSecretEnv: Boolean(cronSecret && cronSecret.trim() !== ''),
+    provided: Boolean(providedSecret && String(providedSecret).trim() !== ''),
+    hasXCrSecretHeader: request.headers.get('x-cron-secret') !== null,
+    hasAuthorizationHeader: request.headers.get('authorization') !== null,
+    hasQuerySecret: request.nextUrl.searchParams.has('secret'),
+    hasVercelId: request.headers.get('x-vercel-id') !== null,
+    url: request.nextUrl.pathname,
+  });
+
   // In development: allow requests without secret or with 'dev' secret
   if (isDevelopment) {
     // Allow if no secret provided, secret is 'dev', or secret matches CRON_SECRET (if set)
     if (providedSecret && providedSecret !== 'dev' && cronSecret && providedSecret !== cronSecret) {
+      console.warn('[Cron][ingest] unauthorized (dev mismatch)', { reqId });
       return NextResponse.json(
         { error: 'Unauthorized: Invalid secret. In development, use no secret, secret=dev, or set CRON_SECRET env var' },
         { status: 401 }
@@ -41,10 +57,11 @@ export async function GET(request: NextRequest) {
     
     if (isVercelCron) {
       // Vercel cron request - allow it (Vercel handles authentication)
-      console.log('[Cron] Vercel cron request detected (x-vercel-id present)');
+      console.log('[Cron][ingest] Vercel cron request detected (x-vercel-id present)', { reqId });
     } else if (cronSecret) {
       // Manual request - require valid CRON_SECRET
       if (providedSecret !== cronSecret) {
+        console.warn('[Cron][ingest] unauthorized (prod secret mismatch)', { reqId });
         return NextResponse.json(
           { error: 'Unauthorized: Invalid or missing CRON_SECRET. For Vercel cron, ensure CRON_SECRET is set in environment variables.' },
           { status: 401 }
@@ -52,13 +69,13 @@ export async function GET(request: NextRequest) {
       }
     } else {
       // No CRON_SECRET configured - log warning but allow (might be first-time setup)
-      console.warn('[Cron] CRON_SECRET not configured. Consider setting it in Vercel environment variables for security.');
+      console.warn('[Cron][ingest] CRON_SECRET not configured. Consider setting it in environment variables for security.', { reqId });
     }
   }
 
   try {
     // Run multi-country ingestion (EG, AE, SA, US)
-    console.log('[Cron] Starting multi-country ingestion cycle...');
+    console.log('[Cron][ingest] Starting multi-country ingestion cycle...', { reqId });
     const multiCountryResult = await runMultiCountryIngestionCycle();
 
     // Aggregate results
@@ -75,16 +92,18 @@ export async function GET(request: NextRequest) {
       timestamp: Date.now(),
     };
 
-    console.log('[Cron] Multi-country ingestion complete:', {
+    console.log('[Cron][ingest] Multi-country ingestion complete', {
+      reqId,
       totalInserted: multiCountryResult.totalInserted,
       countries: Object.keys(multiCountryResult.results),
+      tookMs: Date.now() - startedAt,
     });
 
     return NextResponse.json(results, { status: 200 });
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Cron ingestion error:', errorMessage);
+    console.error('[Cron][ingest] error', { reqId, tookMs: Date.now() - startedAt, error: errorMessage });
     
     return NextResponse.json(
       {
