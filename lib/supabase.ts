@@ -13,6 +13,7 @@ function getSupabaseConfig() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+  const debugAuth = process.env.SUPABASE_AUTH_DEBUG === '1' || process.env.NODE_ENV === 'development';
 
   if (!supabaseUrl) {
     throw new Error(
@@ -25,17 +26,18 @@ function getSupabaseConfig() {
   // the whole app from breaking when SUPABASE_SERVICE_ROLE_KEY isn't configured
   // in the Workers environment.
   if (supabaseServiceRoleKey) {
-    console.log('[Supabase] init', {
-      host: (() => {
-        try {
-          return new URL(supabaseUrl).host;
-        } catch {
-          return supabaseUrl;
-        }
-      })(),
-      keyType: 'service_role',
-      keyPrefix: String(supabaseServiceRoleKey).slice(0, 10),
-    });
+    if (debugAuth) {
+      console.log('[Supabase] init', {
+        host: (() => {
+          try {
+            return new URL(supabaseUrl).host;
+          } catch {
+            return supabaseUrl;
+          }
+        })(),
+        keyType: 'service_role',
+      });
+    }
     return { supabaseUrl, supabaseKey: supabaseServiceRoleKey as string, usingServiceRole: true };
   }
 
@@ -45,17 +47,18 @@ function getSupabaseConfig() {
     );
   }
 
-  console.log('[Supabase] init', {
-    host: (() => {
-      try {
-        return new URL(supabaseUrl).host;
-      } catch {
-        return supabaseUrl;
-      }
-    })(),
-    keyType: 'anon',
-    keyPrefix: String(supabaseAnonKey).slice(0, 10),
-  });
+  if (debugAuth) {
+    console.log('[Supabase] init', {
+      host: (() => {
+        try {
+          return new URL(supabaseUrl).host;
+        } catch {
+          return supabaseUrl;
+        }
+      })(),
+      keyType: 'anon',
+    });
+  }
   return { supabaseUrl, supabaseKey: supabaseAnonKey as string, usingServiceRole: false };
 }
 

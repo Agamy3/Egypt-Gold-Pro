@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
     // Prefer them to avoid stale Vercel-era NEXT_PUBLIC values.
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+    const debugAuth = process.env.SUPABASE_AUTH_DEBUG === '1' || process.env.NODE_ENV === 'development';
 
     const supabaseHost = (() => {
       if (!supabaseUrl) return null;
@@ -72,12 +73,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/auth/auth-code-error', canonicalOrigin));
     }
 
-    console.log('[AuthCallback] supabase env', {
-      supabaseHost,
-      anonKeyLength: supabaseAnonKey?.length ?? 0,
-      anonKeyPrefix: supabaseAnonKey ? String(supabaseAnonKey).slice(0, 10) : null,
-      canonicalOrigin,
-    });
+    if (debugAuth) {
+      console.log('[AuthCallback] supabase env', {
+        supabaseHost,
+        anonKeyLength: supabaseAnonKey?.length ?? 0,
+        canonicalOrigin,
+      });
+    }
 
     // Create redirect response that we can modify
     const response = NextResponse.redirect(new URL(safeNext, canonicalOrigin));

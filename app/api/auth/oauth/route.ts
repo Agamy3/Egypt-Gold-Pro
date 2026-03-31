@@ -25,12 +25,14 @@ export async function POST(request: NextRequest) {
     // Prefer Cloudflare-injected SUPABASE_* values to avoid stale NEXT_PUBLIC_*.
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+    const debugAuth = process.env.SUPABASE_AUTH_DEBUG === '1' || process.env.NODE_ENV === 'development';
 
-    console.log('[Supabase] server auth init (oauth route):', {
-      host: supabaseUrl ? (() => { try { return new URL(supabaseUrl).host; } catch { return supabaseUrl; } })() : null,
-      keyType: 'anon',
-      keyPrefix: supabaseAnonKey ? String(supabaseAnonKey).slice(0, 10) : null,
-    });
+    if (debugAuth) {
+      console.log('[Supabase] server auth init (oauth route):', {
+        host: supabaseUrl ? (() => { try { return new URL(supabaseUrl).host; } catch { return supabaseUrl; } })() : null,
+        keyType: 'anon',
+      });
+    }
 
     if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.trim() === '' || supabaseAnonKey.trim() === '') {
       console.error('OAuth route - Missing environment variables:', {

@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+    const debugAuth = process.env.SUPABASE_AUTH_DEBUG === '1' || process.env.NODE_ENV === 'development';
 
     if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.trim() === '' || supabaseAnonKey.trim() === '') {
       console.error('Signin route - Missing environment variables:', {
@@ -36,17 +37,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('[Supabase] server auth init (signin route):', {
-      host: (() => {
-        try {
-          return new URL(supabaseUrl).host;
-        } catch {
-          return supabaseUrl;
-        }
-      })(),
-      keyType: 'anon',
-      keyPrefix: supabaseAnonKey ? String(supabaseAnonKey).slice(0, 10) : null,
-    });
+    if (debugAuth) {
+      console.log('[Supabase] server auth init (signin route):', {
+        host: (() => {
+          try {
+            return new URL(supabaseUrl).host;
+          } catch {
+            return supabaseUrl;
+          }
+        })(),
+        keyType: 'anon',
+      });
+    }
 
     const response = NextResponse.json({ success: true });
     const supabase = createServerClient(
