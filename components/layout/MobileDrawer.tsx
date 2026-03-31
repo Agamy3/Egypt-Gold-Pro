@@ -67,6 +67,7 @@ export default function MobileDrawer() {
   const adminItems: NavItem[] = isAdmin
     ? [
         { href: '/admin/source-prices', labelEn: 'Source Prices', labelAr: 'مصادر الأسعار' },
+        { href: '/admin/market-health', labelEn: 'Market Health', labelAr: 'صحة السوق' },
         { href: '/admin/signals', labelEn: 'Signals', labelAr: 'الإشارات' },
         { href: '/admin/gold-signals', labelEn: 'Gold Signals', labelAr: 'إشارات الذهب' },
         { href: '/admin/30s-forecast', labelEn: '30s Forecast', labelAr: 'توقع 30 ثانية' },

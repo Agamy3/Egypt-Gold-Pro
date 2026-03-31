@@ -11,11 +11,10 @@ import nextApp from './.open-next/worker.js';
 /** @type {Record<string, string[]>} */
 const CRON_PATHS = {
   '* * * * *': [
-    '/api/cron/minute-forecast-bot',
+    '/api/cron/ingest-eg',
     '/api/cron/notifications-eval',
-    '/api/cron/alpaca-paper-run',
   ],
-  '*/5 * * * *': ['/api/cron/ingest', '/api/cron/notify'],
+  '*/5 * * * *': ['/api/cron/ingest-global', '/api/cron/notify'],
   '*/10 * * * *': ['/api/cron/gold-signals'],
   '*/15 * * * *': ['/api/cron/silver-local-eg'],
   '0 */6 * * *': ['/api/cron/news-ingest'],

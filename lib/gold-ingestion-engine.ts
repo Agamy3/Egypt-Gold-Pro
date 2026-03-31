@@ -433,13 +433,81 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     }
   }
 
-  // 2. USA (derive from spot price)
+  const globalResult = await runGlobalIngestionCycle({
+    effective,
+    now,
+    helpers: {
+      fetchUAEGoldPrices,
+      fetchSaudiGoldPrices,
+      fetchUSASpotPrices,
+      getLatestGoldSpot,
+      getImpliedOunceWithCache,
+      getMultiCurrencyRates,
+      computeParityPrices,
+      generateParityHash,
+    },
+  });
+
+  for (const [country, r] of Object.entries(globalResult.results)) {
+    results[country] = r;
+  }
+  totalInserted += globalResult.totalInserted;
+
+  console.log(`[Ingestion] Multi-country cycle complete: ${totalInserted} total rows inserted`, results);
+  return { results, totalInserted };
+}
+
+export async function runGlobalIngestionCycle(opts?: {
+  effective?: Awaited<ReturnType<typeof getEffectiveIngestionConfig>>;
+  now?: number;
+  helpers?: {
+    fetchUAEGoldPrices: typeof import('./gold-sources-adapters-multicountry').fetchUAEGoldPrices;
+    fetchSaudiGoldPrices: typeof import('./gold-sources-adapters-multicountry').fetchSaudiGoldPrices;
+    fetchUSASpotPrices: typeof import('./gold-sources-adapters-multicountry').fetchUSASpotPrices;
+    getLatestGoldSpot: typeof import('./supabase/goldSpot').getLatestGoldSpot;
+    getImpliedOunceWithCache: typeof import('./goldapi').getImpliedOunceWithCache;
+    getMultiCurrencyRates: typeof import('./fx-multi').getMultiCurrencyRates;
+    computeParityPrices: typeof import('./global-parity').computeParityPrices;
+    generateParityHash: typeof import('./global-parity').generateParityHash;
+  };
+}): Promise<{
+  results: Record<string, { inserted: number; errors: string[] }>;
+  totalInserted: number;
+}> {
+  const results: Record<string, { inserted: number; errors: string[] }> = {};
+  let totalInserted = 0;
+  const now = typeof opts?.now === 'number' ? opts.now : Date.now();
+  const effective = opts?.effective ?? (await getEffectiveIngestionConfig(db.supabase));
+
+  const helpers =
+    opts?.helpers ??
+    (await (async () => {
+      const { fetchUAEGoldPrices, fetchSaudiGoldPrices, fetchUSASpotPrices } = await import(
+        './gold-sources-adapters-multicountry'
+      );
+      const { getLatestGoldSpot } = await import('./supabase/goldSpot');
+      const { getImpliedOunceWithCache } = await import('./goldapi');
+      const { getMultiCurrencyRates } = await import('./fx-multi');
+      const { computeParityPrices, generateParityHash } = await import('./global-parity');
+      return {
+        fetchUAEGoldPrices,
+        fetchSaudiGoldPrices,
+        fetchUSASpotPrices,
+        getLatestGoldSpot,
+        getImpliedOunceWithCache,
+        getMultiCurrencyRates,
+        computeParityPrices,
+        generateParityHash,
+      };
+    })());
+
+  // 1. USA (derive from spot price)
   console.log('[Ingestion] Processing USA (US)...');
   try {
-    const spotData = await getLatestGoldSpot();
+    const spotData = await helpers.getLatestGoldSpot();
     const spotPrice = spotData?.xau_spot_usd_oz ?? null;
-    const usResult = await fetchUSASpotPrices(spotPrice);
-    
+    const usResult = await helpers.fetchUSASpotPrices(spotPrice);
+
     if (usResult.valid && Object.keys(usResult.prices).length > 0) {
       const rawHash = base64Encode(JSON.stringify(usResult)).substring(0, 32);
       const writeResult = await writeMarketSnapshotNorm({
@@ -450,8 +518,6 @@ export async function runMultiCountryIngestionCycle(): Promise<{
         rawHash,
         prices: {
           24: { buy: usResult.prices[24] || null },
-          // Skip 22k for now (schema constraint - will be added in migration)
-          // 22: { buy: usResult.prices[22] || null },
           21: { buy: usResult.prices[21] || null },
           18: { buy: usResult.prices[18] || null },
           14: { buy: usResult.prices[14] || null },
@@ -473,18 +539,18 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   // Fetch impliedOunce and FX for parity computation
   let impliedOunceUsd: number | null = null;
   let fxRates: { usd_aed: number | null; usd_sar: number | null } | null = null;
-  
+
   try {
-    const impliedOunceResult = await getImpliedOunceWithCache();
+    const impliedOunceResult = await helpers.getImpliedOunceWithCache();
     if (impliedOunceResult.data?.impliedOunceUsd) {
       impliedOunceUsd = impliedOunceResult.data.impliedOunceUsd;
     }
   } catch (error) {
     console.warn('[Ingestion] Failed to fetch impliedOunce for parity:', error);
   }
-  
+
   try {
-    const fx = await getMultiCurrencyRates();
+    const fx = await helpers.getMultiCurrencyRates();
     fxRates = {
       usd_aed: fx.usd_aed,
       usd_sar: fx.usd_sar,
@@ -493,155 +559,154 @@ export async function runMultiCountryIngestionCycle(): Promise<{
     console.warn('[Ingestion] Failed to fetch FX rates for parity:', error);
   }
 
-  // 3. UAE - Try scraper first, then ALWAYS write parity
+  // 2. UAE - Try scraper first, then ALWAYS write parity
   console.log('[Ingestion] Processing UAE (AE)...');
   if (!effective.countriesEnabled.AE) {
     console.warn('[IngestionConfig] AE disabled by admin');
     results['AE'] = { inserted: 0, errors: [] };
   } else {
-  let aeScraperInserted = 0;
-  try {
-    const aeResult = await fetchUAEGoldPrices();
-    
-    if (aeResult.valid && Object.keys(aeResult.prices).length > 0) {
-      const rawHash = base64Encode(JSON.stringify(aeResult)).substring(0, 32);
-      const writeResult = await writeMarketSnapshotNorm({
-        country: 'AE',
-        source: 'goldprice_org_ae',
-        trusted: false,
-        createdAt: now,
-        rawHash,
-        prices: {
-          24: { buy: aeResult.prices[24] || null },
-          22: { buy: aeResult.prices[22] || null },
-          21: { buy: aeResult.prices[21] || null },
-          18: { buy: aeResult.prices[18] || null },
-          14: { buy: aeResult.prices[14] || null },
-        },
-      });
-      aeScraperInserted = writeResult.inserted || 0;
-    }
-  } catch (error) {
-    console.warn('[Ingestion] UAE scraper failed (will use parity):', error);
-  }
-
-  // ALWAYS write parity snapshot for AE (even if scraper succeeded)
-  let aeParityInserted = 0;
-  if (impliedOunceUsd !== null && fxRates !== null && fxRates.usd_aed !== null && fxRates.usd_aed > 0) {
+    let aeScraperInserted = 0;
     try {
-      const parityPrices = computeParityPrices({
-        impliedOunceUsd,
-        currency: 'AED',
-        usdRate: fxRates.usd_aed,
-      });
-      
-      const parityHash = generateParityHash('AE', 'global_parity', impliedOunceUsd, fxRates.usd_aed, now);
-      
-      const writeResult = await writeMarketSnapshotNorm({
-        country: 'AE',
-        source: 'global_parity',
-        trusted: false,
-        createdAt: now,
-        rawHash: parityHash,
-        prices: {
-          24: { buy: parityPrices[24] },
-          21: { buy: parityPrices[21] },
-          18: { buy: parityPrices[18] },
-          14: { buy: parityPrices[14] },
-        },
-      });
-      
-      aeParityInserted = writeResult.inserted || 0;
-      console.log('[Ingest] parity inserted', { country: 'AE', inserted: aeParityInserted });
+      const aeResult = await helpers.fetchUAEGoldPrices();
+      if (aeResult.valid && Object.keys(aeResult.prices).length > 0) {
+        const rawHash = base64Encode(JSON.stringify(aeResult)).substring(0, 32);
+        const writeResult = await writeMarketSnapshotNorm({
+          country: 'AE',
+          source: 'goldprice_org_ae',
+          trusted: false,
+          createdAt: now,
+          rawHash,
+          prices: {
+            24: { buy: aeResult.prices[24] || null },
+            22: { buy: aeResult.prices[22] || null },
+            21: { buy: aeResult.prices[21] || null },
+            18: { buy: aeResult.prices[18] || null },
+            14: { buy: aeResult.prices[14] || null },
+          },
+        });
+        aeScraperInserted = writeResult.inserted || 0;
+      }
     } catch (error) {
-      console.error('[Ingestion] Failed to write AE parity:', error);
+      console.warn('[Ingestion] UAE scraper failed (will use parity):', error);
     }
-  } else {
-    console.warn('[Ingestion] Cannot compute AE parity: missing impliedOunce or FX rate');
+
+    // ALWAYS write parity snapshot for AE (even if scraper succeeded)
+    let aeParityInserted = 0;
+    if (impliedOunceUsd !== null && fxRates !== null && fxRates.usd_aed !== null && fxRates.usd_aed > 0) {
+      try {
+        const parityPrices = helpers.computeParityPrices({
+          impliedOunceUsd,
+          currency: 'AED',
+          usdRate: fxRates.usd_aed,
+        });
+
+        const parityHash = helpers.generateParityHash('AE', 'global_parity', impliedOunceUsd, fxRates.usd_aed, now);
+
+        const writeResult = await writeMarketSnapshotNorm({
+          country: 'AE',
+          source: 'global_parity',
+          trusted: false,
+          createdAt: now,
+          rawHash: parityHash,
+          prices: {
+            24: { buy: parityPrices[24] },
+            21: { buy: parityPrices[21] },
+            18: { buy: parityPrices[18] },
+            14: { buy: parityPrices[14] },
+          },
+        });
+
+        aeParityInserted = writeResult.inserted || 0;
+        console.log('[Ingest] parity inserted', { country: 'AE', inserted: aeParityInserted });
+      } catch (error) {
+        console.error('[Ingestion] Failed to write AE parity:', error);
+      }
+    } else {
+      console.warn('[Ingestion] Cannot compute AE parity: missing impliedOunce or FX rate');
+    }
+
+    results['AE'] = {
+      inserted: aeScraperInserted + aeParityInserted,
+      errors: [],
+    };
+    totalInserted += results['AE'].inserted;
   }
 
-  results['AE'] = {
-    inserted: aeScraperInserted + aeParityInserted,
-    errors: [],
-  };
-  totalInserted += results['AE'].inserted;
-  }
-
-  // 4. Saudi Arabia - Try scraper first, then ALWAYS write parity
+  // 3. Saudi Arabia - Try scraper first, then ALWAYS write parity
   console.log('[Ingestion] Processing Saudi Arabia (SA)...');
   if (!effective.countriesEnabled.SA) {
     console.warn('[IngestionConfig] SA disabled by admin');
     results['SA'] = { inserted: 0, errors: [] };
   } else {
-  let saScraperInserted = 0;
-  try {
-    const saResult = await fetchSaudiGoldPrices();
-    
-    if (saResult.valid && Object.keys(saResult.prices).length > 0) {
-      const rawHash = base64Encode(JSON.stringify(saResult)).substring(0, 32);
-      const writeResult = await writeMarketSnapshotNorm({
-        country: 'SA',
-        source: 'goldprice_org_sa',
-        trusted: false,
-        createdAt: now,
-        rawHash,
-        prices: {
-          24: { buy: saResult.prices[24] || null },
-          22: { buy: saResult.prices[22] || null },
-          21: { buy: saResult.prices[21] || null },
-          18: { buy: saResult.prices[18] || null },
-          14: { buy: saResult.prices[14] || null },
-        },
-      });
-      saScraperInserted = writeResult.inserted || 0;
-    }
-  } catch (error) {
-    console.warn('[Ingestion] Saudi Arabia scraper failed (will use parity):', error);
-  }
-
-  // ALWAYS write parity snapshot for SA (even if scraper succeeded)
-  let saParityInserted = 0;
-  if (impliedOunceUsd !== null && fxRates !== null && fxRates.usd_sar !== null && fxRates.usd_sar > 0) {
+    let saScraperInserted = 0;
     try {
-      const parityPrices = computeParityPrices({
-        impliedOunceUsd,
-        currency: 'SAR',
-        usdRate: fxRates.usd_sar,
-      });
-      
-      const parityHash = generateParityHash('SA', 'global_parity', impliedOunceUsd, fxRates.usd_sar, now);
-      
-      const writeResult = await writeMarketSnapshotNorm({
-        country: 'SA',
-        source: 'global_parity',
-        trusted: false,
-        createdAt: now,
-        rawHash: parityHash,
-        prices: {
-          24: { buy: parityPrices[24] },
-          21: { buy: parityPrices[21] },
-          18: { buy: parityPrices[18] },
-          14: { buy: parityPrices[14] },
-        },
-      });
-      
-      saParityInserted = writeResult.inserted || 0;
-      console.log('[Ingest] parity inserted', { country: 'SA', inserted: saParityInserted });
+      const saResult = await helpers.fetchSaudiGoldPrices();
+
+      if (saResult.valid && Object.keys(saResult.prices).length > 0) {
+        const rawHash = base64Encode(JSON.stringify(saResult)).substring(0, 32);
+        const writeResult = await writeMarketSnapshotNorm({
+          country: 'SA',
+          source: 'goldprice_org_sa',
+          trusted: false,
+          createdAt: now,
+          rawHash,
+          prices: {
+            24: { buy: saResult.prices[24] || null },
+            22: { buy: saResult.prices[22] || null },
+            21: { buy: saResult.prices[21] || null },
+            18: { buy: saResult.prices[18] || null },
+            14: { buy: saResult.prices[14] || null },
+          },
+        });
+        saScraperInserted = writeResult.inserted || 0;
+      }
     } catch (error) {
-      console.error('[Ingestion] Failed to write SA parity:', error);
+      console.warn('[Ingestion] Saudi Arabia scraper failed (will use parity):', error);
     }
-  } else {
-    console.warn('[Ingestion] Cannot compute SA parity: missing impliedOunce or FX rate');
+
+    // ALWAYS write parity snapshot for SA (even if scraper succeeded)
+    let saParityInserted = 0;
+    if (impliedOunceUsd !== null && fxRates !== null && fxRates.usd_sar !== null && fxRates.usd_sar > 0) {
+      try {
+        const parityPrices = helpers.computeParityPrices({
+          impliedOunceUsd,
+          currency: 'SAR',
+          usdRate: fxRates.usd_sar,
+        });
+
+        const parityHash = helpers.generateParityHash('SA', 'global_parity', impliedOunceUsd, fxRates.usd_sar, now);
+
+        const writeResult = await writeMarketSnapshotNorm({
+          country: 'SA',
+          source: 'global_parity',
+          trusted: false,
+          createdAt: now,
+          rawHash: parityHash,
+          prices: {
+            24: { buy: parityPrices[24] },
+            21: { buy: parityPrices[21] },
+            18: { buy: parityPrices[18] },
+            14: { buy: parityPrices[14] },
+          },
+        });
+
+        saParityInserted = writeResult.inserted || 0;
+        console.log('[Ingest] parity inserted', { country: 'SA', inserted: saParityInserted });
+      } catch (error) {
+        console.error('[Ingestion] Failed to write SA parity:', error);
+      }
+    } else {
+      console.warn('[Ingestion] Cannot compute SA parity: missing impliedOunce or FX rate');
+    }
+
+    results['SA'] = {
+      inserted: saScraperInserted + saParityInserted,
+      errors: [],
+    };
+    totalInserted += results['SA'].inserted;
   }
 
-  results['SA'] = {
-    inserted: saScraperInserted + saParityInserted,
-    errors: [],
-  };
-  totalInserted += results['SA'].inserted;
-  }
-
-  console.log(`[Ingestion] Multi-country cycle complete: ${totalInserted} total rows inserted`, results);
+  console.log(`[Ingestion] Global cycle complete: ${totalInserted} total rows inserted`, results);
   return { results, totalInserted };
 }
 

@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 
-import ExcelJS from 'exceljs';
-
 import { requireAdmin, adminErrorToResponse } from '@/lib/auth/admin';
 import { getServerClient } from '@/lib/supabase/server';
-import { dynamic, revalidate, withNoStoreHeaders } from '../_util';
+import { withNoStoreHeaders } from '../_util';
 
-export { dynamic, revalidate };
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+export const runtime = 'nodejs';
 
 function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.floor(n)));
@@ -32,6 +33,8 @@ export async function GET(request: Request) {
   try {
     await requireAdmin();
     const supabaseAdmin = getServerClient();
+
+    const ExcelJS = (await import('exceljs')).default;
 
     const url = new URL(request.url);
     const days = clampInt(Number(url.searchParams.get('days') ?? 7), 1, 30);

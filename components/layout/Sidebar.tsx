@@ -143,6 +143,12 @@ export default function Sidebar() {
           icon: <span>🧭</span>,
         },
         {
+          href: '/admin/market-health',
+          labelEn: 'Market Health',
+          labelAr: 'صحة السوق',
+          icon: <span>🩺</span>,
+        },
+        {
           href: '/admin/signals',
           labelEn: 'Signals',
           labelAr: 'الإشارات',
