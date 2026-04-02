@@ -21,12 +21,16 @@ export async function GET(_req: NextRequest) {
     const [{ data: orders }, { data: events }] = await Promise.all([
       supabase
         .from('paymob_orders')
-        .select('merchant_order_id, user_id, plan, amount_egp, currency, status, paymob_order_id, created_at, updated_at')
+        .select(
+          'merchant_order_id, user_id, plan, amount_egp, currency, status, provider, paymob_order_id, geidea_order_id, geidea_status, created_at, updated_at'
+        )
         .order('created_at', { ascending: false })
         .limit(100),
       supabase
         .from('paymob_webhook_events')
-        .select('id, event_type, paymob_transaction_id, paymob_order_id, merchant_order_id, verified_hmac, processed, created_at')
+        .select(
+          'id, event_type, provider, paymob_transaction_id, paymob_order_id, merchant_order_id, geidea_order_id, geidea_status, verified_hmac, processed, created_at'
+        )
         .order('created_at', { ascending: false })
         .limit(100),
     ]);

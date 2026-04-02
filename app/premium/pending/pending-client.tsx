@@ -14,6 +14,21 @@ type StatusResponse = {
   premium?: { isPremium: boolean; premiumExpiresAt: string | null } | null;
 };
 
+async function fetchStatus(merchantOrderId: string): Promise<StatusResponse> {
+  const urls = [
+    `/api/billing/geidea/status?merchant_order_id=${encodeURIComponent(merchantOrderId)}`,
+    `/api/billing/paymob/status?merchant_order_id=${encodeURIComponent(merchantOrderId)}`,
+  ];
+  let lastErr: string | null = null;
+  for (const url of urls) {
+    const res = await fetch(url, { cache: 'no-store' });
+    const json = (await res.json().catch(() => null)) as StatusResponse | null;
+    if (res.ok && json?.ok) return json;
+    lastErr = json?.error || `Status failed (${res.status})`;
+  }
+  throw new Error(lastErr || 'Status failed');
+}
+
 export default function PendingClient(props: { merchantOrderId: string; checkoutUrl: string }) {
   const router = useRouter();
   const [status, setStatus] = useState<string>('pending');
@@ -23,15 +38,8 @@ export default function PendingClient(props: { merchantOrderId: string; checkout
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await fetch(`/api/billing/paymob/status?merchant_order_id=${encodeURIComponent(props.merchantOrderId)}`, {
-          cache: 'no-store',
-        });
-        const json = (await res.json().catch(() => null)) as StatusResponse | null;
+        const json = await fetchStatus(props.merchantOrderId);
         if (cancelled) return;
-        if (!res.ok || !json?.ok) {
-          setError(json?.error || `Status failed (${res.status})`);
-          return;
-        }
         const s = String(json.order?.status || 'pending');
         setStatus(s);
         if (s === 'paid') router.replace(`/premium/success?merchant_order_id=${encodeURIComponent(props.merchantOrderId)}`);

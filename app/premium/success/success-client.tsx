@@ -15,6 +15,7 @@ type StatusResponse = {
   error?: string;
   order?: {
     merchant_order_id: string;
+    provider?: string;
     status: string;
     plan: string;
     amount_egp: number;
@@ -26,6 +27,22 @@ type StatusResponse = {
     premiumExpiresAt: string | null;
   } | null;
 };
+
+async function fetchStatus(merchantOrderId: string): Promise<StatusResponse> {
+  // Prefer Geidea for new orders; fall back to Paymob for legacy.
+  const urls = [
+    `/api/billing/geidea/status?merchant_order_id=${encodeURIComponent(merchantOrderId)}`,
+    `/api/billing/paymob/status?merchant_order_id=${encodeURIComponent(merchantOrderId)}`,
+  ];
+  let lastErr: string | null = null;
+  for (const url of urls) {
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    const json = (await res.json().catch(() => null)) as StatusResponse | null;
+    if (res.ok && json?.ok) return json;
+    lastErr = json?.error || `Status failed (${res.status})`;
+  }
+  throw new Error(lastErr || 'Status failed');
+}
 
 export default function PremiumSuccessClient() {
   const sp = useSearchParams();
@@ -52,17 +69,8 @@ export default function PremiumSuccessClient() {
     const run = async () => {
       tries++;
       try {
-        const res = await fetch(`/api/billing/paymob/status?merchant_order_id=${encodeURIComponent(merchant)}`, {
-          method: 'GET',
-          cache: 'no-store',
-        });
-        const json = (await res.json().catch(() => null)) as StatusResponse | null;
+        const json = await fetchStatus(merchant);
         if (cancelled) return;
-        if (!res.ok || !json?.ok) {
-          setError(json?.error || `Status failed (${res.status})`);
-          setLoading(false);
-          return;
-        }
         setResult(json);
 
         const status = String(json.order?.status || '');

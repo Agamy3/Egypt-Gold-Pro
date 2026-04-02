@@ -54,11 +54,11 @@ export default function PremiumPage() {
       .catch(() => {});
   }, []);
 
-  const startPaymobCheckout = async (plan: 'premium_monthly' | 'premium_yearly') => {
+  const startCheckout = async (plan: 'premium_monthly' | 'premium_yearly') => {
     setPaying(plan);
     setPayError(null);
     try {
-      const res = await fetch('/api/billing/paymob/create-checkout', {
+      const res = await fetch('/api/billing/geidea/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan }),
@@ -73,8 +73,9 @@ export default function PremiumPage() {
           // ignore
         }
       }
-      // Paymob `/pay` is POST-only in some setups. Route through our processing page which auto-POSTs the token.
-      window.location.href = `/premium/processing?merchant_order_id=${encodeURIComponent(String(json.merchant_order_id))}`;
+      const checkoutUrl = String(json?.checkout_url || '').trim();
+      if (!checkoutUrl) throw new Error('Missing checkout URL');
+      window.location.href = checkoutUrl;
     } catch (e) {
       setPayError(e instanceof Error ? e.message : 'Checkout failed');
       setPaying(null);
@@ -192,7 +193,7 @@ export default function PremiumPage() {
           </div>
         )}
 
-        {/* Paymob checkout (EGP) */}
+        {/* Card checkout (EGP) */}
         {!isPremium && (
           <div className="max-w-3xl mx-auto mb-10 rounded-xl border border-gray-800 bg-gray-950 p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -200,8 +201,8 @@ export default function PremiumPage() {
                 <h2 className="text-xl font-semibold text-white">{lang === 'ar' ? 'اشترك بريميوم' : 'Subscribe to Premium'}</h2>
                 <p className="mt-1 text-sm text-gray-400">
                   {lang === 'ar'
-                    ? 'ادفع بالبطاقة عبر Paymob وسيتم تفعيل بريميوم تلقائياً.'
-                    : 'Pay by card via Paymob. Premium activates automatically after payment confirmation.'}
+                    ? 'ادفع بالبطاقة وسيتم تفعيل بريميوم تلقائياً بعد تأكيد الدفع.'
+                    : 'Pay securely by card. Premium activates automatically after payment confirmation.'}
                 </p>
                 {!appUrlConfigured && (
                   <div className="mt-2 text-xs text-yellow-200/90">
@@ -221,7 +222,7 @@ export default function PremiumPage() {
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <button
-                onClick={() => void startPaymobCheckout('premium_monthly')}
+                onClick={() => void startCheckout('premium_monthly')}
                 disabled={paying !== null}
                 className="rounded-lg border border-gold-600 bg-gold-600/10 px-4 py-3 text-left text-white hover:bg-gold-600/20 disabled:opacity-60"
               >
@@ -229,7 +230,7 @@ export default function PremiumPage() {
                 <div className="mt-1 text-2xl font-bold">99 EGP</div>
               </button>
               <button
-                onClick={() => void startPaymobCheckout('premium_yearly')}
+                onClick={() => void startCheckout('premium_yearly')}
                 disabled={paying !== null}
                 className="rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3 text-left text-white hover:bg-gray-900 disabled:opacity-60"
               >
