@@ -33,11 +33,24 @@ type ListResponse = {
   serverAsOf: string;
 };
 
+type HealthResponse = {
+  ok: boolean;
+  baseUrl: string | null;
+  integrationIdCard: number | null;
+  authOk: boolean;
+  orderOk: boolean;
+  paymentKeyOk: boolean;
+  step?: string;
+  details?: any;
+};
+
 export default function PaymobBillingPanel() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<string | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -51,6 +64,24 @@ export default function PaymobBillingPanel() {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runHealth = async () => {
+    setHealthLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/billing/paymob/health', { method: 'GET', cache: 'no-store' });
+      const json = (await res.json().catch(() => null)) as HealthResponse | null;
+      if (!json) throw new Error(`Health check failed (${res.status})`);
+      setHealth(json);
+      if (!res.ok || !json.ok) {
+        setError((json as any)?.details?.error || `Health check failed (${res.status})`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Health check failed');
+    } finally {
+      setHealthLoading(false);
     }
   };
 
@@ -85,17 +116,42 @@ export default function PaymobBillingPanel() {
           <div className="text-sm text-gray-400">Paymob billing</div>
           <div className="text-xs text-gray-500 mt-1">serverAsOf: {data?.serverAsOf ?? '—'}</div>
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          disabled={loading}
-          className="px-4 py-2 rounded-md text-sm font-semibold bg-gray-800 text-gray-100 border border-gray-700 hover:bg-gray-700 disabled:opacity-60"
-        >
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void runHealth()}
+            disabled={healthLoading}
+            className="px-4 py-2 rounded-md text-sm font-semibold bg-gray-900 text-gray-100 border border-gray-700 hover:bg-gray-800 disabled:opacity-60"
+          >
+            {healthLoading ? 'Running…' : 'Run Paymob health check'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="px-4 py-2 rounded-md text-sm font-semibold bg-gray-800 text-gray-100 border border-gray-700 hover:bg-gray-700 disabled:opacity-60"
+          >
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {error && <div className="text-sm text-red-300">{error}</div>}
+
+      {health && (
+        <div className="rounded-xl border border-gray-800 bg-gray-950 p-5">
+          <div className="text-sm font-semibold text-gray-100 mb-2">Health check result</div>
+          <div className="text-xs text-gray-400 grid gap-1">
+            <div>baseUrl: {health.baseUrl ?? '—'}</div>
+            <div>integrationIdCard: {health.integrationIdCard ?? '—'}</div>
+            <div>
+              auth: {health.authOk ? 'OK' : 'FAIL'} | order: {health.orderOk ? 'OK' : 'FAIL'} | paymentKey:{' '}
+              {health.paymentKeyOk ? 'OK' : 'FAIL'}
+            </div>
+            <div>step: {health.step ?? '—'}</div>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-gray-800 bg-gray-950 p-5">

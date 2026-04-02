@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { getServerUser, createServerSupabaseClient } from '@/lib/supabase/server-auth';
 import { getServerClient } from '@/lib/supabase/server';
 import { authToken, createOrder, createPaymentKey, buildHostedPaymentUrl, isPaymobHttpError } from '@/lib/paymob/client';
+import { getPaymobConfig, PaymobConfigError } from '@/lib/paymob/config';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -84,8 +85,17 @@ export async function POST(req: NextRequest) {
     const amountCents = Math.round(amountEgp * 100);
     const merchantOrderId = `egp_${crypto.randomUUID()}`;
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com';
-    const redirectUrl = `${appUrl.replace(/\/+$/, '')}/premium/success?merchant_order_id=${encodeURIComponent(merchantOrderId)}`;
+    let cfg;
+    try {
+      cfg = getPaymobConfig();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[paymob:create-checkout] config invalid', { requestId, error: msg });
+      const safe = e instanceof PaymobConfigError ? `Billing not configured (${e.field})` : 'Billing not configured';
+      return withNoStoreHeaders(NextResponse.json({ ok: false, error: safe, step: 'env_validation' }, { status: 500 }));
+    }
+
+    const redirectUrl = `${cfg.appUrl.replace(/\/+$/, '')}/premium/success?merchant_order_id=${encodeURIComponent(merchantOrderId)}`;
 
     // Fetch billing info (RLS client)
     const supabaseRls = await createServerSupabaseClient();
@@ -120,13 +130,8 @@ export async function POST(req: NextRequest) {
 
     // 2) Paymob flow
     step = 'env_validation';
-    const apiKey = process.env.PAYMOB_API_KEY || '';
-    const integrationIdCard = Number(process.env.PAYMOB_INTEGRATION_ID_CARD || '');
-    // PAYMOB_IFRAME_ID is optional/unused (we use hosted payment page redirect, not iframe)
-    if (!apiKey || !integrationIdCard) {
-      console.error('[paymob:create-checkout] missing env', { requestId, hasApiKey: Boolean(apiKey), integrationIdCard });
-      return withNoStoreHeaders(NextResponse.json({ ok: false, error: 'Billing not configured', step }, { status: 500 }));
-    }
+    const apiKey = cfg.apiKey;
+    const integrationIdCard = cfg.integrationIdCard;
 
     let paymobOrderId: number | null = null;
     let paymentKey: string | null = null;
@@ -191,7 +196,8 @@ export async function POST(req: NextRequest) {
           NextResponse.json(
             {
               ok: false,
-              error: `Billing misconfigured (invalid Paymob integration). Check PAYMOB_INTEGRATION_ID_CARD is the LIVE Online Card integration_id for this PAYMOB_API_KEY. integration_id=${integrationIdCard}. (requestId: ${requestId})`,
+              error:
+                'Billing misconfigured (invalid Paymob integration). Check PAYMOB_INTEGRATION_ID_CARD is the LIVE Online Card integration for this PAYMOB_API_KEY.',
               step,
             },
             { status: 500 }
