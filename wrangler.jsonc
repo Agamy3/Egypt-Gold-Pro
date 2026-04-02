@@ -52,12 +52,12 @@
   },
   "vars": {
     "ADMIN_EMAILS": "admin@egyptgoldpro.com,mohagamy4@gmail.com",
-    "ALPACA_API_KEY_ID": "",
-    "ALPACA_API_SECRET_KEY": "",
+    "ALPACA_API_KEY_ID": "PKH7GSCUJF55MAYM5O6NP4XVKT",
+    "ALPACA_API_SECRET_KEY": "2j29yWFchDAjEEnHZuhreTuigshhUuSSKqPyAZiL4fnA",
     "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
-    "CRON_SECRET": "",
-    "FRED_API_KEY": "",
-    "GOLDAPI_API_KEY": "",
+    "CRON_SECRET": "b2bfb2bc27c487620d0e9153a8429d6a5526b0e9109909bb5fd0f533e2406862",
+    "FRED_API_KEY": "af4206c524d8d45161f4ab50dcc5500b",
+    "GOLDAPI_API_KEY": "goldapi-nssmjm04xea-io",
     "GOLDAPI_BASE_URL": "https://www.goldapi.io",
     "GOLD_API_FREE_BASE_URL": "https://api.gold-api.com",
     "NEWS_RSS_FEEDS_JSON": "{GLOBAL:[https://www.kitco.com/rss/news,https://feeds.reuters.com/reuters/businessNews],US:[https://www.investing.com/rss/news_285.rss],EG:[https://www.dailynewsegypt.com/feed/],AE:[https://www.khaleejtimes.com/rss],SA:[https://english.alarabiya.net/rss.xml]}",
@@ -75,15 +75,15 @@
     "PAYMOB_HMAC_SECRET": "EBCCC0FEC6569521BB75DEF1C710E1CE",
     "PAYMOB_INTEGRATION_ID_CARD": "5601238",
     "PRICE_FEED_PROVIDER": "gold_api_free",
-    "RESEND_API_KEY": "",
-    "VAPID_PRIVATE_KEY": "",
+    "RESEND_API_KEY": "re_PCjx5fNp_EANGz47MKjbZ48M8Msmj7qqP",
+    "VAPID_PRIVATE_KEY": "vyT_WSq4RfREhaC46PZ47SEBp1xOgSF8jJ0cra5wbHM",
     "VAPID_PUBLIC_KEY": "BHmc2wjId8PBYC1ofeJylyuwYkd7mASrPV5raJJr63m_fzA8sCNEq2PWPoGSICnZZCZd_zC1rMYUkiTzraoW-LA",
     "VAPID_SUBJECT": "mailto:admin@egyptgoldpro.com",
     "SUPABASE_URL": "https://hsjiowivfwfyprqvjarc.supabase.co",
     "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzamlvd2l2ZndmeXBycXZqYXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3MzAzNTIsImV4cCI6MjA4MjMwNjM1Mn0.SvOrWAJ_S-XVyS4J7PKR4ORVaZ-411Kr338pWha0NBM",
-    "SUPABASE_SERVICE_ROLE_KEY": "",
-    "TELEGRAM_BOT_TOKEN": "",
-    "TELEGRAM_BOT_USERNAME": "EgyptGoldProbot"
-
+    "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzamlvd2l2ZndmeXBycXZqYXJjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjczMDM1MiwiZXhwIjoyMDgyMzA2MzUyfQ.Cp4b2u-TodAJh5q-1Mc4TzPlOcLeqnMgkoSQpYekUPI",
+    "TELEGRAM_BOT_TOKEN": "8392050858:AAFNTa4ysSgB1bYOnZh3bBIRLjko1cBOhJ8",
+    "TELEGRAM_BOT_USERNAME": "EgyptGoldProbot",
+    "NEXT_PUBLIC_APP_URL": "https://egyptgoldpro.com"
   }
 }
