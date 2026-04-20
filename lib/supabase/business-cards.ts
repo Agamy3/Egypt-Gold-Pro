@@ -106,6 +106,11 @@ export async function getBusinessCardBySlug(slug: string): Promise<BusinessCard 
     return null;
   }
   
+  // Handle missing company_logo_url column gracefully
+  if (data && !('company_logo_url' in data)) {
+    (data as any).company_logo_url = null;
+  }
+  
   return data;
 }
 
@@ -126,6 +131,11 @@ export async function getMyBusinessCard(userId: string): Promise<BusinessCard | 
     return null;
   }
   
+  // Handle missing company_logo_url column gracefully
+  if (data && !('company_logo_url' in data)) {
+    (data as any).company_logo_url = null;
+  }
+  
   return data;
 }
 
@@ -138,12 +148,18 @@ export async function createBusinessCard(
 ): Promise<BusinessCard | null> {
   const supabase = await createServerSupabaseClient();
   
-  const insertData = {
+  // Handle missing company_logo_url column gracefully
+  const insertData: any = {
     user_id: userId,
     ...cardData,
     apps_json: cardData.apps || [],
     skills_json: cardData.skills || [],
   };
+  
+  // Only include company_logo_url if the column exists
+  if (cardData.company_logo_url) {
+    insertData.company_logo_url = cardData.company_logo_url;
+  }
   
   const { data, error } = await supabase
     .from('admin_business_cards')
@@ -154,6 +170,11 @@ export async function createBusinessCard(
   if (error) {
     console.error('[createBusinessCard] Error:', error);
     return null;
+  }
+  
+  // Handle missing company_logo_url column gracefully in response
+  if (data && !('company_logo_url' in data)) {
+    (data as any).company_logo_url = null;
   }
   
   return data;
@@ -168,12 +189,18 @@ export async function updateBusinessCard(
 ): Promise<BusinessCard | null> {
   const supabase = await createServerSupabaseClient();
   
-  const updateData = {
+  // Handle missing company_logo_url column gracefully
+  const updateData: any = {
     ...cardData,
     ...(cardData.apps !== undefined && { apps_json: cardData.apps }),
     ...(cardData.skills !== undefined && { skills_json: cardData.skills }),
     updated_at: new Date().toISOString(),
   };
+  
+  // Only include company_logo_url if it's provided and the column exists
+  if ('company_logo_url' in cardData && cardData.company_logo_url !== undefined) {
+    updateData.company_logo_url = cardData.company_logo_url;
+  }
   
   const { data, error } = await supabase
     .from('admin_business_cards')
@@ -185,6 +212,11 @@ export async function updateBusinessCard(
   if (error) {
     console.error('[updateBusinessCard] Error:', error);
     return null;
+  }
+  
+  // Handle missing company_logo_url column gracefully in response
+  if (data && !('company_logo_url' in data)) {
+    (data as any).company_logo_url = null;
   }
   
   return data;
