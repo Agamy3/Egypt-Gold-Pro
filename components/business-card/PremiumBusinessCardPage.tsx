@@ -33,32 +33,50 @@ export default function PremiumBusinessCardPage({ businessCard }: PremiumBusines
 
   const handleSaveContact = async () => {
     try {
-      const response = await fetch(`/api/card/${businessCard.slug}/vcf`);
+      // Detect if user is on mobile device
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       
-      if (!response.ok) {
-        throw new Error('Failed to generate vCard');
+      if (isMobile) {
+        // For mobile: directly open the vCard URL to trigger native contact import
+        window.location.href = `/api/card/${businessCard.slug}/vcf`;
+      } else {
+        // For desktop: fetch and download via blob
+        const response = await fetch(`/api/card/${businessCard.slug}/vcf`);
+        
+        if (!response.ok) {
+          throw new Error('Failed to generate vCard');
+        }
+        
+        // Get the filename from headers or use a default
+        const contentDisposition = response.headers.get('content-disposition');
+        const filenameMatch = contentDisposition?.match(/filename="([^"]+)"/);
+        const filename = filenameMatch?.[1] || `${businessCard.slug || businessCard.full_name.toLowerCase().replace(/\s+/g, '-')}.vcf`;
+        
+        // Create blob and download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
       }
-      
-      // Get the filename from headers or use a default
-      const contentDisposition = response.headers.get('content-disposition');
-      const filenameMatch = contentDisposition?.match(/filename="([^"]+)"/);
-      const filename = filenameMatch?.[1] || `${businessCard.slug || businessCard.full_name.toLowerCase().replace(/\s+/g, '-')}.vcf`;
-      
-      // Create blob and download
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
       
     } catch (error) {
       console.error('Failed to save contact:', error);
       // You could show an error message to the user here
     }
+  };
+
+  // Helper function to detect mobile and get appropriate button text
+  const getSaveContactText = () => {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return {
+      title: 'Save Contact',
+      subtitle: isMobile ? 'Add to Contacts' : 'Download vCard'
+    };
   };
 
   const getSocialIcon = (platform: string) => {
@@ -423,8 +441,8 @@ export default function PremiumBusinessCardPage({ businessCard }: PremiumBusines
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
                     <div className="flex-1 text-left">
-                      <div className="font-medium">Save Contact</div>
-                      <div className="text-sm opacity-90">Download vCard</div>
+                      <div className="font-medium">{getSaveContactText().title}</div>
+                      <div className="text-sm opacity-90">{getSaveContactText().subtitle}</div>
                     </div>
                   </div>
                   <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
