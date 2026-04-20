@@ -10,6 +10,7 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient, getServerUser } from '@/lib/supabase/server-auth';
+import { getServerClient } from '@/lib/supabase/server';
 
 export class AdminAuthError extends Error {
   status: number;
@@ -23,9 +24,9 @@ export async function isAdminUser(): Promise<boolean> {
   const user = await getServerUser();
   if (!user) return false;
 
-  const supabase = await createServerSupabaseClient();
+  const supabase = getServerClient();
 
-  // Only check user_profiles.is_admin field
+  // Only check user_profiles.is_admin field using service role client (bypasses RLS)
   const { data: profile, error } = await supabase
     .from('user_profiles')
     .select('is_admin')
