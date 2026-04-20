@@ -31,6 +31,36 @@ export default function PremiumBusinessCardPage({ businessCard }: PremiumBusines
     copyToClipboard(url);
   };
 
+  const handleSaveContact = async () => {
+    try {
+      const response = await fetch(`/api/card/${businessCard.slug}/vcf`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate vCard');
+      }
+      
+      // Get the filename from headers or use a default
+      const contentDisposition = response.headers.get('content-disposition');
+      const filenameMatch = contentDisposition?.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] || `${businessCard.slug || businessCard.full_name.toLowerCase().replace(/\s+/g, '-')}.vcf`;
+      
+      // Create blob and download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+    } catch (error) {
+      console.error('Failed to save contact:', error);
+      // You could show an error message to the user here
+    }
+  };
+
   const getSocialIcon = (platform: string) => {
     const icons: { [key: string]: { icon: string; color: string; gradient?: string } } = {
       email: { icon: 'Mail', color: 'text-blue-400', gradient: 'from-blue-400 to-blue-600' },
@@ -382,6 +412,23 @@ export default function PremiumBusinessCardPage({ businessCard }: PremiumBusines
                     <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   </a>
                 )}
+                
+                {/* Save Contact Button */}
+                <button
+                  onClick={handleSaveContact}
+                  className="group relative overflow-hidden bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl p-4 hover:shadow-lg hover:shadow-indigo-500/25 transition-all duration-300"
+                >
+                  <div className="relative z-10 flex items-center gap-3">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    <div className="flex-1 text-left">
+                      <div className="font-medium">Save Contact</div>
+                      <div className="text-sm opacity-90">Download vCard</div>
+                    </div>
+                  </div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                </button>
               </div>
             </div>
 

@@ -19,6 +19,7 @@ export interface BusinessCard {
   avatar_url?: string;
   banner_url?: string;
   company_name?: string;
+  company_logo_url?: string;
   email?: string;
   phone?: string;
   whatsapp?: string;
@@ -61,6 +62,7 @@ export interface CreateBusinessCardData {
   avatar_url?: string;
   banner_url?: string;
   company_name?: string;
+  company_logo_url?: string;
   email?: string;
   phone?: string;
   whatsapp?: string;

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { BusinessCard, AppPlatformLink } from '@/lib/supabase/business-cards';
 import IconPicker from '@/components/business-card/IconPicker';
+import ImageUpload from '@/components/business-card/ImageUpload';
 
 interface BusinessCardsAdminPanelProps {
   userId: string;
@@ -26,6 +27,7 @@ export default function BusinessCardsAdminPanel({ userId }: BusinessCardsAdminPa
     avatar_url: '',
     banner_url: '',
     company_name: '',
+    company_logo_url: '',
     email: '',
     phone: '',
     whatsapp: '',
@@ -74,6 +76,7 @@ export default function BusinessCardsAdminPanel({ userId }: BusinessCardsAdminPa
             avatar_url: card.avatar_url || '',
             banner_url: card.banner_url || '',
             company_name: card.company_name || '',
+            company_logo_url: card.company_logo_url || '',
             email: card.email || '',
             phone: card.phone || '',
             whatsapp: card.whatsapp || '',
@@ -378,56 +381,63 @@ export default function BusinessCardsAdminPanel({ userId }: BusinessCardsAdminPa
         <div className="bg-gray-900 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-white mb-4">Images & URLs</h3>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Avatar URL
-              </label>
-              <input
-                type="url"
-                value={formData.avatar_url}
-                onChange={(e) => setFormData(prev => ({ ...prev, avatar_url: e.target.value }))}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ImageUpload
+                currentUrl={formData.avatar_url}
+                onImageChange={(url) => setFormData(prev => ({ ...prev, avatar_url: url || '' }))}
+                type="avatar"
+                label="Profile Avatar"
+                description="Your professional profile photo"
+              />
+              
+              <ImageUpload
+                currentUrl={formData.banner_url}
+                onImageChange={(url) => setFormData(prev => ({ ...prev, banner_url: url || '' }))}
+                type="banner"
+                label="Cover Banner"
+                description="Background image for your profile"
               />
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Banner URL
-              </label>
-              <input
-                type="url"
-                value={formData.banner_url}
-                onChange={(e) => setFormData(prev => ({ ...prev, banner_url: e.target.value }))}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Website URL
+                </label>
+                <input
+                  type="url"
+                  value={formData.website_url}
+                  onChange={(e) => setFormData(prev => ({ ...prev, website_url: e.target.value }))}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Custom Slug
+                </label>
+                <input
+                  type="text"
+                  value={formData.slug}
+                  onChange={(e) => setFormData(prev => ({ ...prev, slug: e.target.value }))}
+                  placeholder="Leave empty to auto-generate"
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
             </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Website URL
-              </label>
-              <input
-                type="url"
-                value={formData.website_url}
-                onChange={(e) => setFormData(prev => ({ ...prev, website_url: e.target.value }))}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Custom Slug
-              </label>
-              <input
-                type="text"
-                value={formData.slug}
-                onChange={(e) => setFormData(prev => ({ ...prev, slug: e.target.value }))}
-                placeholder="Leave empty to auto-generate"
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-          </div>
+        </div>
+
+        {/* Company Logo */}
+        <div className="bg-gray-900 rounded-xl p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">Company Logo</h3>
+          <ImageUpload
+            currentUrl={formData.company_logo_url}
+            onImageChange={(url) => setFormData(prev => ({ ...prev, company_logo_url: url || '' }))}
+            type="company_logo"
+            label="Company Logo"
+            description="Your company or organization logo"
+          />
         </div>
 
         {/* Contact Information */}
