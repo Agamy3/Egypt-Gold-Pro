@@ -22,7 +22,8 @@ CREATE POLICY "Admins can manage own business cards" ON public.admin_business_ca
       SELECT 1 FROM public.user_profiles 
         WHERE user_profiles.id = auth.uid() 
         AND user_profiles.is_admin = true
-    );
+    )
+  );
 
 -- 4b. Public cards can be viewed by anyone (no auth required)
 CREATE POLICY "Public business cards are viewable by all" ON public.admin_business_cards
