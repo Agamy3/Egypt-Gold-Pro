@@ -51,9 +51,8 @@ export async function requireAdmin() {
     throw new AdminAuthError('Forbidden', 403);
   }
 
-  // For RLS-safe reads under admin policy tables, we can use the session client.
-  // For writes, route handlers may choose to use the service-role server client after passing this check.
-  const supabase = await createServerSupabaseClient();
+  // Use service role client for admin operations (bypasses RLS)
+  const supabase = getServerClient();
   return { supabase, user };
 }
 
