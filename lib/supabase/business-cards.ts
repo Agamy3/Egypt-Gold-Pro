@@ -84,7 +84,7 @@ export interface CreateBusinessCardData {
   noindex?: boolean;
 }
 
-export interface UpdateBusinessCardData extends Partial<CreateBusinessCardData> {}
+export type UpdateBusinessCardData = Partial<CreateBusinessCardData>;
 
 /**
  * Get business card by slug (public access)

@@ -23,7 +23,7 @@ export default function BusinessCardNotFound() {
           </Link>
           
           <div className="text-sm text-gray-500">
-            <p>If you believe this is an error, please contact the card owner.</p>
+            <p>If you believe this is an error, please contact the card&apos;s owner.</p>
           </div>
         </div>
       </div>
