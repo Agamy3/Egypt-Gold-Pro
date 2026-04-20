@@ -4,17 +4,7 @@ import { getServerClient } from '@/lib/supabase/server';
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAdmin();
-    const supabase = getServerClient();
-    
-    // Get current user from session
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { supabase, user } = await requireAdmin();
     
     const { data: businessCard, error } = await supabase
       .from('admin_business_cards')
@@ -33,17 +23,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAdmin();
-    const supabase = getServerClient();
-    
-    // Get current user from session
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { supabase, user } = await requireAdmin();
     
     const body = await request.json();
     
@@ -243,17 +223,7 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    await requireAdmin();
-    const supabase = getServerClient();
-    
-    // Get current user from session
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { supabase, user } = await requireAdmin();
     
     const { error } = await supabase
       .from('admin_business_cards')
