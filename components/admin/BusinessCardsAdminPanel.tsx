@@ -426,6 +426,7 @@ export default function BusinessCardsAdminPanel({ userId }: BusinessCardsAdminPa
                 />
               </div>
             </div>
+          </div>
         </div>
 
         {/* Company Logo */}
