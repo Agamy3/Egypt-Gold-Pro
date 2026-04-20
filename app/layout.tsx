@@ -7,7 +7,6 @@ import CookieConsentBanner from '@/components/CookieConsentBanner'
 import Sidebar from '@/components/layout/Sidebar'
 import MobileDrawer from '@/components/layout/MobileDrawer'
 import InstallPrompt from '@/components/pwa/InstallPrompt'
-import AdsterraPopunder from '@/components/ads/AdsterraPopunder'
 
 // Get site URL from environment or use fallback
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com'
@@ -84,9 +83,7 @@ export default function RootLayout({
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1715676389323573"
           crossOrigin="anonymous"
         />
-        {/* Adsterra Popunder - placed before closing </head> tag as per Adsterra instructions */}
-        <AdsterraPopunder />
-      </head>
+              </head>
       <body className="touch-pan-y bg-black">
         <LanguageProvider>
           <div className="min-h-screen flex bg-black">
