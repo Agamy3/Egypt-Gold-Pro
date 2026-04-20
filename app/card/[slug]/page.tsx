@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import BusinessCardPage from '@/components/business-card/BusinessCardPage';
+import PremiumBusinessCardPage from '@/components/business-card/PremiumBusinessCardPage';
 import { getBusinessCardBySlug } from '@/lib/supabase/business-cards';
 
 interface BusinessCardPageProps {
@@ -70,5 +70,5 @@ export default async function BusinessCardRoute({ params }: BusinessCardPageProp
     notFound();
   }
 
-  return <BusinessCardPage businessCard={businessCard} />;
+  return <PremiumBusinessCardPage businessCard={businessCard} />;
 }
