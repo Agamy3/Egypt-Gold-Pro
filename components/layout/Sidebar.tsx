@@ -209,6 +209,12 @@ export default function Sidebar() {
           icon: <span>📨</span>,
         },
         {
+          href: '/admin/business-cards',
+          labelEn: 'Business Cards',
+          labelAr: 'بطاقات العمل',
+          icon: <span>🪪</span>,
+        },
+        {
           href: '/admin/billing',
           labelEn: 'Billing',
           labelAr: 'الفوترة',
