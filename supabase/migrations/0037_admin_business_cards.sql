@@ -69,21 +69,9 @@ ALTER TABLE public.admin_business_cards ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Admins can view own business cards" ON public.admin_business_cards
   FOR SELECT USING (
     EXISTS (
-      SELECT 1 FROM auth.users 
-      WHERE auth.users.id = user_id 
-      AND (
-        -- Check user_profiles.is_admin
-        EXISTS (
-          SELECT 1 FROM public.user_profiles 
-          WHERE user_profiles.id = user_id 
-          AND user_profiles.is_admin = true
-        )
-        -- Or check admin_users table
-        OR EXISTS (
-          SELECT 1 FROM public.admin_users 
-          WHERE admin_users.user_id = user_id
-        )
-      )
+      SELECT 1 FROM public.user_profiles 
+        WHERE user_profiles.id = user_id 
+        AND user_profiles.is_admin = true
     )
   );
 
@@ -95,21 +83,9 @@ CREATE POLICY "Public business cards are viewable by all" ON public.admin_busine
 CREATE POLICY "Admins can insert own business cards" ON public.admin_business_cards
   FOR INSERT WITH CHECK (
     EXISTS (
-      SELECT 1 FROM auth.users 
-      WHERE auth.users.id = user_id 
-      AND (
-        -- Check user_profiles.is_admin
-        EXISTS (
-          SELECT 1 FROM public.user_profiles 
-          WHERE user_profiles.id = user_id 
-          AND user_profiles.is_admin = true
-        )
-        -- Or check admin_users table
-        OR EXISTS (
-          SELECT 1 FROM public.admin_users 
-          WHERE admin_users.user_id = user_id
-        )
-      )
+      SELECT 1 FROM public.user_profiles 
+        WHERE user_profiles.id = user_id 
+        AND user_profiles.is_admin = true
     )
   );
 
@@ -117,21 +93,9 @@ CREATE POLICY "Admins can insert own business cards" ON public.admin_business_ca
 CREATE POLICY "Admins can update own business cards" ON public.admin_business_cards
   FOR UPDATE USING (
     EXISTS (
-      SELECT 1 FROM auth.users 
-      WHERE auth.users.id = user_id 
-      AND (
-        -- Check user_profiles.is_admin
-        EXISTS (
-          SELECT 1 FROM public.user_profiles 
-          WHERE user_profiles.id = user_id 
-          AND user_profiles.is_admin = true
-        )
-        -- Or check admin_users table
-        OR EXISTS (
-          SELECT 1 FROM public.admin_users 
-          WHERE admin_users.user_id = user_id
-        )
-      )
+      SELECT 1 FROM public.user_profiles 
+        WHERE user_profiles.id = user_id 
+        AND user_profiles.is_admin = true
     )
   );
 
@@ -139,21 +103,9 @@ CREATE POLICY "Admins can update own business cards" ON public.admin_business_ca
 CREATE POLICY "Admins can delete own business cards" ON public.admin_business_cards
   FOR DELETE USING (
     EXISTS (
-      SELECT 1 FROM auth.users 
-      WHERE auth.users.id = user_id 
-      AND (
-        -- Check user_profiles.is_admin
-        EXISTS (
-          SELECT 1 FROM public.user_profiles 
-          WHERE user_profiles.id = user_id 
-          AND user_profiles.is_admin = true
-        )
-        -- Or check admin_users table
-        OR EXISTS (
-          SELECT 1 FROM public.admin_users 
-          WHERE admin_users.user_id = user_id
-        )
-      )
+      SELECT 1 FROM public.user_profiles 
+        WHERE user_profiles.id = user_id 
+        AND user_profiles.is_admin = true
     )
   );
 

@@ -25,32 +25,15 @@ export async function isAdminUser(): Promise<boolean> {
 
   const supabase = await createServerSupabaseClient();
 
-  // 1) Prefer user_profiles.is_admin (this repo already uses it)
-  try {
-    const { data: profile, error } = await supabase
-      .from('user_profiles')
-      .select('is_admin')
-      .eq('id', user.id)
-      .single();
+  // Only check user_profiles.is_admin field
+  const { data: profile, error } = await supabase
+    .from('user_profiles')
+    .select('is_admin')
+    .eq('id', user.id)
+    .single();
 
-    if (!error && profile && profile.is_admin === true) {
-      return true;
-    }
-  } catch {
-    // ignore and try fallback table
-  }
-
-  // 2) Fallback: admin_users allowlist table (recommended for admin-only features)
-  try {
-    const { data, error } = await supabase
-      .from('admin_users')
-      .select('user_id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (!error && data?.user_id) return true;
-  } catch {
-    // ignore
+  if (!error && profile && profile.is_admin === true) {
+    return true;
   }
 
   return false;
