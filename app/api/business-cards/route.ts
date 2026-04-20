@@ -6,11 +6,15 @@ export async function GET(request: NextRequest) {
   try {
     const { supabase, user } = await requireAdmin();
     
-    const { data: businessCard, error } = await supabase
+    const { data: businessCards, error: cardsError } = await supabase
       .from('admin_business_cards')
       .select('*')
       .eq('user_id', user.id)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    const businessCard = businessCards && businessCards.length > 0 ? businessCards[0] : null;
+    const error = cardsError || (businessCards && businessCards.length === 0 ? null : null);
     
     return NextResponse.json({ 
       success: true, 
