@@ -153,24 +153,74 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper function to get image dimensions
+// Helper function to get image dimensions using server-side processing
 async function getImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
+  try {
+    // Convert File to Buffer
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
     
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve({ width: img.width, height: img.height });
-    };
+    // Simple image dimension detection for JPEG/PNG
+    // For now, we'll use a basic approach - in production, consider using sharp or jimp
     
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(null);
-    };
+    if (file.type === 'image/jpeg') {
+      // JPEG format - look for SOF markers
+      if (buffer.length < 4) return null;
+      
+      let offset = 2;
+      while (offset < buffer.length - 8) {
+        if (buffer[offset] === 0xFF) {
+          if (buffer[offset + 1] === 0xC0 || buffer[offset + 1] === 0xC2) {
+            // Found SOF0 or SOF2 marker
+            return {
+              width: (buffer[offset + 7] << 8) | buffer[offset + 8],
+              height: (buffer[offset + 5] << 8) | buffer[offset + 6]
+            };
+          }
+        }
+        offset++;
+      }
+    } else if (file.type === 'image/png') {
+      // PNG format - IHDR chunk
+      if (buffer.length < 24) return null;
+      
+      // PNG signature check
+      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+        return {
+          width: (buffer[16] << 24) | (buffer[17] << 16) | (buffer[18] << 8) | buffer[19],
+          height: (buffer[20] << 24) | (buffer[21] << 16) | (buffer[22] << 8) | buffer[23]
+        };
+      }
+    } else if (file.type === 'image/webp') {
+      // WebP format - basic VP8/VP8L detection
+      if (buffer.length < 30) return null;
+      
+      // Look for VP8 chunk
+      if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38) {
+        return {
+          width: (buffer[26] << 8) | buffer[27],
+          height: (buffer[24] << 8) | buffer[25]
+        };
+      }
+    } else if (file.type === 'image/gif') {
+      // GIF format
+      if (buffer.length < 10) return null;
+      
+      // GIF signature check
+      if ((buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38)) {
+        return {
+          width: buffer[6] | (buffer[7] << 8),
+          height: buffer[8] | (buffer[9] << 8)
+        };
+      }
+    }
     
-    img.src = objectUrl;
-  });
+    // Fallback - return null if we can't detect dimensions
+    return null;
+  } catch (error) {
+    console.error('Error getting image dimensions:', error);
+    return null;
+  }
 }
 
 // DELETE endpoint for removing images
