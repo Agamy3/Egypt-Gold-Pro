@@ -115,8 +115,24 @@ export async function POST(request: NextRequest) {
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to upload image';
+      if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
+        errorMessage = 'Storage bucket not found. Please contact administrator.';
+      } else if (uploadError.message.includes('permission') || uploadError.message.includes('policy')) {
+        errorMessage = 'Permission denied. Check storage policies.';
+      } else if (uploadError.message.includes('size')) {
+        errorMessage = 'File too large. Maximum size is 5MB.';
+      } else if (uploadError.message.includes('mime')) {
+        errorMessage = 'Invalid file type. Only JPEG, PNG, WebP, and GIF are allowed.';
+      }
+      
       return NextResponse.json(
-        { error: 'Failed to upload image' },
+        { 
+          error: errorMessage,
+          details: uploadError.message
+        },
         { status: 500 }
       );
     }
