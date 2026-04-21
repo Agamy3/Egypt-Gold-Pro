@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
       bio: body.bio?.trim() || null,
       avatar_url: body.avatar_url?.trim() || null,
       banner_url: body.banner_url?.trim() || null,
+      company_logo_url: body.company_logo_url?.trim() || null,
       company_name: body.company_name?.trim() || null,
       email: body.email?.trim() || null,
       phone: body.phone?.trim() || null,
@@ -113,17 +114,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireAdmin();
-    const supabase = getServerClient();
-    
-    // Get current user from session
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { supabase, user } = await requireAdmin();
     
     const body = await request.json();
     
@@ -173,6 +164,7 @@ export async function PUT(request: NextRequest) {
       bio: body.bio?.trim() || null,
       avatar_url: body.avatar_url?.trim() || null,
       banner_url: body.banner_url?.trim() || null,
+      company_logo_url: body.company_logo_url?.trim() || null,
       company_name: body.company_name?.trim() || null,
       email: body.email?.trim() || null,
       phone: body.phone?.trim() || null,
