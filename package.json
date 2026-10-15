@@ -6,16 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "cf:build": "opennextjs-cloudflare build",
-    "cf:deploy": "opennextjs-cloudflare deploy",
+    "cf:deploy": "wrangler deploy --keep-vars",
     "cf:preview": "opennextjs-cloudflare preview",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "deploy": "npm run cf:build && npm run jobs:deploy && npm run cf:deploy",
     "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
-    "test:worker": "node --test tests/*.test.mjs"
+    "test:worker": "node --test tests/*.test.mjs",
+    "jobs:build": "node scripts/deploy-jobs.mjs --dry-run",
+    "jobs:deploy": "node scripts/deploy-jobs.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
