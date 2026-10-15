@@ -65,3 +65,12 @@ need measurement. Short successful traces establish immediate function only;
 compare account error counts over a longer interval before declaring the CPU
 problem resolved. Unrelated pre-existing business-card route/page parameter type
 errors currently prevent a clean standalone TypeScript check.
+
+## Silver source format
+
+The SafeHavenHub source now encodes numeric price cells as images. The former
+parser returned `No silver rows parsed`, while the route still returned HTTP 200.
+A fast format check now reports the feed unavailable before importing Cheerio.
+Numeric tables remain supported and tested; image-based values are never guessed
+or persisted as fresh prices. This reduces wasted CPU but does not restore this
+upstream data feed. The latest historical local-silver rows predate this change.

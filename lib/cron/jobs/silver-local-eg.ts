@@ -16,6 +16,7 @@ export async function GET(request: Request) {
 
   const scrape = await scrapeEgyptLocalSilverSafeHaven();
   if (!scrape.ok) {
+    console.warn('[silver-local-eg] feed unavailable', { reason: scrape.error });
     return Response.json({ ok: false, error: scrape.error, serverAsOf, pageUrl: scrape.pageUrl }, { status: 200 });
   }
 
