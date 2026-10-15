@@ -5,6 +5,7 @@
  * Requires `cf:build` first so `.open-next/worker.js` exists. `wrangler.jsonc` must define
  * matching `triggers.crons` (same strings as keys below).
  */
+import { withPublicDataCache } from './lib/worker/public-data-cache.mjs';
 // Resolved after `npm run cf:build` — produces `.open-next/worker.js`
 // IMPORTANT: Keep OpenNext lazy-loaded so scheduled cron events don't pay the CPU cost
 // of importing the full Next bundle on cold start.
@@ -54,8 +55,10 @@ function cronRequest(path, env) {
 
 export default {
   async fetch(request, env, ctx) {
-    const nextApp = await getNextApp();
-    return nextApp.fetch(request, env, ctx);
+    return withPublicDataCache(request, globalThis.caches?.default, ctx, async () => {
+      const nextApp = await getNextApp();
+      return nextApp.fetch(request, env, ctx);
+    });
   },
 
   /**
@@ -95,27 +98,24 @@ export default {
           }
 
           const startedAt = Date.now();
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 55_000);
           try {
             console.log('[cf-cron] dispatch start', { cron: cronExpr, path });
-            const timeoutMs = 55_000;
-            const res = await Promise.race([
-              fetch(req),
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error(`timeout_after_${timeoutMs}ms`)), timeoutMs)
-              ),
-            ]);
-            const text = res?.headers?.get('content-type')?.includes('json')
-              ? await res.clone().text().catch(() => '')
-              : '';
+            const res = await fetch(req, { signal: controller.signal });
+            // Status is sufficient here. Cloning and decoding entire JSON bodies
+            // just for a log preview spends the scheduler's small CPU allowance.
+            await res.body?.cancel();
             console.log('[cf-cron]', cronExpr, path, res.status, {
               tookMs: Date.now() - startedAt,
-              bodyPreview: text.slice(0, 200),
             });
           } catch (e) {
             console.error('[cf-cron] fetch failed', cronExpr, path, {
               tookMs: Date.now() - startedAt,
               error: e instanceof Error ? e.message : String(e),
             });
+          } finally {
+            clearTimeout(timeout);
           }
         })()
       );

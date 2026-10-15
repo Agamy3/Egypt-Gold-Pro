@@ -14,7 +14,8 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "start": "next start",
     "lint": "next lint",
-    "test": "jest"
+    "test": "jest",
+    "test:worker": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
