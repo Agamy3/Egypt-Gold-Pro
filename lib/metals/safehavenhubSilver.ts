@@ -1,6 +1,6 @@
 import 'server-only';
 
-import * as cheerio from 'cheerio';
+import type * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 
 export type SafeHavenSilverRow = {
@@ -21,6 +21,11 @@ export type SafeHavenSilverScrapeResult =
       rows: SafeHavenSilverRow[];
     }
   | { ok: false; error: string; pageUrl: string; scrapedAtIso: string };
+
+export function sourceUsesImagePrices(html: string): boolean {
+  const table = html.match(/<table\b[^>]*\bclass=["'][^"']*\bmetal-prices-table\b[^"']*["'][^>]*>[\s\S]*?<\/table>/i)?.[0];
+  return Boolean(table && /<img\b[^>]*\bclass=["'][^"']*\bprice-cell\b[^"']*["']/i.test(table));
+}
 
 function asNumFromText(text: string): number | null {
   const cleaned = text
@@ -129,7 +134,14 @@ export async function scrapeEgyptLocalSilverSafeHaven(): Promise<SafeHavenSilver
     });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}`, pageUrl, scrapedAtIso };
     const html = await res.text();
-    const $ = cheerio.load(html);
+    // The provider replaced numeric cells with price images. Fail closed before
+    // loading/parsing the whole Shopify page; these are not machine-readable
+    // prices and must never be treated as a successful fresh snapshot.
+    if (sourceUsesImagePrices(html)) {
+      return { ok: false, error: 'Silver source uses price images; numeric feed unavailable', pageUrl, scrapedAtIso };
+    }
+    const { load } = await import('cheerio');
+    const $ = load(html);
 
     // SafeHavenHub uses a dedicated table class for metal prices.
     const picked = $('table.metal-prices-table').first();

@@ -1,5 +1,7 @@
 'use client';
 
+import { startVisiblePolling } from '@/lib/client/visible-polling.mjs';
+
 import { useEffect, useMemo, useState } from 'react';
 import type { GoldTodayData } from '@/lib/landing/gold-today';
 
@@ -25,18 +27,18 @@ export default function GoldTodayLiveClient({ initialData }: Props) {
 
   useEffect(() => {
     const everySecond = setInterval(() => setNowMs(Date.now()), 1000);
-    const poll = setInterval(async () => {
+    const stop = startVisiblePolling(async (signal) => {
       try {
-        const res = await fetch('/api/landing/gold-today', { cache: 'no-store' });
+        const res = await fetch('/api/landing/gold-today', { cache: 'no-store', signal });
         const json = (await res.json().catch(() => null)) as { ok?: boolean; data?: GoldTodayData } | null;
-        if (res.ok && json?.ok && json.data) setData(json.data);
+        if (!signal.aborted && res.ok && json?.ok && json.data) setData(json.data);
       } catch {
         // Keep previous data on transient failures.
       }
-    }, 90000);
+    }, 90000, { immediate: false });
     return () => {
       clearInterval(everySecond);
-      clearInterval(poll);
+      stop();
     };
   }, []);
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
+import { startVisiblePolling } from '@/lib/client/visible-polling.mjs';
 import Dashboard from '@/components/Dashboard';
 import GoldSignalCard from '@/components/GoldSignalCard';
 import GoldConverter from '@/components/GoldConverter';
@@ -104,35 +105,29 @@ function HomeContent() {
   const country = (searchParams.get('country') || 'EG') as 'EG' | 'AE' | 'SA' | 'US';
   const currency = (searchParams.get('currency') || 'EGP') as 'EGP' | 'USD' | 'AED' | 'SAR';
 
-  const fetchSnapshot = useCallback(async () => {
+  const fetchSnapshot = useCallback(async (signal: AbortSignal) => {
     try {
       const url = `/api/marketSnapshot?country=${country}&currency=${currency}`;
       const res = await fetch(url, {
-        cache: 'no-store', // Ensure fresh data on every fetch
+        cache: 'no-store', signal, // Ensure fresh data on every fetch
       });
       if (!res.ok) {
         throw new Error('Failed to fetch market snapshot');
       }
       const data = await res.json();
+      if (signal.aborted) return;
       setSnapshot(data);
       setError(null);
     } catch (err) {
+      if (signal.aborted) return;
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       // Only set loading to false on initial load
-      if (loading) {
-        setLoading(false);
-      }
+      if (!signal.aborted) setLoading(false);
     }
-  }, [country, currency, loading]);
+  }, [country, currency]);
 
-  useEffect(() => {
-    fetchSnapshot();
-    const interval = setInterval(() => {
-      fetchSnapshot();
-    }, 30000); // Poll every 30 seconds
-    return () => clearInterval(interval);
-  }, [fetchSnapshot]); // Re-fetch when country/currency changes
+  useEffect(() => startVisiblePolling(fetchSnapshot, 30000), [fetchSnapshot]);
 
   if (loading) {
     return (
@@ -151,7 +146,7 @@ function HomeContent() {
         <div className="text-center">
           <p className="text-red-400 mb-4">{error}</p>
           <button
-            onClick={fetchSnapshot}
+            onClick={() => void fetchSnapshot(new AbortController().signal)}
             className="px-4 py-2 bg-gold-600 text-white rounded hover:bg-gold-700"
           >
             Retry

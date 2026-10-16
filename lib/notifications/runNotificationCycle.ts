@@ -1,4 +1,5 @@
 import 'server-only';
+import { createCycleLookup } from './cycle-cache';
 
 import { getServerClient } from '@/lib/supabase/server';
 import { sendPushNotification, type PushSubscription } from '@/lib/push';
@@ -6,7 +7,7 @@ import { sendPushNotification, type PushSubscription } from '@/lib/push';
 type Country = 'EG' | 'AE' | 'SA' | 'US';
 type Currency = 'EGP' | 'USD' | 'AED' | 'SAR';
 
-type UserNotificationRuleRow = {
+export type UserNotificationRuleRow = {
   id: number;
   user_id: string;
   rule_type?: string | null;
@@ -186,7 +187,7 @@ async function getTrustedLocalSnapshotAtOrBefore(args: {
   return { row: (data as any) ?? null };
 }
 
-async function evaluateLocalPctChange(rule: UserNotificationRuleRow, now: Date): Promise<
+async function evaluateLocalPctChange(rule: UserNotificationRuleRow, now: Date, lookup: typeof getTrustedLocalSnapshotAtOrBefore): Promise<
   | { ok: true; triggered: boolean; title?: string; body?: string; dedupeKey?: string; debug?: any; reason?: string }
   | { ok: false; error: string; reason?: string }
 > {
@@ -207,7 +208,7 @@ async function evaluateLocalPctChange(rule: UserNotificationRuleRow, now: Date):
   }
 
   const maxIso = new Date(now.getTime() - minAgeSeconds * 1000).toISOString();
-  const latestRes = await getTrustedLocalSnapshotAtOrBefore({ country, karat, maxIso });
+  const latestRes = await lookup({ country, karat, maxIso });
   if (latestRes.error) return { ok: false, error: latestRes.error, reason: 'db_error_latest' };
   const latest = latestRes.row;
   if (!latest) return { ok: true, triggered: false, reason: 'missing_latest_trusted' };
@@ -218,7 +219,7 @@ async function evaluateLocalPctChange(rule: UserNotificationRuleRow, now: Date):
   if (latestPrice == null || latestPrice <= 0) return { ok: true, triggered: false, reason: 'bad_latest_price' };
 
   const prevMaxIso = new Date(latestAtMs - windowSeconds * 1000).toISOString();
-  const prevRes = await getTrustedLocalSnapshotAtOrBefore({ country, karat, maxIso: prevMaxIso });
+  const prevRes = await lookup({ country, karat, maxIso: prevMaxIso });
   if (prevRes.error) return { ok: false, error: prevRes.error, reason: 'db_error_prev' };
   const prev = prevRes.row;
   if (!prev) return { ok: true, triggered: false, reason: 'missing_prev_trusted' };
@@ -326,7 +327,7 @@ async function sendPushToUserSubscriptions(args: {
   };
 }
 
-export async function runNotificationCycle(args: { dryRun: boolean; now?: Date }): Promise<NotificationCycleResult> {
+export async function runNotificationCycle(args: { dryRun: boolean; now?: Date; rules?: UserNotificationRuleRow[] }): Promise<NotificationCycleResult> {
   const serverAsOf = new Date().toISOString();
   const now = args.now ?? new Date();
   const supabase = getServerClient();
@@ -349,7 +350,7 @@ export async function runNotificationCycle(args: { dryRun: boolean; now?: Date }
     errors: [],
   };
 
-  const { data: rules, error: rulesErr } = await supabase
+  const { data: rules, error: rulesErr } = args.rules ? { data: args.rules, error: null } : await supabase
     .from('user_notification_rules')
     .select('id, user_id, rule_type, params, country, karat, side, currency, direction, threshold, cooldown_minutes, enabled')
     .eq('enabled', true);
@@ -368,13 +369,16 @@ export async function runNotificationCycle(args: { dryRun: boolean; now?: Date }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com';
 
+  const lookupByKey = createCycleLookup((key: string) => getTrustedLocalSnapshotAtOrBefore(JSON.parse(key)));
+  const lookup: typeof getTrustedLocalSnapshotAtOrBefore = input => lookupByKey(JSON.stringify(input));
+
   for (const rule of rows) {
     result.evaluated++;
     const ruleType = String(rule.rule_type || 'threshold_cross');
 
     try {
       if (ruleType === 'local_pct_change') {
-        const evalRes = await evaluateLocalPctChange(rule, now);
+        const evalRes = await evaluateLocalPctChange(rule, now, lookup);
         if (!evalRes.ok) {
           result.skipped++;
           const reason = evalRes.reason ?? 'rule_error';

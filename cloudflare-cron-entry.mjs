@@ -5,6 +5,9 @@
  * Requires `cf:build` first so `.open-next/worker.js` exists. `wrangler.jsonc` must define
  * matching `triggers.crons` (same strings as keys below).
  */
+import { CRON_PATHS, isCronPath } from './lib/worker/cron-router.mjs';
+import { publicHomeShell } from './lib/worker/public-shell.mjs';
+import { withPublicDataCache } from './lib/worker/public-data-cache.mjs';
 // Resolved after `npm run cf:build` — produces `.open-next/worker.js`
 // IMPORTANT: Keep OpenNext lazy-loaded so scheduled cron events don't pay the CPU cost
 // of importing the full Next bundle on cold start.
@@ -15,18 +18,6 @@ async function getNextApp() {
   }
   return _nextAppPromise;
 }
-
-/** @type {Record<string, string[]>} */
-const CRON_PATHS = {
-  '* * * * *': [
-    '/api/cron/ingest-eg',
-    '/api/cron/notifications-eval',
-  ],
-  '*/5 * * * *': ['/api/cron/ingest-global', '/api/cron/notify'],
-  '*/10 * * * *': ['/api/cron/gold-signals'],
-  '*/15 * * * *': ['/api/cron/silver-local-eg'],
-  '0 */6 * * *': ['/api/cron/news-ingest'],
-};
 
 function baseUrlFromEnv(env) {
   const raw = env.CRON_BASE_URL || env.NEXT_PUBLIC_SITE_URL || 'https://egyptgoldpro.com';
@@ -54,8 +45,15 @@ function cronRequest(path, env) {
 
 export default {
   async fetch(request, env, ctx) {
-    const nextApp = await getNextApp();
-    return nextApp.fetch(request, env, ctx);
+    const shell = await publicHomeShell(request, env);
+    if (shell) return shell;
+    if (env.CRON_JOBS && isCronPath(new URL(request.url).pathname)) {
+      return env.CRON_JOBS.fetch(request);
+    }
+    return withPublicDataCache(request, globalThis.caches?.default, ctx, async () => {
+      const nextApp = await getNextApp();
+      return nextApp.fetch(request, env, ctx);
+    });
   },
 
   /**
@@ -95,27 +93,25 @@ export default {
           }
 
           const startedAt = Date.now();
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 55_000);
           try {
             console.log('[cf-cron] dispatch start', { cron: cronExpr, path });
-            const timeoutMs = 55_000;
-            const res = await Promise.race([
-              fetch(req),
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error(`timeout_after_${timeoutMs}ms`)), timeoutMs)
-              ),
-            ]);
-            const text = res?.headers?.get('content-type')?.includes('json')
-              ? await res.clone().text().catch(() => '')
-              : '';
+            const res = await (env.CRON_JOBS || globalThis).fetch(req, { signal: controller.signal });
+            // Discard chunks without assembling/decoding JSON. Consume to EOF:
+            // canceling a service response marks otherwise successful child
+            // invocations as canceled in Cloudflare traces.
+            await res.body?.pipeTo(new WritableStream({ write() {} }));
             console.log('[cf-cron]', cronExpr, path, res.status, {
               tookMs: Date.now() - startedAt,
-              bodyPreview: text.slice(0, 200),
             });
           } catch (e) {
             console.error('[cf-cron] fetch failed', cronExpr, path, {
               tookMs: Date.now() - startedAt,
               error: e instanceof Error ? e.message : String(e),
             });
+          } finally {
+            clearTimeout(timeout);
           }
         })()
       );

@@ -4,7 +4,7 @@
  * Refreshes user sessions on each request
  */
 
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import type { CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { canonicalizeHost, getCanonicalSiteUrl } from '@/lib/canonical-site';
 
@@ -31,6 +31,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Public polling and secret-authenticated cron requests do not have a user
+  // session to refresh. Avoid importing/initializing Supabase Auth for them.
+  const hasSessionCookie = request.cookies.getAll().some(({ name }) =>
+    /^sb-.+-auth-token(?:\.\d+)?$/.test(name) || name === 'sb-access-token' || name === 'sb-refresh-token'
+  );
+  if (!hasSessionCookie) return NextResponse.next();
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -38,6 +45,7 @@ export async function middleware(request: NextRequest) {
   });
 
   try {
+    const { createServerClient } = await import('@supabase/ssr');
     if (debugAuth) {
       console.log('[Supabase] server auth init (middleware):', {
         host: (() => {

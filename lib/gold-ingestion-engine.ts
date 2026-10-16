@@ -12,12 +12,15 @@ import { SOURCE_WEIGHTS, STALE_AFTER_MS, KARATS, getEgyptAggregationMinSources }
 import { computeConfidence } from './gold-ingestion-utils';
 import db from './supabase';
 import { getEffectiveIngestionConfig } from './ingestion/adminIngestionSettings';
+import { createSnapshotHash } from './snapshot-hash';
+
+// Detailed payload logging is opt-in to keep scheduled jobs within their CPU budget.
+const DEBUG_INGESTION = process.env.INGESTION_DEBUG === '1';
 
 const IS_CLOUDFLARE_WORKER = typeof (globalThis as any).WebSocketPair !== 'undefined';
 
 /**
- * Worker-safe base64 encoder for stable raw_hash values.
- * Cloudflare Workers may not provide Node.js `Buffer`.
+ * Generate a secure identifier shared by the source and aggregate writes.
  */
 function newIngestionRunId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
@@ -45,30 +48,6 @@ function newIngestionRunId(): string {
     hex.slice(8, 10).join(''),
     hex.slice(10, 16).join(''),
   ].join('-');
-}
-
-function base64Encode(input: string): string {
-  // Prefer Workers/Web `btoa` when available.
-  if (typeof btoa === 'function' && typeof TextEncoder !== 'undefined') {
-    const bytes = new TextEncoder().encode(input);
-    let binary = '';
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, i + chunkSize);
-      for (let j = 0; j < chunk.length; j++) {
-        binary += String.fromCharCode(chunk[j]);
-      }
-    }
-    return btoa(binary);
-  }
-
-  // Fallback to Node.js Buffer for local/dev environments.
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(input).toString('base64');
-  }
-
-  // Last resort (should be unreachable in practice).
-  throw new Error('No base64 encoder available in this runtime');
 }
 
 export interface IngestionResult {
@@ -263,7 +242,7 @@ export async function computeWeightedAverage(
         const hasValidPrice = typeof effective === 'number' && isFinite(effective) && effective > 0;
 
         if (!hasValidPrice) {
-          console.log('[Aggregation] Source price check:', {
+          if (DEBUG_INGESTION) console.log('[Aggregation] Source price check:', {
             source: sourceResult.source,
             karat,
             buy: buy ?? null,
@@ -277,7 +256,7 @@ export async function computeWeightedAverage(
 
         // Check if stale (async)
         const stale = await isStale(sourceResult.source, karat);
-        console.log('[Aggregation] Source price check:', {
+        if (DEBUG_INGESTION) console.log('[Aggregation] Source price check:', {
           source: sourceResult.source,
           karat,
           buy: buy ?? null,
@@ -405,7 +384,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   const now = Date.now();
 
   const effective = await getEffectiveIngestionConfig(db.supabase);
-  console.log('[IngestionConfig] countries enabled', effective.countriesEnabled);
+  if (DEBUG_INGESTION) console.log('[IngestionConfig] countries enabled', effective.countriesEnabled);
 
   // Import multi-country adapters and helpers
   const { fetchUAEGoldPrices, fetchSaudiGoldPrices, fetchUSASpotPrices } = await import('./gold-sources-adapters-multicountry');
@@ -415,7 +394,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   const { computeParityPrices, generateParityHash } = await import('./global-parity');
 
   // 1. EGYPT (existing pipeline)
-  console.log('[Ingestion] Processing Egypt (EG)...');
+  if (DEBUG_INGESTION) console.log('[Ingestion] Processing Egypt (EG)...');
   if (!effective.countriesEnabled.EG) {
     console.warn('[IngestionConfig] EG disabled by admin');
     results['EG'] = { inserted: 0, errors: [] };
@@ -453,7 +432,7 @@ export async function runMultiCountryIngestionCycle(): Promise<{
   }
   totalInserted += globalResult.totalInserted;
 
-  console.log(`[Ingestion] Multi-country cycle complete: ${totalInserted} total rows inserted`, results);
+  if (DEBUG_INGESTION) console.log(`[Ingestion] Multi-country cycle complete: ${totalInserted} total rows inserted`, results);
   return { results, totalInserted };
 }
 
@@ -502,14 +481,14 @@ export async function runGlobalIngestionCycle(opts?: {
     })());
 
   // 1. USA (derive from spot price)
-  console.log('[Ingestion] Processing USA (US)...');
+  if (DEBUG_INGESTION) console.log('[Ingestion] Processing USA (US)...');
   try {
     const spotData = await helpers.getLatestGoldSpot();
     const spotPrice = spotData?.xau_spot_usd_oz ?? null;
     const usResult = await helpers.fetchUSASpotPrices(spotPrice);
 
     if (usResult.valid && Object.keys(usResult.prices).length > 0) {
-      const rawHash = base64Encode(JSON.stringify(usResult)).substring(0, 32);
+      const rawHash = await createSnapshotHash('US', 'goldapi_spot', now, usResult.prices);
       const writeResult = await writeMarketSnapshotNorm({
         country: 'US',
         source: 'goldapi_spot',
@@ -560,7 +539,7 @@ export async function runGlobalIngestionCycle(opts?: {
   }
 
   // 2. UAE - Try scraper first, then ALWAYS write parity
-  console.log('[Ingestion] Processing UAE (AE)...');
+  if (DEBUG_INGESTION) console.log('[Ingestion] Processing UAE (AE)...');
   if (!effective.countriesEnabled.AE) {
     console.warn('[IngestionConfig] AE disabled by admin');
     results['AE'] = { inserted: 0, errors: [] };
@@ -569,7 +548,7 @@ export async function runGlobalIngestionCycle(opts?: {
     try {
       const aeResult = await helpers.fetchUAEGoldPrices();
       if (aeResult.valid && Object.keys(aeResult.prices).length > 0) {
-        const rawHash = base64Encode(JSON.stringify(aeResult)).substring(0, 32);
+        const rawHash = await createSnapshotHash('AE', 'goldprice_org_ae', now, aeResult.prices);
         const writeResult = await writeMarketSnapshotNorm({
           country: 'AE',
           source: 'goldprice_org_ae',
@@ -600,7 +579,7 @@ export async function runGlobalIngestionCycle(opts?: {
           usdRate: fxRates.usd_aed,
         });
 
-        const parityHash = helpers.generateParityHash('AE', 'global_parity', impliedOunceUsd, fxRates.usd_aed, now);
+        const parityHash = await helpers.generateParityHash('AE', 'global_parity', impliedOunceUsd, fxRates.usd_aed, now);
 
         const writeResult = await writeMarketSnapshotNorm({
           country: 'AE',
@@ -617,7 +596,7 @@ export async function runGlobalIngestionCycle(opts?: {
         });
 
         aeParityInserted = writeResult.inserted || 0;
-        console.log('[Ingest] parity inserted', { country: 'AE', inserted: aeParityInserted });
+        if (DEBUG_INGESTION) console.log('[Ingest] parity inserted', { country: 'AE', inserted: aeParityInserted });
       } catch (error) {
         console.error('[Ingestion] Failed to write AE parity:', error);
       }
@@ -633,7 +612,7 @@ export async function runGlobalIngestionCycle(opts?: {
   }
 
   // 3. Saudi Arabia - Try scraper first, then ALWAYS write parity
-  console.log('[Ingestion] Processing Saudi Arabia (SA)...');
+  if (DEBUG_INGESTION) console.log('[Ingestion] Processing Saudi Arabia (SA)...');
   if (!effective.countriesEnabled.SA) {
     console.warn('[IngestionConfig] SA disabled by admin');
     results['SA'] = { inserted: 0, errors: [] };
@@ -643,7 +622,7 @@ export async function runGlobalIngestionCycle(opts?: {
       const saResult = await helpers.fetchSaudiGoldPrices();
 
       if (saResult.valid && Object.keys(saResult.prices).length > 0) {
-        const rawHash = base64Encode(JSON.stringify(saResult)).substring(0, 32);
+        const rawHash = await createSnapshotHash('SA', 'goldprice_org_sa', now, saResult.prices);
         const writeResult = await writeMarketSnapshotNorm({
           country: 'SA',
           source: 'goldprice_org_sa',
@@ -674,7 +653,7 @@ export async function runGlobalIngestionCycle(opts?: {
           usdRate: fxRates.usd_sar,
         });
 
-        const parityHash = helpers.generateParityHash('SA', 'global_parity', impliedOunceUsd, fxRates.usd_sar, now);
+        const parityHash = await helpers.generateParityHash('SA', 'global_parity', impliedOunceUsd, fxRates.usd_sar, now);
 
         const writeResult = await writeMarketSnapshotNorm({
           country: 'SA',
@@ -691,7 +670,7 @@ export async function runGlobalIngestionCycle(opts?: {
         });
 
         saParityInserted = writeResult.inserted || 0;
-        console.log('[Ingest] parity inserted', { country: 'SA', inserted: saParityInserted });
+        if (DEBUG_INGESTION) console.log('[Ingest] parity inserted', { country: 'SA', inserted: saParityInserted });
       } catch (error) {
         console.error('[Ingestion] Failed to write SA parity:', error);
       }
@@ -706,7 +685,7 @@ export async function runGlobalIngestionCycle(opts?: {
     totalInserted += results['SA'].inserted;
   }
 
-  console.log(`[Ingestion] Global cycle complete: ${totalInserted} total rows inserted`, results);
+  if (DEBUG_INGESTION) console.log(`[Ingestion] Global cycle complete: ${totalInserted} total rows inserted`, results);
   return { results, totalInserted };
 }
 
@@ -724,14 +703,14 @@ export async function runIngestionCycle(): Promise<
   }
 > {
   const ingestionRunId = newIngestionRunId();
-  console.log('[Ingestion] run started', { ingestionRunId });
+  if (DEBUG_INGESTION) console.log('[Ingestion] run started', { ingestionRunId });
 
   const effective = await getEffectiveIngestionConfig(db.supabase);
   const enabledIngestionSources = effective.egypt.ingestionSourcesEnabled;
   const enabledAggregationSources = effective.egypt.aggregationSourcesEnabled;
 
-  console.log('[IngestionConfig] EG ingestion sources enabled', enabledIngestionSources);
-  console.log('[IngestionConfig] EG aggregation sources enabled', enabledAggregationSources);
+  if (DEBUG_INGESTION) console.log('[IngestionConfig] EG ingestion sources enabled', enabledIngestionSources);
+  if (DEBUG_INGESTION) console.log('[IngestionConfig] EG aggregation sources enabled', enabledAggregationSources);
 
   if (!effective.countriesEnabled.EG) {
     console.warn('[IngestionConfig] EG disabled by admin');
@@ -765,14 +744,14 @@ export async function runIngestionCycle(): Promise<
   }
 
   const sources = enabledIngestionSources;
-  console.log(`[Ingestion] Starting Egypt cycle with ${sources.length} sources:`, sources);
+  if (DEBUG_INGESTION) console.log(`[Ingestion] Starting Egypt cycle with ${sources.length} sources:`, sources);
   
   // Fetch all sources in parallel
   const sourceResults = await Promise.all(
     sources.map(async (source) => {
       try {
         const result = await processSource(source);
-        console.log(`[Ingestion] Source ${source}: valid=${result.valid}, prices=${Object.keys(result.prices).length}, errors=${result.errors.length}`);
+        if (DEBUG_INGESTION) console.log(`[Ingestion] Source ${source}: valid=${result.valid}, prices=${Object.keys(result.prices).length}, errors=${result.errors.length}`);
         return result;
       } catch (error) {
         console.error(`[Ingestion] Error processing source ${source}:`, error);
@@ -822,11 +801,11 @@ export async function runIngestionCycle(): Promise<
   }
 
   // Compute weighted averages
-  console.log(`[Ingestion] Computing weighted averages from ${sourceResults.filter(s => s.valid).length} valid sources`);
+  if (DEBUG_INGESTION) console.log(`[Ingestion] Computing weighted averages from ${sourceResults.filter(s => s.valid).length} valid sources`);
   const result = await computeWeightedAverage(sourceResults, {
     aggregationEnabledSources: new Set(enabledAggregationSources),
   });
-  console.log(`[Ingestion] Weighted averages computed:`, {
+  if (DEBUG_INGESTION) console.log(`[Ingestion] Weighted averages computed:`, {
     24: result.our_price_buy['24'],
     21: result.our_price_buy['21'],
     18: result.our_price_buy['18'],
@@ -847,14 +826,14 @@ export async function runIngestionCycle(): Promise<
     normError: null,
   };
 
-  console.log('[Ingestion] source writes phase start', {
+  if (DEBUG_INGESTION) console.log('[Ingestion] source writes phase start', {
     ingestionRunId,
     parsedSourcesOk: result.num_sources_ok,
     parsedSourcesErrors: result.num_sources_errors,
   });
 
   for (const sourceResult of sourceResults) {
-    const rawHash = base64Encode(JSON.stringify(sourceResult)).substring(0, 32);
+    const rawHash = await createSnapshotHash('EG', sourceResult.source, now, sourceResult.prices);
     const price14 = getEffectivePrice(sourceResult, 14);
     const price18 = getEffectivePrice(sourceResult, 18);
     const price21 = getEffectivePrice(sourceResult, 21);
@@ -898,7 +877,7 @@ export async function runIngestionCycle(): Promise<
             14: price14,
           },
         };
-        console.log('[Ingestion] Preparing snapshot insert (wide+norm):', snapshotPreview);
+        if (DEBUG_INGESTION) console.log('[Ingestion] Preparing snapshot insert (wide+norm):', snapshotPreview);
 
         try {
           const wideResult = IS_CLOUDFLARE_WORKER
@@ -951,7 +930,7 @@ export async function runIngestionCycle(): Promise<
           if (sourceWriteAccepted) {
             sourcesWritten++;
             diag.countedAsWritten = true;
-            console.log(`[Ingestion] Wrote snapshot for ${sourceResult.source}: wide=${wideResult.inserted || 0}, norm=${normResult.inserted || 0} row(s)`, {
+            if (DEBUG_INGESTION) console.log(`[Ingestion] Wrote snapshot for ${sourceResult.source}: wide=${wideResult.inserted || 0}, norm=${normResult.inserted || 0} row(s)`, {
               source: sourceResult.source,
               accepted: true,
               reason: (wideResult.inserted || normResult.inserted) ? 'inserted_rows' : 'ok_zero_rows_idempotent_or_dedup',
@@ -986,7 +965,7 @@ export async function runIngestionCycle(): Promise<
         }
       } else {
         diag.skippedReason = 'no_effective_prices';
-        console.log(`[Ingestion] Skipping ${sourceResult.source}: valid=${sourceResult.valid}, hasValidPrices=${hasValidPrices}`, {
+        if (DEBUG_INGESTION) console.log(`[Ingestion] Skipping ${sourceResult.source}: valid=${sourceResult.valid}, hasValidPrices=${hasValidPrices}`, {
           source: sourceResult.source,
           accepted: false,
           reason: 'no_effective_prices',
@@ -1006,7 +985,7 @@ export async function runIngestionCycle(): Promise<
     }
   }
 
-  console.log('[Ingestion] source writes completed', {
+  if (DEBUG_INGESTION) console.log('[Ingestion] source writes completed', {
     ingestionRunId,
     sourcesWritten,
     parsedSourcesOk: result.num_sources_ok,
@@ -1031,7 +1010,7 @@ export async function runIngestionCycle(): Promise<
       minSourcesRequired: minSources,
     });
   } else {
-    console.log('[Ingestion] aggregated write: threshold met', {
+    if (DEBUG_INGESTION) console.log('[Ingestion] aggregated write: threshold met', {
       ingestionRunId,
       sourcesWritten,
       minSourcesRequired: minSources,
@@ -1041,7 +1020,7 @@ export async function runIngestionCycle(): Promise<
   if (hasValidAggregatedPrices(result)) {
     try {
       aggregatedWriteDiagnostics.attempted = true;
-      const aggregatedHash = base64Encode(JSON.stringify(result)).substring(0, 32);
+      const aggregatedHash = await createSnapshotHash('EG', 'aggregated', now, result.our_price_buy);
       const price14 = result.our_price_buy['14'] ?? null;
       const price18 = result.our_price_buy['18'] ?? null;
       const price21 = result.our_price_buy['21'] ?? null;
@@ -1052,7 +1031,7 @@ export async function runIngestionCycle(): Promise<
         ? `insufficient_persisted_sources:${sourcesWritten}<${minSources}`
         : null;
 
-      console.log('[Ingestion] aggregated snapshot write attempt', {
+      if (DEBUG_INGESTION) console.log('[Ingestion] aggregated snapshot write attempt', {
         ingestionRunId,
         isDegraded,
         price14,
@@ -1113,7 +1092,7 @@ export async function runIngestionCycle(): Promise<
       const aggregatedWriteAccepted = wideAggregatedResultFinal.ok || normAggregatedResult.ok;
       if (aggregatedWriteAccepted) {
         aggregatedWritten = true;
-        console.log(
+        if (DEBUG_INGESTION) console.log(
           `[Ingestion] aggregated snapshot persisted: wide=${wideAggregatedResultFinal.inserted || 0}, norm=${normAggregatedResult.inserted || 0}`,
           {
             ingestionRunId,
@@ -1143,12 +1122,12 @@ export async function runIngestionCycle(): Promise<
     }
   }
 
-  console.log(`[Ingestion] Completed: ${sourcesWritten} sources persisted, aggregated: ${aggregatedWritten ? 'YES' : 'NO'}`, {
+  if (DEBUG_INGESTION) console.log(`[Ingestion] Completed: ${sourcesWritten} sources persisted, aggregated: ${aggregatedWritten ? 'YES' : 'NO'}`, {
     ingestionRunId,
     aggregatedMarkedDegraded,
   });
 
-  console.log('[Ingestion] freshness evaluation summary', {
+  if (DEBUG_INGESTION) console.log('[Ingestion] freshness evaluation summary', {
     ingestionRunId,
     marketNowMs: Date.now(),
     persistedSources: sourcesWritten,

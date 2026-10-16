@@ -9,6 +9,9 @@ import 'server-only';
 import db from '../supabase';
 import { getCountryCurrency } from '../fx-multi';
 
+// Detailed payload logging is opt-in to keep scheduled jobs within their CPU budget.
+const DEBUG_INGESTION = process.env.INGESTION_DEBUG === '1';
+
 interface PriceData {
   buy?: number | null;
   sell?: number | null;
@@ -89,7 +92,7 @@ export async function writeMarketSnapshotNorm(
     const currency = getCountryCurrency(params.country);
     const createdAtISO = new Date(params.createdAt).toISOString();
 
-    console.log('[Supabase] writeMarketSnapshotNorm payload meta:', {
+    if (DEBUG_INGESTION) console.log('[Supabase] writeMarketSnapshotNorm payload meta:', {
       country: params.country,
       source: params.source,
       createdAt: createdAtISO,
@@ -159,7 +162,7 @@ export async function writeMarketSnapshotNorm(
       return { ok: true, inserted: 0 };
     }
 
-    console.log('[Supabase] Writing normalized snapshot:', { 
+    if (DEBUG_INGESTION) console.log('[Supabase] Writing normalized snapshot:', {
       country: params.country, 
       source: params.source, 
       karats: rows.map(r => r.karat),
@@ -181,7 +184,7 @@ export async function writeMarketSnapshotNorm(
         // The unique index from migration 0019 on (country, karat, raw_hash) WHERE raw_hash IS NOT NULL
         // can cause inserts to fail if the same raw_hash exists. We need to handle this.
         // Strategy: Try insert first, if unique violation, update the existing row's created_at
-        console.log('[Supabase] INSERT norm -> market_snapshots_norm (pre):', {
+        if (DEBUG_INGESTION) console.log('[Supabase] INSERT norm -> market_snapshots_norm (pre):', {
           table: 'market_snapshots_norm',
           country: params.country,
           source: params.source,
@@ -199,7 +202,7 @@ export async function writeMarketSnapshotNorm(
           .insert(rows)
           .select('id');
         
-        console.log('[Supabase] INSERT norm -> market_snapshots_norm (post/final):', {
+        if (DEBUG_INGESTION) console.log('[Supabase] INSERT norm -> market_snapshots_norm (post/final):', {
           table: 'market_snapshots_norm',
           country: params.country,
           source: params.source,
@@ -241,7 +244,7 @@ export async function writeMarketSnapshotNorm(
             // Unique constraint violation: check if existing row is old enough to update
             // If existing row is recent (< 5 minutes), skip to avoid overwriting recent data
             // If existing row is old (> 5 minutes), update it OR insert new row with NULL raw_hash
-            console.log('[Supabase] Unique constraint violation detected, checking if we should update or insert new');
+            if (DEBUG_INGESTION) console.log('[Supabase] Unique constraint violation detected, checking if we should update or insert new');
             
             const FIVE_MINUTES_MS = 5 * 60 * 1000;
             const now = params.createdAt;
@@ -287,13 +290,13 @@ export async function writeMarketSnapshotNorm(
                     if (updateResult.error) {
                       console.error('[Supabase] Update error for row:', row, updateResult.error);
                     } else {
-                      console.log('[Supabase] Updated existing old row:', updateResult.data?.[0]?.id);
+                      if (DEBUG_INGESTION) console.log('[Supabase] Updated existing old row:', updateResult.data?.[0]?.id);
                     }
                   } else {
                     // Existing row is recent (< 5 min), insert new row with NULL raw_hash to create new snapshot
                     // This ensures we have multiple snapshots over time even if price hasn't changed
                     const newRowWithoutHash = { ...row, raw_hash: null };
-                    console.log('[Supabase] INSERT norm fallback (recent dup) -> market_snapshots_norm (pre):', {
+                    if (DEBUG_INGESTION) console.log('[Supabase] INSERT norm fallback (recent dup) -> market_snapshots_norm (pre):', {
                       table: 'market_snapshots_norm',
                       country: params.country,
                       source: params.source,
@@ -317,7 +320,7 @@ export async function writeMarketSnapshotNorm(
                         hint: (insertResult.error as any)?.hint,
                       });
                     } else {
-                      console.log('[Supabase] INSERT norm fallback (recent dup) -> OK:', {
+                      if (DEBUG_INGESTION) console.log('[Supabase] INSERT norm fallback (recent dup) -> OK:', {
                         insertedId: insertResult.data?.[0]?.id,
                         rows: insertResult.data?.length || 0,
                       });
@@ -326,7 +329,7 @@ export async function writeMarketSnapshotNorm(
                 } else {
                   // No existing row found, try insert without raw_hash
                   const newRowWithoutHash = { ...row, raw_hash: null };
-                  console.log('[Supabase] INSERT norm fallback (no existing) -> market_snapshots_norm (pre):', {
+                  if (DEBUG_INGESTION) console.log('[Supabase] INSERT norm fallback (no existing) -> market_snapshots_norm (pre):', {
                     table: 'market_snapshots_norm',
                     country: params.country,
                     source: params.source,
@@ -398,7 +401,7 @@ export async function writeMarketSnapshotNorm(
         };
       }
 
-      console.log('[Supabase] Successfully inserted normalized snapshot:', { 
+      if (DEBUG_INGESTION) console.log('[Supabase] Successfully inserted normalized snapshot:', {
         id: inserted?.[0]?.id, 
         country: params.country,
         source: params.source,

@@ -5,6 +5,9 @@
 /.pkg
 /.next
 /.open-next
+/.cron-worker
+/.wrangler.jobs.deploy.json
+/.wrangler
 /out
 
 # production

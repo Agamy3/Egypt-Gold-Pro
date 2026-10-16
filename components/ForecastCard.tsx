@@ -7,6 +7,8 @@
 
 'use client';
 
+import { startVisiblePolling } from '@/lib/client/visible-polling.mjs';
+
 import { useMemo, useState, useEffect } from 'react';
 import ForecastMiniChart from './ForecastMiniChart';
 import { useLang } from './LanguageProvider';
@@ -123,16 +125,8 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
 
   // Fetch series data when dropdowns change
   useEffect(() => {
-    let abortController: AbortController | null = null;
-
-    const fetchSeries = async () => {
+    const fetchSeries = async (signal: AbortSignal) => {
       try {
-        // Abort previous request if still pending
-        if (abortController) {
-          abortController.abort();
-        }
-        abortController = new AbortController();
-
         const isInitial = !seriesData;
         if (isInitial) setLoading(true);
         else setRefreshing(true);
@@ -147,7 +141,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
             'x-trusted-mode': trustedMode ? 'true' : 'false',
           },
           cache: 'no-store', // Ensure fresh data on every fetch
-          signal: abortController.signal,
+          signal,
         });
         
         if (!res.ok) {
@@ -155,6 +149,7 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
         }
         
         const data = await res.json();
+        if (signal.aborted) return;
         setSeriesData(data);
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') {
@@ -164,41 +159,14 @@ export default function ForecastCard({ forecast: initialForecast, insufficientDa
         console.error('Failed to fetch series:', err);
         setSeriesData({ points: [], meta: { scope, range: timeRange, unit: scope === 'global' ? 'USD' : 'EGP' } });
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (!signal.aborted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     };
 
-    fetchSeries();
-    
-    // Refresh series data every 20 seconds (consistent interval)
-    const refreshInterval = 20000;
-    const interval = setInterval(() => {
-      fetchSeries();
-    }, refreshInterval);
-
-    // Refresh on window focus/visibility change
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        fetchSeries();
-      }
-    };
-
-    const handleFocus = () => {
-      fetchSeries();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-      if (abortController) {
-        abortController.abort();
-      }
-    };
+    return startVisiblePolling(fetchSeries, 20000);
   }, [timeRange, scope, country]);
 
   const seriesMeta = seriesData?.meta;

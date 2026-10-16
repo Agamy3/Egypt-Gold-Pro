@@ -5,32 +5,9 @@
  * Used for AE/SA parity snapshots (derived from global market, not scraped)
  */
 
+import { createSnapshotHash } from './snapshot-hash';
+
 const GRAMS_PER_OUNCE = 31.1034768;
-
-/**
- * Worker-safe base64 encoder for stable raw_hash values.
- * Cloudflare Workers may not provide Node.js `Buffer`.
- */
-function base64Encode(input: string): string {
-  if (typeof btoa === 'function' && typeof TextEncoder !== 'undefined') {
-    const bytes = new TextEncoder().encode(input);
-    let binary = '';
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, i + chunkSize);
-      for (let j = 0; j < chunk.length; j++) {
-        binary += String.fromCharCode(chunk[j]);
-      }
-    }
-    return btoa(binary);
-  }
-
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(input).toString('base64');
-  }
-
-  throw new Error('No base64 encoder available in this runtime');
-}
 
 export interface ParityPrices {
   24: number;
@@ -89,12 +66,12 @@ export function generateParityHash(
   impliedOunceUsd: number,
   fxRate: number,
   timestampMs: number
-): string {
+): Promise<string> {
   // Round timestamp to 1-minute bucket for stability
   const timestampBucket = Math.floor(timestampMs / 60000) * 60000;
   
-  const hashInput = `${country}:${source}:${impliedOunceUsd.toFixed(2)}:${fxRate.toFixed(4)}:${timestampBucket}`;
-  return base64Encode(hashInput).substring(0, 32);
+  return createSnapshotHash(country, source, timestampBucket,
+    [impliedOunceUsd.toFixed(2), fxRate.toFixed(4)]);
 }
 
 

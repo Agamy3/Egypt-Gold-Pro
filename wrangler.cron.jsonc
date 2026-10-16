@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "egyptgoldpro-jobs",
+  "main": "workers/cron/index.mjs",
+  "compatibility_date": "2025-03-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "alias": { "server-only": "./workers/cron/server-only.mjs" },
+  "define": { "process.env.NODE_ENV": "\"production\"" },
+  "observability": { "enabled": false }
+}
