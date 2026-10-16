@@ -6,6 +6,7 @@
  * matching `triggers.crons` (same strings as keys below).
  */
 import { CRON_PATHS, isCronPath } from './lib/worker/cron-router.mjs';
+import { publicHomeShell } from './lib/worker/public-shell.mjs';
 import { withPublicDataCache } from './lib/worker/public-data-cache.mjs';
 // Resolved after `npm run cf:build` — produces `.open-next/worker.js`
 // IMPORTANT: Keep OpenNext lazy-loaded so scheduled cron events don't pay the CPU cost
@@ -44,6 +45,8 @@ function cronRequest(path, env) {
 
 export default {
   async fetch(request, env, ctx) {
+    const shell = await publicHomeShell(request, env);
+    if (shell) return shell;
     if (env.CRON_JOBS && isCronPath(new URL(request.url).pathname)) {
       return env.CRON_JOBS.fetch(request);
     }

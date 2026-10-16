@@ -1,5 +1,7 @@
 'use client';
 
+import { startVisiblePolling } from '@/lib/client/visible-polling.mjs';
+
 import { useEffect, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -36,7 +38,7 @@ export default function ForecastChart({ minutes = 120 }: ForecastChartProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchSeries = async () => {
+    const fetchSeries = async (signal: AbortSignal) => {
       try {
         setLoading(true);
         // Get trusted mode preference from localStorage
@@ -44,6 +46,7 @@ export default function ForecastChart({ minutes = 120 }: ForecastChartProps) {
         const url = `/api/forecast/series?minutes=${minutes}${trustedMode ? '&trustedMode=true' : ''}`;
         
         const res = await fetch(url, {
+          signal,
           headers: {
             'x-trusted-mode': trustedMode ? 'true' : 'false',
           },
@@ -52,19 +55,18 @@ export default function ForecastChart({ minutes = 120 }: ForecastChartProps) {
           throw new Error('Failed to fetch forecast series');
         }
         const data = await res.json();
+        if (signal.aborted) return;
         setSeriesData(data);
         setError(data.error || null);
       } catch (err) {
+        if (signal.aborted) return;
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
-        setLoading(false);
+        if (!signal.aborted) setLoading(false);
       }
     };
 
-    fetchSeries();
-    // Refresh every 30 seconds (same as main dashboard)
-    const interval = setInterval(fetchSeries, 30000);
-    return () => clearInterval(interval);
+    return startVisiblePolling(fetchSeries, 30000);
   }, [minutes]);
 
   if (loading) {

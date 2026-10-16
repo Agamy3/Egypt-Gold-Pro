@@ -1,5 +1,7 @@
 'use client';
 
+import { startVisiblePolling } from '@/lib/client/visible-polling.mjs';
+
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
@@ -107,26 +109,25 @@ export default function GoldSignalCard(props: { country: Country; isPremium?: bo
 
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
+    const load = async (signal: AbortSignal) => {
       try {
         setError(null);
-        const res = await fetch(`/api/signals/gold?country=${encodeURIComponent(props.country)}`, { cache: 'no-store' });
+        const res = await fetch(`/api/signals/gold?country=${encodeURIComponent(props.country)}`, { cache: 'no-store', signal });
         const json = (await res.json().catch(() => null)) as ApiResponse | null;
-        if (cancelled) return;
+        if (cancelled || signal.aborted) return;
         if (!res.ok || !json?.ok) throw new Error(json?.error || `Failed (${res.status})`);
         setData(json);
       } catch (e) {
-        if (cancelled) return;
+        if (cancelled || signal.aborted) return;
         setError(e instanceof Error ? e.message : 'Failed to load signal');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !signal.aborted) setLoading(false);
       }
     };
-    load();
-    const t = setInterval(load, 30_000);
+    const stop = startVisiblePolling(load, 30_000);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      stop();
     };
   }, [props.country]);
 

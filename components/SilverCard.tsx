@@ -1,5 +1,7 @@
 'use client';
 
+import { startVisiblePolling } from '@/lib/client/visible-polling.mjs';
+
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import ShareSignalButton, { SignalTrustBadges } from '@/components/ShareSignalButton';
@@ -56,13 +58,13 @@ export default function SilverCard(props: { isPremium: boolean; lang: 'en' | 'ar
   useEffect(() => {
     if (!isPremium) return;
     let cancelled = false;
-    const run = async () => {
+    const run = async (signal: AbortSignal) => {
       try {
         setLoading(true);
         if (mode === 'local') {
-          const res = await fetch(`/api/silver/local?country=${country}`, { cache: 'no-store' });
+          const res = await fetch(`/api/silver/local?country=${country}`, { cache: 'no-store', signal });
           const json = (await res.json().catch(() => null)) as any;
-          if (cancelled) return;
+          if (cancelled || signal.aborted) return;
           if (!res.ok || !json?.ok) {
             setLocalRows([]);
             return;
@@ -70,9 +72,9 @@ export default function SilverCard(props: { isPremium: boolean; lang: 'en' | 'ar
           setLocalRows((json.rows ?? []) as LocalSilverRow[]);
           setData(null);
         } else {
-          const res = await fetch(`/api/silverSnapshot?country=${country}`, { cache: 'no-store' });
+          const res = await fetch(`/api/silverSnapshot?country=${country}`, { cache: 'no-store', signal });
           const json = (await res.json().catch(() => null)) as any;
-          if (cancelled) return;
+          if (cancelled || signal.aborted) return;
           if (!res.ok || !json?.ok) {
             setData({ ok: false, error: json?.error || 'Failed to load', country, currency: '—', price_per_g: null, price_per_oz: null, direction: 'STALE', confidence: 'low', lastUpdatedAt: null });
             return;
@@ -81,14 +83,13 @@ export default function SilverCard(props: { isPremium: boolean; lang: 'en' | 'ar
           setLocalRows(null);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !signal.aborted) setLoading(false);
       }
     };
-    void run();
-    const id = window.setInterval(() => void run(), 30_000);
+    const stop = startVisiblePolling(run, 30_000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      stop();
     };
   }, [isPremium, country, mode]);
 

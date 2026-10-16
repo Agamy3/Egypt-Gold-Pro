@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "cf:build": "opennextjs-cloudflare build",
+    "cf:build": "opennextjs-cloudflare build && node scripts/prepare-public-shell.mjs",
     "cf:deploy": "wrangler deploy --keep-vars",
     "cf:preview": "opennextjs-cloudflare preview",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",

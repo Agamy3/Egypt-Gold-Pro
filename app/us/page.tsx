@@ -1,5 +1,7 @@
 'use client';
 
+import { startVisiblePolling } from '@/lib/client/visible-polling.mjs';
+
 import { useEffect, useState, Suspense } from 'react';
 import Footer from '@/components/Footer';
 import ForecastCard from '@/components/ForecastCard';
@@ -70,66 +72,63 @@ function USPageContent() {
   const currency = (searchParams.get('currency') || 'USD') as 'USD';
 
   useEffect(() => {
-    const fetchPremiumStatus = async () => {
+    const fetchPremiumStatus = async (signal: AbortSignal) => {
       try {
-        const res = await fetch('/api/user/premium-status', { cache: 'no-store' });
+        const res = await fetch('/api/user/premium-status', { cache: 'no-store', signal });
         const json = (await res.json().catch(() => null)) as any;
+        if (signal.aborted) return;
         setIsPremium(Boolean(json?.status?.isPremium));
       } catch {
-        setIsPremium(false);
+        if (!signal.aborted) setIsPremium(false);
       }
     };
 
-    const fetchSnapshot = async () => {
+    const fetchSnapshot = async (signal: AbortSignal) => {
       try {
         const url = `/api/marketSnapshot?country=US&currency=USD`;
-        const res = await fetch(url, { cache: 'no-store' });
+        const res = await fetch(url, { cache: 'no-store', signal });
         if (!res.ok) throw new Error('Failed to fetch market snapshot');
         const data = await res.json();
+        if (signal.aborted) return;
         setSnapshot(data);
         setError(null);
       } catch (err) {
+        if (signal.aborted) return;
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
-        setLoading(false);
+        if (!signal.aborted) setLoading(false);
       }
     };
 
-    const fetchForecast = async () => {
+    const fetchForecast = async (signal: AbortSignal) => {
       try {
-        const res = await fetch('/api/forecast?country=US', { cache: 'no-store' });
+        const res = await fetch('/api/forecast?country=US', { cache: 'no-store', signal });
         if (res.ok) {
           const data = await res.json();
-          setForecast(data);
+          if (!signal.aborted) setForecast(data);
         }
       } catch (err) {
+        if (signal.aborted) return;
         console.error('Forecast fetch error:', err);
       }
     };
 
-    const fetchMacro = async () => {
+    const fetchMacro = async (signal: AbortSignal) => {
       try {
-        const res = await fetch('/api/us/macro', { cache: 'no-store' });
+        const res = await fetch('/api/us/macro', { cache: 'no-store', signal });
         if (res.ok) {
           const data = await res.json();
-          setMacro(data);
+          if (!signal.aborted) setMacro(data);
         }
       } catch (err) {
+        if (signal.aborted) return;
         console.error('Macro fetch error:', err);
       }
     };
 
-    fetchPremiumStatus();
-    fetchSnapshot();
-    fetchForecast();
-    fetchMacro();
-    const interval = setInterval(() => {
-      fetchPremiumStatus();
-      fetchSnapshot();
-      fetchForecast();
-      fetchMacro();
-    }, 30000);
-    return () => clearInterval(interval);
+    return startVisiblePolling(signal => Promise.all([
+      fetchPremiumStatus(signal), fetchSnapshot(signal), fetchForecast(signal), fetchMacro(signal),
+    ]), 30000);
   }, []);
 
   if (loading) {
